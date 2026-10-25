@@ -1,0 +1,102 @@
+--- a/Source/PluginEditor.cpp
++++ b/Source/PluginEditor.cpp
+@@ -2256,15 +2256,18 @@
+     {
+         juce::StringArray hrtfItems { "Simple", "Immersive", "Natural", "Precise", "Spatial", "Studio Ref" };
+         for (int i = 0; i < hrtfItems.size(); ++i)
++          #if OSD_WEBCLAP
++            if (i != 1 && i != 4) // no KU100 sets in the WebCLAP bundle
++          #endif
+             hrtfProfileBox.addItem (hrtfItems[i], i + 1);
+         hrtfProfileBox.setLookAndFeel (&*osdLookAndFeel);
+         addAndMakeVisible (hrtfProfileBox);
+         styleLabel (hrtfProfileLabel, "PROFILE", &*osdLookAndFeel);
+         addAndMakeVisible (hrtfProfileLabel);
+-        hrtfProfileBox.setSelectedItemIndex (processorRef.configHrtfProfile.load (std::memory_order_relaxed),
+-                                             juce::dontSendNotification);
++        hrtfProfileBox.setSelectedId (processorRef.configHrtfProfile.load (std::memory_order_relaxed) + 1,
++                                      juce::dontSendNotification);
+         hrtfProfileBox.onChange = [this] {
+-            processorRef.configHrtfProfile.store (hrtfProfileBox.getSelectedItemIndex(), std::memory_order_relaxed);
++            processorRef.configHrtfProfile.store (hrtfProfileBox.getSelectedId() - 1, std::memory_order_relaxed);
+             processorRef.markConfigStateDirty();
+         };
+     }
+--- a/Source/PluginProcessor.cpp
++++ b/Source/PluginProcessor.cpp
+@@ -1501,6 +1501,12 @@
+ void OpenSpatialDelayProcessor::loadHRTFProfileIntoRenderer (
+     int profileIndex, BinauralRenderer& renderer)
+ {
++  #if OSD_WEBCLAP
++    // The WebCLAP bundle carries no KU100 sets (Immersive, Spatial): the Simple renderer with their head model
++    if (profileIndex == 1 || profileIndex == 4)
++        profileIndex = 0;
++  #endif
++
+     if (profileIndex == 0)
+     {
+         renderer.hrtfDatabase.unload();
+@@ -1516,14 +1522,18 @@
+ 
+     switch (profileIndex)
+     {
++      #if ! OSD_WEBCLAP
+         case 1:  sofaData = HRTFData::sadie_d2_ku100_sofa;
+                  sofaSize = HRTFData::sadie_d2_ku100_sofaSize;         break;
++      #endif
+         case 2:  sofaData = HRTFData::cipic_subject_003_sofa;
+                  sofaSize = HRTFData::cipic_subject_003_sofaSize;      break;
+         case 3:  sofaData = HRTFData::hutubs_pp2_sofa;
+                  sofaSize = HRTFData::hutubs_pp2_sofaSize;             break;
++      #if ! OSD_WEBCLAP
+         case 4:  sofaData = HRTFData::bernschuetz_ku100_sofa;
+                  sofaSize = HRTFData::bernschuetz_ku100_sofaSize;      break;
++      #endif
+         case 5:  sofaData = HRTFData::mit_kemar_large_pinna_sofa;
+                  sofaSize = HRTFData::mit_kemar_large_pinna_sofaSize;  break;
+         default:
+@@ -1790,7 +1800,8 @@
+                         .withOutput ("Output",
+                             // Issue #189: Ableton AU can't negotiate from discreteChannels(50).
+                             // Default to stereo in Ableton; other DAWs keep 50ch for high-order Ambisonics.
+-                            juce::PluginHostType().isAbletonLive()
++                            // OSD_WEBCLAP: WebCLAP hosts are stereo
++                            OSD_WEBCLAP || juce::PluginHostType().isAbletonLive()
+                                 ? juce::AudioChannelSet::stereo()
+                                 : juce::AudioChannelSet::discreteChannels (50),
+                             true)),
+@@ -6424,7 +6435,11 @@
+ //==============================================================================
+ juce::AudioProcessorEditor* OpenSpatialDelayProcessor::createEditor()
+ {
++  #if OSD_HEADLESS
++    return nullptr;
++  #else
+     return new OpenSpatialDelayEditor (*this);
++  #endif
+ }
+ 
+ //==============================================================================
+--- a/Source/PluginProcessor.h
++++ b/Source/PluginProcessor.h
+@@ -612,6 +612,9 @@
+                                   private juce::Timer,
+                                   private juce::OSCReceiver::Listener<juce::OSCReceiver::MessageLoopCallback>
+ {
++#if OSD_WEBCLAP
++    friend struct OsdWebclapAccess; // the port moves trajectory state and tap activity between DSP and editor
++#endif
+ public:
+     static constexpr int MAX_OBJECTS = 12;
+     static constexpr int MAX_DELAY_SECONDS = 24;  // 12 objects × 2s max base delay
+@@ -705,7 +708,8 @@
+     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
+ 
+     juce::AudioProcessorEditor* createEditor() override;
+-    bool hasEditor() const override { return true; }
++    // OSD_HEADLESS: a DSP-only build (the editor runs elsewhere, e.g. WebCLAP's split UI)
++    bool hasEditor() const override { return ! OSD_HEADLESS; }
+ 
+     //--------------------------------------------------------------------------
+     const juce::String getName() const override { return JucePlugin_Name; }

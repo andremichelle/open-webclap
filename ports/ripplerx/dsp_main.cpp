@@ -48,6 +48,8 @@ struct RipplerXPage final : juce::webclap::PageExtension
         }
     }
 
+    void opened() override { sentRms = -1.0f; }
+
     float sentRms = -1.0f;
 };
 } // namespace

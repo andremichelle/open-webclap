@@ -30,6 +30,7 @@ plugin gets there depends on what it is written with, so the ports here come fro
 | [Surge XT](https://github.com/surge-synthesizer/surge) | Hybrid synth: many oscillator, filter and effect types, deep modulation | JUCE kit: an `AudioProcessor` whose editor reaches into the whole engine, so `ui.wasm` runs a second, silent engine as its stand-in. Parameters cross over as usual, patch loads as state, modulation routings as frames (`ports/surge-xt/surge_frames.h`). Without Lua, OSC and MTS-ESP | GPL-3.0-or-later |
 | [coopiano](https://github.com/peterc/coopiano) | Physically modelled piano: hammer, strings, soundboard, sympathetic resonance and room, no samples | Plain CLAP, no JUCE: upstream's engine behind a small C++ wrapper (`ports/coopiano/coopiano_clap.cpp`), an HTML editor with openDAW Studio's knobs (`ports/coopiano/ui`). Every note's hammer contact is a nonlinear solve too slow for one audio block, so a patch makes it resumable (same results) and the wrapper fills the strike cache in slices on the audio thread | MIT |
 | [Polarity SC Dark](https://github.com/polarity/plugin.nih.polarity-sc-dark) | Spectral compressor with upward and downward compression | Rust/NIH-plug + WASI, with a separate HTML/Canvas interface, presets, draggable curve points, and help ([port guide](ports/sc-dark/README.md)) | GPL-3.0-or-later |
+| [OpenSpatialDelay](https://github.com/Spatial-Media-Lab/OpenSpatialDelay) | Spatial delay: each echo placed in 3D space and moved along trajectories, binaural (HRTF) or stereo | JUCE kit: an `AudioProcessor` like RipplerX, stereo out, no OSC (a stand-in `juce_osc`), three of the five HRTF sets. Trajectories run in `processBlock`, so their positions and the tap activity cross over as frames (`ports/open-spatial-delay/osd_frames.h`) | GPL-3.0 |
 
 The license column is the plugin's and its port's (`ports/<port>/`). JUCE-built bundles link JUCE, so they ship as
 AGPL-3.0. SC Dark and coopiano do not link JUCE: SC Dark uses GPL-3.0-or-later, coopiano MIT. See
@@ -158,5 +159,7 @@ it was built from) and the longer texts in `licenses/`, see `ports/<port>/NOTICE
 
 JUCE-built bundles link JUCE, so they are AGPLv3 (or covered by a commercial JUCE license) and also under the port's
 license. JUCE is AGPLv3/commercial, OB-Xf is GPL-3.0-or-later, RipplerX GPL-3.0, Odin 2 GPL-3.0-or-later (its Aldrich
-font OFL-1.1), Surge XT GPL-3.0-or-later, Six Sines MIT (GPL-3.0 as built), coopiano MIT, the CLAP headers MIT, the DejaVu fonts
+font OFL-1.1), Surge XT GPL-3.0-or-later, Six Sines MIT (GPL-3.0 as built), coopiano MIT, OpenSpatialDelay GPL-3.0
+(its fonts OFL-1.1, libmysofa BSD-3-Clause, the MIT KEMAR, CIPIC and HUTUBS HRTF sets under their own terms, see
+`ports/open-spatial-delay/NOTICES.md.in`), the CLAP headers MIT, the DejaVu fonts
 under the Bitstream Vera license; none of them is checked in, `scripts/fetch-deps.py` downloads them.

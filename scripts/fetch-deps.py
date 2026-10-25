@@ -185,6 +185,18 @@ DEPS += [
      lambda p: p.endswith((".hpp", ".cpp", ".ini")) or p in ("LICENSE", "README.md", "Makefile")),
 ]
 
+# Only the three small HRTF sets are hosted, the KU100 sets are 20 and 37 MB
+OSD_HRTF = ("HRTF/mit_kemar_large_pinna.sofa", "HRTF/cipic_subject_003.sofa", "HRTF/hutubs_pp2.sofa")
+
+# OpenSpatialDelay (Spatial Media Lab) at main at the time of writing, and libmysofa at the v1.3.2 its CMake fetches.
+# JUCE is the shared one.
+DEPS += [
+    ("open-spatial-delay", "Spatial-Media-Lab/OpenSpatialDelay", "14947a0ffa9e26087e546a141b437a93d5c4ae45",
+     lambda p: p.startswith(("Source/", "fonts/")) or p in OSD_HRTF or p in ("LICENSE", "README.md")),
+    ("libmysofa", "hoene/libmysofa", "33974839677da7044ef5a70be7ad5550735aae6e",
+     lambda p: p.startswith(("src/hrtf/", "src/hdf/", "src/resampler/")) or p == "LICENSE"),
+]
+
 FONT_PACKAGE ="https://registry.npmjs.org/dejavu-fonts-ttf/-/dejavu-fonts-ttf-2.37.3.tgz"
 FONT_FILES = ["package/ttf/DejaVuSans.ttf", "package/ttf/DejaVuSans-Bold.ttf", "package/LICENSE"]
 
@@ -218,6 +230,10 @@ def fetch_repo(directory, repo, commit, keep, force):
             return
         os.makedirs(os.path.dirname(out), exist_ok=True)
         curl(f"https://raw.githubusercontent.com/{repo}/{commit}/" + urllib.parse.quote(path), out)
+        with open(out, "rb") as file:
+            lfs = file.read(40).startswith(b"version https://git-lfs.github.com/spec/")
+        if lfs:
+            curl(f"https://media.githubusercontent.com/media/{repo}/{commit}/" + urllib.parse.quote(path), out)
 
     with cf.ThreadPoolExecutor(16) as pool:
         list(pool.map(get, files))
@@ -241,7 +257,8 @@ def fetch_fonts():
 
 # patches/<prefix>-*.patch apply to external/<directory>
 PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "ripplerx"), ("odin2-", "odin2"),
-                 ("surge-", "surge"), ("coopiano-", "coopiano")]
+                 ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
+                 ("libmysofa-", "libmysofa")]
 
 
 def apply_patches():

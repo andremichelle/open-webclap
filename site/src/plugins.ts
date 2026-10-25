@@ -69,5 +69,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         archive: "build/sc-dark/polarity-sc-dark.wclap.tar.gz", build: "scripts/build-sc-dark.sh",
         credit: "https://github.com/polarity/plugin.nih.polarity-sc-dark", source: port("sc-dark"),
         license: "GPL-3.0-or-later"
+    },
+    {
+        id: "open-spatial-delay", name: "OpenSpatialDelay", kind: "audio-fx",
+        description: "Spatial delay: each echo placed in 3D space and moved along trajectories, binaural or stereo",
+        clapId: "org.spatialmedialab.openspatialdelay",
+        archive: "build/open-spatial-delay/open-spatial-delay.wclap.tar.gz",
+        build: "scripts/build-open-spatial-delay.sh",
+        credit: "https://github.com/Spatial-Media-Lab/OpenSpatialDelay", source: port("open-spatial-delay"),
+        license: "GPL-3.0"
     }
 ]

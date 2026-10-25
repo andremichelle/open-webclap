@@ -443,6 +443,10 @@ private:
                 guiCreated = true;
                 pageOpen = true;
                 pageSnapshot = true;
+
+                if (extension != nullptr)
+                    extension->opened();
+
                 sendPageUpdates();
                 break;
 

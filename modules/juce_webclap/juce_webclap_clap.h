@@ -66,6 +66,9 @@ namespace juce::webclap
 
         /** Called about 30 times a second while the page is open: send it what it shows (meters). */
         virtual void update (AudioProcessor&, const Sender& send) {}
+
+        /** A page said hello: it knows nothing yet, the next update sends everything, not only what changed. */
+        virtual void opened() {}
     };
 
     /** Defined by ports that need it. The kit's default returns nullptr. */

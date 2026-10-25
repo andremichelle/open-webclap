@@ -1,0 +1,11 @@
+// What libmysofa's CMake writes from src/config.h.in, for v1.3.2
+
+#if !defined _CONFIG_H
+#define _CONFIG_H
+
+#define CMAKE_INSTALL_PREFIX ""
+#define CPACK_PACKAGE_VERSION_MAJOR 1
+#define CPACK_PACKAGE_VERSION_MINOR 3
+#define CPACK_PACKAGE_VERSION_PATCH 2
+
+#endif

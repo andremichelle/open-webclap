@@ -1,0 +1,130 @@
+# OpenSpatialDelay for WebCLAP
+
+OpenSpatialDelay by Spatial Media Lab (Andrew Rahman), a spatial delay whose echoes are placed and moved in 3D space,
+ported to WebCLAP. This is not an official OpenSpatialDelay release.
+
+- OpenSpatialDelay: https://github.com/Spatial-Media-Lab/OpenSpatialDelay (commit 14947a0, version 1.0.0)
+- This port, and the complete source of this bundle: @SOURCE_URL@
+  Build it with `scripts/build-open-spatial-delay.sh`, which fetches every dependency below at the commit named here.
+
+Changes in this port (`patches/open-spatial-delay-webclap.patch`): a stereo output bus, no OSC (a page has no
+UDP), and three of the five HRTF sets. The SADIE II and Bernschütz KU100 sets (profiles Immersive and Spatial) are
+left out for size, a project that uses them gets the Simple renderer with that profile's head model, as upstream does
+when a set fails to load.
+
+## License
+
+The bundle as a whole is licensed under the **GNU Affero General Public License, version 3** (`LICENSE`).
+
+OpenSpatialDelay is GPL-3.0 (`licenses/GPL-3.0.txt`), Copyright (C) 2026 Spatial Media Lab (spatialmedialab.org).
+Both modules contain the JUCE framework, used under the AGPL-3.0, so `module.wasm` and `ui/ui.wasm` are AGPL-3.0.
+GPL-3.0 section 13 permits the combination.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licenses for details.
+
+## Components
+
+| Component | In | Copyright | License |
+|---|---|---|---|
+| [OpenSpatialDelay](https://github.com/Spatial-Media-Lab/OpenSpatialDelay), incl. factory presets | both | 2026 Spatial Media Lab, Andrew Rahman | GPL-3.0 |
+| MIT KEMAR HRTF, large pinna (profile Studio Reference) | module | MIT Media Lab, Bill Gardner and Keith Martin | no usage restrictions, see below |
+| CIPIC HRTF, subject 003 (profile Natural) | module | The Regents of the University of California | see below |
+| HUTUBS HRTF, pp2 (profile Precise) | module | Audio Communication Group, TU Berlin; Huawei Munich Research Center; Sennheiser | CC BY 4.0 |
+| [libmysofa](https://github.com/hoene/libmysofa) 1.3.2 | both | 2016-2017 Symonics GmbH, Christian Hoene | BSD-3-Clause (`licenses/BSD-3-Clause-libmysofa.txt`) |
+| Speex resampler in libmysofa | both | 2007-2008 Jean-Marc Valin, 2008 Thorvald Natvig | BSD-3-Clause, see below |
+| portable_endian.h in libmysofa | both | Mathias Panzenböck | public domain |
+| [zlib](https://zlib.net) (Emscripten port, for libmysofa) | both | 1995-2024 Jean-loup Gailly and Mark Adler | zlib (`licenses/JUCE-zlib.txt`, the same text) |
+| WebCLAP kit ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/juce_webclap`) | both | André Michelle | MIT |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/open-spatial-delay`) | both | André Michelle | GPL-3.0 |
+| [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
+| [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
+| [DM Sans](https://github.com/googlefonts/dm-fonts) font | ui | 2014 The DM Sans Project Authors | OFL-1.1 (`licenses/OFL-1.1.txt`) |
+| [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) font | ui | 2020 The JetBrains Mono Project Authors | OFL-1.1 (`licenses/OFL-1.1.txt`) |
+| [Roboto](https://github.com/googlefonts/roboto-classic) Medium font | ui | 2011 The Roboto Project Authors | OFL-1.1 (`licenses/OFL-1.1.txt`) |
+| [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |
+
+The editor's module carries no HRTF data: its stand-in processor never renders audio.
+
+@JUCE_BUNDLED@
+
+## HRTF data
+
+The sets are embedded unchanged, as SOFA files converted from the original databases by Piotr Majdak and Michael
+Mihocic (Acoustics Research Institute, OeAW) for MIT and CIPIC.
+
+### MIT KEMAR
+
+> This HRTF data is provided without any usage restrictions. It is requested that you cite Gardner and Martin (1995)
+> when using this data for research or commercial applications.
+
+Gardner, W. G., and Martin, K. D. (1995). "HRTF measurements of a KEMAR," J Acoust Soc Am 97, 3907-3908.
+http://sound.media.mit.edu/resources/KEMAR.html
+
+### CIPIC
+
+> The Regents of the University of California hereby grant users permission to reproduce and/or use materials
+> available therein for any purpose- educational, research or commercial. However, each reproduction of any part of
+> the materials must include the copyright notice, if it is present. In addition, as a courtesy, if these materials
+> are used in published research, this use should be acknowledged in the publication. If these materials are used in
+> the development of commercial products, the Regents of the University of California request that written
+> acknowledgment of such use be sent to: CIPIC- Center for Image Processing and Integrated Computing University of
+> California 1 Shields Avenue Davis, CA 95616-8553
+
+V. R. Algazi, R. O. Duda, D. M. Thompson and C. Avendano, "The CIPIC HRTF Database," Proc. 2001 IEEE Workshop on
+Applications of Signal Processing to Audio and Electroacoustics, pp. 99-102, 2001.
+http://interface.cipic.ucdavis.edu/sound/hrtf.html
+
+### HUTUBS
+
+Licensed under the Creative Commons Attribution 4.0 International License,
+https://creativecommons.org/licenses/by/4.0/
+
+F. Brinkmann, M. Dinakaran, R. Pelzer, P. Grosche, D. Voss and S. Weinzierl, "A cross-evaluated database of measured
+and simulated HRTFs including 3D head meshes, anthropometric features, and headphone impulse responses," J. Audio Eng.
+Soc. 67(9), 705-718, 2019. https://doi.org/10.14279/depositonce-8487
+
+## License texts
+
+### MIT
+
+Applies to the components marked MIT above, each under its own copyright line.
+
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+> documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+> to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+> the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+> THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+> CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+> IN THE SOFTWARE.
+
+### BSD (the Speex resampler)
+
+> Copyright (C) 2007-2008 Jean-Marc Valin
+> Copyright (C) 2008 Thorvald Natvig
+>
+> Redistribution and use in source and binary forms, with or without modification, are permitted provided that the
+> following conditions are met:
+>
+> 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the
+> following disclaimer.
+>
+> 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the
+> following disclaimer in the documentation and/or other materials provided with the distribution.
+>
+> 3. The name of the author may not be used to endorse or promote products derived from this software without
+> specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+> TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+> THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+> BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+> INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+> (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+> POSSIBILITY OF SUCH DAMAGE.

@@ -209,6 +209,12 @@ private:
         }
     }
 
+    void opened() override
+    {
+        sentStep = -2;
+        sentWheels[0] = sentWheels[1] = -2.0f;
+    }
+
     int pendingDrawTables = 0;
     int32_t keptZoom = 0;
     bool zoomRequested = false;
