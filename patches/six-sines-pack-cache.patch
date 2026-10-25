@@ -1,0 +1,27 @@
+--- a/src/dsp/wavetable_io.cpp	2026-10-25 18:30:58
++++ b/src/dsp/wavetable_io.cpp	2026-10-25 18:31:08
+@@ -182,12 +182,24 @@
+ {
+     if (!data || size == 0)
+         return {};
++    // webclap: every state save packs the same tables again, so the last results are kept (single threaded)
++    struct Packed
++    {
++        std::vector<uint8_t> source, packed;
++    };
++    static std::vector<Packed> recent;
++    for (const auto &entry : recent)
++        if (entry.source.size() == size && std::memcmp(entry.source.data(), data, size) == 0)
++            return entry.packed;
+     auto bound = compressBound((mz_ulong)size);
+     std::vector<uint8_t> out(bound);
+     mz_ulong got{bound};
+     if (compress2(out.data(), &got, data, (mz_ulong)size, MZ_BEST_COMPRESSION) != MZ_OK)
+         return {};
+     out.resize(got);
++    if (recent.size() >= 8)
++        recent.erase(recent.begin());
++    recent.push_back({std::vector<uint8_t>(data, data + size), out});
+     return out;
+ }
+ 

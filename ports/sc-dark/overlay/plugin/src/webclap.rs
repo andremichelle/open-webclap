@@ -3,15 +3,27 @@ use crate::{SpectralCompressor, curve::Curve, match_level::MatchResult};
 use nih_plug::prelude::*;
 use serde::Deserialize;
 use serde_json::json;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 mod presets;
 
 #[derive(Default)]
-pub struct WebEditorState(AtomicBool);
+pub struct WebEditorState(AtomicBool, Mutex<Sent>);
+
+/// What the page holds already: a poll answer carries only what differs from it.
+#[derive(Default)]
+struct Sent {
+    params: HashMap<String, (f32, String)>,
+    sections: HashMap<&'static str, serde_json::Value>,
+}
 
 impl WebEditorState {
     pub fn is_open(&self) -> bool {
         self.0.load(Ordering::Relaxed)
+    }
+
+    fn forget(&self) {
+        if let Ok(mut sent) = self.1.lock() { *sent = Sent::default(); }
     }
 }
 
@@ -23,6 +35,7 @@ struct Message {
     text: Option<String>,
     request: Option<String>,
     preset: Option<serde_json::Value>,
+    full: Option<bool>,
     point: Option<usize>,
     frequency: Option<f32>,
     offset: Option<f32>,
@@ -31,6 +44,7 @@ struct Message {
 impl SpectralCompressor {
     pub(crate) fn web_open(&mut self, open: bool) {
         self.params.editor_state.0.store(open, Ordering::Relaxed);
+        self.params.editor_state.forget();
         if !open { self.delta_active.store(false, Ordering::Relaxed); }
     }
 
@@ -124,6 +138,8 @@ impl SpectralCompressor {
             return Vec::new();
         }
         if message.op != "poll" { return Vec::new(); }
+        if message.full == Some(true) { self.params.editor_state.forget(); }
+        let Ok(mut sent) = self.params.editor_state.1.lock() else { return Vec::new() };
         let mut status = "";
         if let Some(result) = self.match_runtime.take_finished_result() {
             match result {
@@ -139,16 +155,21 @@ impl SpectralCompressor {
                 MatchResult::Failed => status = "Not enough signal to match",
             }
         }
-        let params: Vec<_> = map.iter().map(|(id, param, group)| unsafe {
+        let params: Vec<_> = map.iter().filter_map(|(id, param, group)| unsafe {
             let value = param.unmodulated_normalized_value();
+            let text = param.normalized_value_to_string(value, true);
+            let known = sent.params.insert(id.clone(), (value, text.clone()));
+            if let Some((known_value, known_text)) = known {
+                if known_value == value && known_text == text { return None; }
+                return Some(json!({ "id": id, "value": value, "text": text }));
+            }
             let steps = param.step_count();
             let choices: Vec<_> = if steps.is_some_and(|steps| steps <= 16) {
                 let steps = steps.unwrap();
                 (0..=steps).map(|step| param.normalized_value_to_string(step as f32 / steps.max(1) as f32, true)).collect()
             } else { Vec::new() };
-            json!({ "id": id, "name": param.name(), "group": group, "value": value,
-                "text": param.normalized_value_to_string(value, true), "steps": steps,
-                "default": param.default_normalized_value(), "choices": choices })
+            Some(json!({ "id": id, "name": param.name(), "group": group, "value": value,
+                "text": text, "steps": steps, "default": param.default_normalized_value(), "choices": choices }))
         }).collect();
         let mut output = self.analyzer_output_data.borrow_mut();
         let analyzer = output.read();
@@ -173,14 +194,23 @@ impl SpectralCompressor {
                 let frequency = 30.0 * ((rate * 0.5).min(22000.0) / 30.0).powf(point as f32 / 191.0);
                 let index = ((frequency / (rate * 0.5)) * (analyzer.num_bins - 1) as f32).round() as usize;
                 let index = index.min(analyzer.num_bins - 1);
-                bins.push([frequency, util::gain_to_db(analyzer.envelope_followers[index].max(1.0e-9)),
-                    analyzer.gain_difference_db[index], curve.evaluate_ln(frequency.ln())]);
+                // hundredths are below what the graph can show, and shorter in JSON
+                let round = |value: f32| (value as f64 * 100.0).round() / 100.0;
+                bins.push([round(frequency), round(util::gain_to_db(analyzer.envelope_followers[index].max(1.0e-9))),
+                    round(analyzer.gain_difference_db[index]), round(curve.evaluate_ln(frequency.ln()))]);
             }
         }
-        serde_json::to_vec(&json!({ "type": "state", "params": params, "bins": bins, "pendingParameters": pending_parameters,
-            "offsets": offsets, "thresholds": thresholds, "curvePoints": curve_points,
-            "curveBase": [curve_params.intercept, curve_params.center_frequency, curve_params.slope, curve_params.curve],
+        let mut reply = json!({ "type": "state", "params": params, "pendingParameters": pending_parameters,
             "sampleRate": rate, "latency": self.window_size(),
-            "delta": self.delta_active.load(Ordering::Relaxed), "status": status })).unwrap_or_default()
+            "delta": self.delta_active.load(Ordering::Relaxed), "status": status });
+        let sections = [("bins", json!(bins)), ("offsets", json!(offsets)), ("thresholds", json!(thresholds)),
+            ("curvePoints", json!(curve_points)),
+            ("curveBase", json!([curve_params.intercept, curve_params.center_frequency, curve_params.slope, curve_params.curve]))];
+        for (key, value) in sections {
+            if sent.sections.get(key) == Some(&value) { continue; }
+            reply[key] = value.clone();
+            sent.sections.insert(key, value);
+        }
+        serde_json::to_vec(&reply).unwrap_or_default()
     }
 }

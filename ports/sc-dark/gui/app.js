@@ -84,6 +84,14 @@ function createControl(param) {
     } else { parent = groups.get(classify(param)); }
     parent.append(control); elements.set(param.id, {input, value, param});
 }
+function merge(previous, message) {
+    const params = previous?.params.map(param => ({...param})) ?? [];
+    for (const change of message.params) {
+        const index = params.findIndex(param => param.id === change.id);
+        if (index < 0) params.push(change); else params[index] = {...params[index], ...change};
+    }
+    return {...previous, ...message, params};
+}
 window.addEventListener('message', event => {
     if (event.source !== window.parent || !(event.data instanceof ArrayBuffer)) return;
     if (parentOrigin !== undefined && event.origin !== parentOrigin) return;
@@ -91,11 +99,12 @@ window.addEventListener('message', event => {
     try { message = JSON.parse(decode.decode(event.data)); } catch { return; }
     if (presets.receive(message)) return;
     if (message.type !== 'state' || !Array.isArray(message.params)) return;
-    parentOrigin = event.origin; state = message;
-    spectrum.update(message.bins, performance.now(), reducedMotion.matches);
-    pointDragging.reconcile(message, performance.now());
-    presets.updateState(message);
-    for (const param of message.params) {
+    // a reply carries only what changed since the last one, sections it leaves out are unchanged
+    parentOrigin = event.origin; state = merge(state, message);
+    if (message.bins) spectrum.update(message.bins, performance.now(), reducedMotion.matches);
+    pointDragging.reconcile(state, performance.now());
+    presets.updateState(state);
+    for (const param of state.params) {
         if (!elements.has(param.id)) createControl(param);
         const element = elements.get(param.id); element.param = param;
         if (document.activeElement !== element.input) {
@@ -105,8 +114,8 @@ window.addEventListener('message', event => {
         const previewing = pointDragging.preview && ['frequency', 'offset'].some(field => param.id === `curve_point_${field}_${pointDragging.preview.index}`);
         if (element.value && document.activeElement !== element.value && !previewing) element.value.value = param.text;
     }
-    for (const point of message.curvePoints ?? []) groups.get(`point-${point.index}`)?.classList.toggle('enabled', point.enabled);
-    document.querySelector('#point-count').textContent = `${(message.curvePoints ?? []).filter(point => point.enabled).length} / 8 enabled`;
+    for (const point of state.curvePoints ?? []) groups.get(`point-${point.index}`)?.classList.toggle('enabled', point.enabled);
+    document.querySelector('#point-count').textContent = `${(state.curvePoints ?? []).filter(point => point.enabled).length} / 8 enabled`;
     document.querySelector('#delta').setAttribute('aria-pressed', String(message.delta));
     document.querySelector('#latency').textContent = `${message.sampleRate.toFixed(0)} Hz · ${(message.latency / message.sampleRate * 1000).toFixed(1)} ms FFT latency`;
     const status = document.querySelector('#status');
@@ -192,4 +201,4 @@ document.addEventListener('visibilitychange', () => {
     else { spectrum.time = performance.now(); send({op: 'poll'}); invalidate(); }
 });
 setInterval(() => { if (!document.hidden) send({op: 'poll'}); }, 100);
-send({op: 'poll'});
+send({op: 'poll', full: true});

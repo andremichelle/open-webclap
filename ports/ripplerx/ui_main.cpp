@@ -186,7 +186,7 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_frame (double timeMs)
     syncNonParameterState();
     app->bridge->flush();
 
-    if (app->window != nullptr && app->window->getWidth() != app->lastWidth || app->window->getHeight() != app->lastHeight)
+    if (app->window != nullptr && (app->window->getWidth() != app->lastWidth || app->window->getHeight() != app->lastHeight))
     {
         app->lastWidth = app->window->getWidth();
         app->lastHeight = app->window->getHeight();

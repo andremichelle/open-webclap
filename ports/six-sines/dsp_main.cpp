@@ -28,6 +28,7 @@
 #include <clap/helpers/plugin.hxx>
 #include <clap/helpers/host-proxy.hxx>
 
+#include <map>
 #include <memory>
 #include "sst/plugininfra/patch-support/patch_base_clap_adapter.h"
 #include "sst/plugininfra/cpufeatures.h"
@@ -439,6 +440,7 @@ struct SixSinesWebClap : public plugHelper_t
                 engine->drainAudioToMainInto(engine->patchMain);
             pageReady = true;
             pageNeedsSnapshot = true;
+            pageValues.clear();
             sendPageUpdates();
             break;
         }
@@ -608,14 +610,29 @@ struct SixSinesWebClap : public plugHelper_t
         // slot is still in flight: the next call retries.
         engine->reconcileWavetables();
 
-        // Host-driven values first (audioToMain), so patchMain is current for a patch sent below
-        proto::Writer toMain(wire::toMain);
-        toMain.u32(0);
-        uint32_t count{0};
+        // Host-driven values first (audioToMain), so patchMain is current for a patch sent below. Every action
+        // is a value, so only the last one per action and id goes. Displays also skip what the page shows already,
+        // a parameter never: the page may have moved it since.
+        std::map<uint64_t, Synth::AudioToMainMsg> latest;
         while (auto m = engine->audioToMain.pop())
         {
             Synth::handleAudioToMainMessage(engine->patchMain, *m);
-            wire::put(toMain, *m);
+            if (m->action != Synth::AudioToMainMsg::MTS_POINTER)
+                latest[((uint64_t)m->action << 32) | m->paramId] = *m;
+        }
+        proto::Writer toMain(wire::toMain);
+        toMain.u32(0);
+        uint32_t count{0};
+        for (const auto &[key, m] : latest)
+        {
+            if (m.action != Synth::AudioToMainMsg::UPDATE_PARAM)
+            {
+                const auto known = pageValues.find(key);
+                if (known != pageValues.end() && known->second.first == m.value && known->second.second == m.value2)
+                    continue;
+                pageValues[key] = {m.value, m.value2};
+            }
+            wire::put(toMain, m);
             ++count;
         }
 
@@ -756,6 +773,7 @@ struct SixSinesWebClap : public plugHelper_t
     bool guiCreated{false}, pageReady{false}, pageNeedsSnapshot{false}, pageUpdateRequested{false};
     uint32_t samplesSinceRequest{0};
     uint32_t lastForceRebuild{0};
+    std::map<uint64_t, std::pair<float, float>> pageValues;
 };
 
 } // namespace clapimpl

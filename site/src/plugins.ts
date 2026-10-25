@@ -63,6 +63,13 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         credit: "https://github.com/peterc/coopiano", source: port("coopiano"), license: "MIT"
     },
     {
+        id: "dexed", name: "Dexed", kind: "instrument",
+        description: "DX7 FM synthesizer: six operators, 32 algorithms, cartridge manager",
+        clapId: "com.digital-suburban.dexed",
+        archive: "build/dexed/dexed.wclap.tar.gz", build: "scripts/build-dexed.sh",
+        credit: "https://github.com/asb2m10/dexed", source: port("dexed"), license: "GPL-3.0"
+    },
+    {
         id: "sc-dark", name: "Polarity SC Dark", kind: "audio-fx",
         description: "Spectral compressor with upward and downward compression",
         clapId: "de.polarity-music.polarity-sc-dark",

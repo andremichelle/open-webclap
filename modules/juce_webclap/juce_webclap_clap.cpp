@@ -231,6 +231,8 @@ private:
         if (process.out_events != nullptr)
             writeEvents (*process.out_events);
 
+        samplesSinceSend = jmin (samplesSinceSend + (int) frames, extensionInterval);
+
         if (extension != nullptr && pageOpen)
         {
             samplesSinceExtensionUpdate += frames;
@@ -550,7 +552,8 @@ private:
     {
         pumpMessages();
 
-        if (pageUpdateRequested)
+        // hosts that call back after every block would get a frame per block, the process fallback sends the rest
+        if (pageUpdateRequested && (pageSnapshot || samplesSinceSend == 0 || samplesSinceSend >= extensionInterval))
             sendPageUpdates();
     }
 
@@ -558,6 +561,7 @@ private:
     void sendPageUpdates()
     {
         pageUpdateRequested = false;
+        samplesSinceSend = 0;
 
         if (! guiCreated || hostWebview == nullptr || hostWebview->send == nullptr)
             return;
@@ -908,7 +912,7 @@ private:
     bool extensionUpdateDue = false;
     int samplesSinceExtensionUpdate = 0, extensionInterval = 1600;
     std::unordered_set<clap_id> pageValues;
-    int samplesSinceRequest = 0, fallbackInterval = 1600;
+    int samplesSinceRequest = 0, fallbackInterval = 1600, samplesSinceSend = 0;
     uint32_t editorWidth = 0, editorHeight = 0;
 };
 

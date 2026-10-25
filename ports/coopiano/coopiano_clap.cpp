@@ -148,7 +148,7 @@ struct Coopiano
     const clap_host_webview* hostWebview = nullptr;
     bool guiCreated = false, pageUpdateRequested = false;
     bool pageValues[paramCount] {};
-    size_t samplesSinceRequest = 0;
+    size_t samplesSinceRequest = 0, samplesSinceSend = 0;
 
     // --- setup ----------------------------------------------------------------------------------------------
 
@@ -569,6 +569,7 @@ struct Coopiano
 
         if (process.out_events != nullptr)
             writeEvents (*process.out_events);
+        samplesSinceSend = std::min (samplesSinceSend + frames, sendInterval());
         // a host that never calls on_main_thread gets the page's updates from here, 30 times a second at most
         if (pageUpdateRequested && (samplesSinceRequest += frames) > (size_t) (sampleRate / 30.0))
             sendPageUpdates();
@@ -660,9 +661,19 @@ struct Coopiano
         host->request_callback (host);
     }
 
+    size_t sendInterval() const { return (size_t) (sampleRate / 30.0); }
+
+    // hosts that call back after every block would get a frame per block, process sends the rest
+    void sendPageUpdatesWhenDue()
+    {
+        if (pageUpdateRequested && (samplesSinceSend == 0 || samplesSinceSend >= sendInterval()))
+            sendPageUpdates();
+    }
+
     void sendPageUpdates()
     {
         pageUpdateRequested = false;
+        samplesSinceSend = 0;
         for (clap_id id = 0; id < paramCount; ++id)
             if (std::exchange (pageValues[id], false))
                 sendValue (id);
@@ -965,8 +976,7 @@ const clap_plugin* createPlugin (const clap_host* host)
     };
     p->plugin.on_main_thread = [] (const clap_plugin* plugin)
     {
-        if (self (plugin).pageUpdateRequested)
-            self (plugin).sendPageUpdates();
+        self (plugin).sendPageUpdatesWhenDue();
     };
     return &p->plugin;
 }
