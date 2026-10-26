@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WetChorus</title>
+    <style>
+        html, body {margin: 0; height: 100%; overflow: hidden}
+        body {background: #111012; user-select: none; -webkit-user-select: none}
+        canvas {position: absolute; display: block; touch-action: none}
+    </style>
+</head>
+<body>
+<canvas></canvas>
+<script>
+    // message types, see plugin/wetchorus.cpp
+    const PAGE_POLL = 1, PAGE_PARAM_BEGIN = 2, PAGE_PARAM_SET = 3, PAGE_PARAM_END = 4, PAGE_HOVER = 7
+    const PLUGIN_STATUS = 1
+    const SPEED = 0, DEPTH = 1, MODE = 2, INVALID_ID = 0xffffffff
+    const STEPS = 65, COARSE = 4, SPEED_MAX = 10, MODE_MAX = 180
+    // everything below is in backplate pixels (resource/layout.json upstream), the art is drawn at 1x for 768 x 512
+    const PLATE = {width: 768, height: 512}
+    const KNOB = 131
+    const KNOBS = [{id: SPEED, x: 34, y: 178, image: "knob_speed"}, {id: MODE, x: 296, y: 178, image: "knob_mode"}]
+    const BUTTON = {x: 185, y: 201, size: 94}, LED = {x: 223, y: 181, size: 19}, GLOW = {x: 203, y: 161, size: 59}
+    const METERS = [{x: 485, y: 192, width: 21}, {x: 620, y: 192, width: 21}, {x: 682, y: 192, width: 20}]
+    const METER_HEIGHT = 185, SEGMENTS = 16, SEGMENT_GAP = 2
+    // the whole plate scaled into the page, 264 x 176 in openDAW's device panel, the window at any zoom
+    const crop = {x: 0, y: 0, ...PLATE}
+    const canvas = document.querySelector("canvas")
+    const context = canvas.getContext("2d")
+    const images = {}
+    const state = {values: [5, 0, MODE_MAX], meters: [0, 0, 0], scale: 1, hovered: INVALID_ID, drag: null, dirty: true, ratio: 0}
+
+    const post = bytes => window.parent.postMessage(bytes.buffer, "*")
+    const postParam = (type, id, value) => {
+        const message = new DataView(new ArrayBuffer(type === PAGE_PARAM_SET ? 16 : 8))
+        message.setUint8(0, type)
+        message.setUint32(4, id, true)
+        if (type === PAGE_PARAM_SET) {message.setFloat64(8, value, true)}
+        post(new Uint8Array(message.buffer))
+    }
+    const hover = id => {
+        if (state.hovered === id) {return}
+        state.hovered = id
+        const message = new DataView(new ArrayBuffer(8))
+        message.setUint8(0, PAGE_HOVER)
+        message.setUint32(4, id, true)
+        post(new Uint8Array(message.buffer))
+    }
+
+    const maxOf = id => id === SPEED ? SPEED_MAX : MODE_MAX
+    const stepOf = id => Math.min(STEPS - 1, Math.max(0, Math.round(state.values[id] / maxOf(id) * (STEPS - 1))))
+    const valueOfStep = (id, step) => maxOf(id) * step / (STEPS - 1)
+    const deep = () => state.values[DEPTH] >= 0.5
+
+    // meterlevel.h: 0..1 over -72..+12 dB, blocks over -48..0 dB, the last one red above 0 dBFS
+    const litSegments = normalized => {
+        if (normalized <= 1e-6) {return 0}
+        const db = -72 + normalized * 84
+        if (db > 0) {return SEGMENTS}
+        const band = 48 / (SEGMENTS - 1)
+        let lit = 0
+        for (let index = 0; index < SEGMENTS - 1; index++) {if (db >= -48 + index * band - 1e-9) {lit = index + 1}}
+        return lit
+    }
+    const zoneColors = index => {
+        if (index >= SEGMENTS - 1) {return ["#ff0000", "#2a0a0a"]}
+        const top = -48 + (index + 1) * 48 / (SEGMENTS - 1)
+        return top > -12 + 1e-9 ? ["#ffff00", "#2a2a0a"] : ["#00ff00", "#0a2a0a"]
+    }
+
+    const resize = () => {
+        const ratio = window.devicePixelRatio || 1
+        state.ratio = ratio
+        state.scale = Math.min(window.innerWidth / PLATE.width, window.innerHeight / PLATE.height)
+        const width = crop.width * state.scale, height = crop.height * state.scale
+        const left = (window.innerWidth - width) / 2
+        const top = (window.innerHeight - height) / 2
+        canvas.style.left = `${left}px`
+        canvas.style.top = `${top}px`
+        canvas.style.width = `${width}px`
+        canvas.style.height = `${height}px`
+        canvas.width = Math.round(width * ratio)
+        canvas.height = Math.round(height * ratio)
+        state.dirty = true
+    }
+
+    // one drawImage per part, source rectangles in image pixels, targets in backplate pixels
+    const draw = () => {
+        if (!state.dirty || Object.keys(images).length < 6) {return}
+        state.dirty = false
+        const ratio = canvas.width / (crop.width * state.scale)
+        const unit = state.scale * ratio
+        context.setTransform(unit, 0, 0, unit, -crop.x * unit, -crop.y * unit)
+        context.imageSmoothingEnabled = true
+        context.imageSmoothingQuality = "high"
+        context.drawImage(images.backplate, crop.x, crop.y, crop.width, crop.height, crop.x, crop.y, crop.width, crop.height)
+        for (const {id, x, y, image} of KNOBS) {
+            context.drawImage(images[image], 0, stepOf(id) * KNOB, KNOB, KNOB, x, y, KNOB, KNOB)
+        }
+        const on = deep() ? 1 : 0
+        context.drawImage(images.depth_button, 0, on * BUTTON.size, BUTTON.size, BUTTON.size, BUTTON.x, BUTTON.y, BUTTON.size, BUTTON.size)
+        if (on === 1) {context.drawImage(images.depth_glow, GLOW.x, GLOW.y, GLOW.size, GLOW.size)}
+        context.drawImage(images.depth_led, 0, on * LED.size, LED.size, LED.size, LED.x, LED.y, LED.size, LED.size)
+        const segment = (METER_HEIGHT - (SEGMENTS - 1) * SEGMENT_GAP) / SEGMENTS
+        METERS.forEach(({x, y, width}, meter) => {
+            const lit = litSegments(state.meters[meter])
+            const bottom = y + METER_HEIGHT
+            context.fillStyle = "#000000"
+            context.fillRect(x, y, width, METER_HEIGHT)
+            for (let index = 0; index < lit; index++) {
+                const top = bottom - (index + 1) * segment - index * SEGMENT_GAP
+                context.fillStyle = zoneColors(index)[0]
+                for (let ring = 3; ring >= 1; ring--) {
+                    context.globalAlpha = 42 / 255 * (4 - ring) / 3
+                    context.fillRect(x - ring, top - ring, width + ring * 2, segment + ring * 2)
+                }
+                context.globalAlpha = 1
+            }
+            for (let index = 0; index < SEGMENTS; index++) {
+                const top = bottom - (index + 1) * segment - index * SEGMENT_GAP
+                context.fillStyle = zoneColors(index)[index < lit ? 0 : 1]
+                context.fillRect(x, top, width, segment)
+            }
+        })
+    }
+
+    const toPlate = event => {
+        const bounds = canvas.getBoundingClientRect()
+        return {x: crop.x + (event.clientX - bounds.left) / state.scale, y: crop.y + (event.clientY - bounds.top) / state.scale}
+    }
+    const inside = ({x, y}, left, top, width, height) => x >= left && x < left + width && y >= top && y < top + height
+    const hit = point => {
+        for (const {id, x, y} of KNOBS) {
+            if (Math.hypot(point.x - (x + KNOB / 2), point.y - (y + KNOB / 2)) <= KNOB / 2) {return id}
+        }
+        if (inside(point, BUTTON.x, BUTTON.y, BUTTON.size, BUTTON.size)) {return DEPTH}
+        return null
+    }
+    const setStep = (id, step) => {
+        const value = valueOfStep(id, Math.min(STEPS - 1, Math.max(0, step)))
+        if (value === state.values[id]) {return}
+        state.values[id] = value
+        state.dirty = true
+        postParam(PAGE_PARAM_SET, id, value)
+    }
+    // upstream ChorusKnob: a move lands on the coarse detents, Shift moves one fine step
+    const snapped = (step, fine) => fine ? step : Math.round(step / COARSE) * COARSE
+    const PIXELS_PER_DETENT = 12
+
+    canvas.addEventListener("pointermove", event => {
+        const target = hit(toPlate(event))
+        canvas.style.cursor = target === null ? "default" : target === DEPTH ? "pointer" : "ns-resize"
+        const drag = state.drag
+        if (drag !== null) {
+            const travel = (drag.startY - event.clientY) / state.scale / PIXELS_PER_DETENT
+            const fine = event.shiftKey
+            setStep(drag.id, snapped(drag.startStep + Math.round(travel * (fine ? 1 : COARSE)), fine))
+            return
+        }
+        hover(target ?? INVALID_ID)
+    })
+    canvas.addEventListener("pointerleave", () => {
+        if (state.drag !== null) {return}
+        hover(INVALID_ID)
+    })
+    canvas.addEventListener("pointerdown", event => {
+        // ctrl+click is the context click on macOS, it arrives as button 0
+        if (event.button !== 0 || event.ctrlKey) {return}
+        const target = hit(toPlate(event))
+        if (target === DEPTH) {
+            postParam(PAGE_PARAM_BEGIN, DEPTH)
+            state.values[DEPTH] = deep() ? 0 : 1
+            state.dirty = true
+            postParam(PAGE_PARAM_SET, DEPTH, state.values[DEPTH])
+            postParam(PAGE_PARAM_END, DEPTH)
+        } else if (target !== null) {
+            canvas.setPointerCapture(event.pointerId)
+            state.drag = {id: target, startY: event.clientY, startStep: stepOf(target)}
+            postParam(PAGE_PARAM_BEGIN, target)
+        }
+    })
+    const release = () => {
+        if (state.drag === null) {return}
+        postParam(PAGE_PARAM_END, state.drag.id)
+        state.drag = null
+    }
+    canvas.addEventListener("pointerup", release)
+    canvas.addEventListener("lostpointercapture", release)
+    canvas.addEventListener("wheel", event => {
+        const target = hit(toPlate(event))
+        if (target !== SPEED && target !== MODE) {return}
+        event.preventDefault()
+        const fine = event.shiftKey
+        const direction = event.deltaY < 0 ? 1 : event.deltaY > 0 ? -1 : 0
+        if (direction === 0) {return}
+        postParam(PAGE_PARAM_BEGIN, target)
+        setStep(target, snapped(snapped(stepOf(target), fine) + direction * (fine ? 1 : COARSE), fine))
+        postParam(PAGE_PARAM_END, target)
+    }, {passive: false})
+
+    window.addEventListener("message", event => {
+        if (!(event.data instanceof ArrayBuffer)) {return}
+        const view = new DataView(event.data)
+        if (view.byteLength < 40 || view.getUint8(0) !== PLUGIN_STATUS) {return}
+        for (let meter = 0; meter < 3; meter++) {
+            const level = view.getFloat32(4 + meter * 4, true)
+            if (level !== state.meters[meter]) {
+                state.meters[meter] = level
+                state.dirty = true
+            }
+        }
+        for (let id = 0; id < 3; id++) {
+            if (state.drag?.id === id) {continue}
+            const value = view.getFloat64(16 + id * 8, true)
+            if (value !== state.values[id]) {
+                state.values[id] = value
+                state.dirty = true
+            }
+        }
+    })
+    window.addEventListener("resize", resize)
+    for (const name of ["backplate", "knob_speed", "knob_mode", "depth_button", "depth_led", "depth_glow"]) {
+        const image = new Image()
+        image.onload = () => {
+            images[name] = image
+            state.dirty = true
+        }
+        image.src = `resource/${name}.png`
+    }
+    resize()
+    const frame = () => {
+        post(new Uint8Array([PAGE_POLL]))
+        // another screen or a browser zoom changes the pixel density without a resize
+        if ((window.devicePixelRatio || 1) !== state.ratio) {resize()}
+        draw()
+        requestAnimationFrame(frame)
+    }
+    frame()
+</script>
+</body>
+</html>

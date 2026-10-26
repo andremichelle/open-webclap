@@ -30,16 +30,19 @@ export type BundleSource = "hosted" | "local"
 
 export type InputKind = "none" | "microphone" | "file" | "tone" | "noise"
 
+// A catalog plugin's bundle, registered: the url the engine asks for and the archive's bytes
+export type DownloadedBundle = { url: string, bytes: ArrayBuffer }
+
 // Which plugin of a bundle a session runs, and how: an instrument, or an effect on an audio track
 export type PluginIdentity = { clapId: string, name: string, kind: PluginKind }
 
 // One plugin in its own openDAW project: an instrument on an instrument unit, or an effect on an audio track.
 // Notes go to the unit, effect input comes from the track (a looped sample) or the unit's monitored capture.
 export class PluginSession implements Terminable {
-    // Fetches a catalog plugin's bundle and registers it with openDAW, resolves to the url the engine asks for
+    // Fetches a catalog plugin's bundle and registers it with openDAW
     // download: the bundle's bytes so far and in all (0 while the host does not say)
     static async download(plugin: PluginEntry, source: BundleSource,
-                          download: Procedure<{ loaded: number, total: number }>): Promise<string> {
+                          download: Procedure<{ loaded: number, total: number }>): Promise<DownloadedBundle> {
         const url = source === "hosted" ? await HostedIndex.bundleUrl(plugin.clapId) : `/bundles/${plugin.id}.wclap.tar.gz`
         if (url === null) {throw new Error(`${plugin.name} is not hosted by openDAW yet`)}
         const response = await fetch(url, source === "hosted" ? HostedHeaders : undefined)
@@ -49,7 +52,7 @@ export class PluginSession implements Terminable {
         const bytes = await network.progress(fraction => download({loaded: fraction * total, total}))(response).arrayBuffer()
         // The engine asks for the bundle by its url; registered, it needs no credentials of its own
         await WclapBundles.register(url, bytes)
-        return url
+        return {url, bytes}
     }
 
     // url: a registered bundle. Without an identity, the engine describes the bundle and the session runs its

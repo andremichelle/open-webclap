@@ -17,6 +17,9 @@ export type PluginEntry = {
     license: string
 }
 
+// what a downloaded bundle is saved as
+export const bundleFileName = (plugin: PluginEntry): string => `${plugin.id}.wclap.tar.gz`
+
 const port = (name: string) => `https://github.com/andremichelle/open-webclap/tree/main/ports/${name}`
 
 export const Plugins: ReadonlyArray<PluginEntry> = [

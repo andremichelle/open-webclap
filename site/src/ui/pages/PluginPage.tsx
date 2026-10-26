@@ -2,7 +2,7 @@ import css from "./PluginPage.sass?inline"
 import {DefaultObservableValue, Lifecycle} from "@opendaw/lib-std"
 import {createElement, Frag, JsxValue, PageFactory, replaceChildren} from "@opendaw/lib-jsx"
 import {Events, Html} from "@opendaw/lib-dom"
-import {PluginEntry} from "@/plugins"
+import {bundleFileName, PluginEntry} from "@/plugins"
 import {boot, Env} from "@/opendaw/Boot"
 import {Imports} from "@/opendaw/Imports"
 import {BundleSource, PluginSession} from "@/opendaw/PluginSession"
@@ -29,17 +29,21 @@ export const PluginPage = (plugin: PluginEntry): PageFactory<null> => ({lifecycl
     const local = source === "local"
     const name = `${plugin.name}${local ? " (local build)" : ""}`
     const megabytes = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1)
+    // the bundle the page runs, offered once it is here
+    const save: HTMLAnchorElement = <a className="hidden" download={bundleFileName(plugin)}>Download</a>
+    lifecycle.own({terminate: () => {if (save.href.length > 0) {URL.revokeObjectURL(save.href)}}})
     return (
         <PluginView lifecycle={lifecycle} name={plugin.name}
                     links={(
                         <div className="links">
                             <a href={plugin.credit} target="_blank" rel="noopener noreferrer">Original</a>
                             <a href={plugin.source} target="_blank" rel="noopener noreferrer">Port source</a>
+                            {save}
                             <span>{plugin.license}</span>
                         </div>
                     )}
                     open={async (env, loading) => {
-                        const url = await PluginSession.download(plugin, source, ({loaded, total}) => {
+                        const {url, bytes} = await PluginSession.download(plugin, source, ({loaded, total}) => {
                             if (total === 0) {
                                 loading.setValue({text: `Downloading ${name}… ${megabytes(loaded)} MB`, fraction: null})
                             } else if (loaded < total) {
@@ -49,6 +53,8 @@ export const PluginPage = (plugin: PluginEntry): PageFactory<null> => ({lifecycl
                                 loading.setValue({text: `Starting ${name}…`, fraction: null})
                             }
                         })
+                        save.href = URL.createObjectURL(new Blob([bytes], {type: "application/gzip"}))
+                        save.classList.remove("hidden")
                         return PluginSession.create(env, url, plugin)
                     }}
                     subtitle={`${plugin.clapId}${local ? " · local build" : ""}`}
