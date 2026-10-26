@@ -1,5 +1,6 @@
 // The ported plugins. Each gets a page at /<id>. The bundles are the ones openDAW hosts (assets.opendaw.studio),
-// found by clap id in its index (HostedIndex); in dev, ?local loads the archive the build script left in build/.
+// found by clap id in its index (HostedIndex), or the site's own (bundled); in dev, ?local loads the archive the
+// build script left in build/.
 // No DOM here: vite.config.ts reads this list too.
 
 export type PluginKind = "instrument" | "audio-fx"
@@ -15,6 +16,7 @@ export type PluginEntry = {
     credit: string // the original plugin
     source: string // this port
     license: string
+    bundled?: string // served by the site itself, for a plugin that is not in openDAW's catalogue
 }
 
 // what a downloaded bundle is saved as
@@ -88,5 +90,13 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         build: "scripts/build-open-spatial-delay.sh",
         credit: "https://github.com/Spatial-Media-Lab/OpenSpatialDelay", source: port("open-spatial-delay"),
         license: "GPL-3.0"
+    },
+    {
+        id: "wet-chorus", name: "WetChorus", kind: "audio-fx",
+        description: "Bucket-brigade stereo chorus after a 1970s guitar combo, a demo of openDAW's device panel",
+        clapId: "studio.opendaw.commons.wet-chorus",
+        archive: "build/wet-chorus/wet-chorus.wclap.tar.gz", build: "scripts/build-wet-chorus.sh",
+        credit: "https://github.com/yonie/WetChorus", source: port("wet-chorus"), license: "MIT",
+        bundled: "/bundled/wet-chorus.wclap.tar.gz"
     }
 ]

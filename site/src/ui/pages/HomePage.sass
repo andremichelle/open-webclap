@@ -18,7 +18,7 @@ component
 
   > .grid
     display: grid
-    grid-template-columns: repeat(auto-fill, minmax(18em, 1fr))
+    grid-template-columns: repeat(auto-fill, minmax(min(25em, 100%), 1fr))
     gap: 1em
 
     > article
@@ -46,8 +46,8 @@ component
 
       > footer
         display: flex
-        flex-wrap: wrap
         column-gap: 1em
+        white-space: nowrap
         font-size: 0.75rem
         color: var(--color-dark)
 

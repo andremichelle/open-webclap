@@ -4,8 +4,8 @@
 and the panel art are taken unchanged from commit `b9977a76171e8ab996b61a2def1c0acd6a02f5ee`, only the VST3 glue is
 replaced by a CLAP plugin and the VSTGUI editor by a web page.
 
-A tech demo of openDAW's device panel for audio effects, so it is neither on the site nor in openDAW's catalogue.
-`scripts/build-wet-chorus.sh` builds `build/wet-chorus/wet-chorus.wclap.tar.gz`, for openDAW's Import WebCLAP.
+A tech demo of openDAW's device panel for audio effects: on the site, but not in openDAW's catalogue. The site
+serves the bundle itself (`site/public/bundled/`), `scripts/build-wet-chorus.sh` builds it and copies it there.
 
 ## Layout
 

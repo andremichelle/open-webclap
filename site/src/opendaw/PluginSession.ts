@@ -43,9 +43,8 @@ export class PluginSession implements Terminable {
     // download: the bundle's bytes so far and in all (0 while the host does not say)
     static async download(plugin: PluginEntry, source: BundleSource,
                           download: Procedure<{ loaded: number, total: number }>): Promise<DownloadedBundle> {
-        const url = source === "hosted" ? await HostedIndex.bundleUrl(plugin.clapId) : `/bundles/${plugin.id}.wclap.tar.gz`
-        if (url === null) {throw new Error(`${plugin.name} is not hosted by openDAW yet`)}
-        const response = await fetch(url, source === "hosted" ? HostedHeaders : undefined)
+        const {url, init} = await PluginSession.locate(plugin, source)
+        const response = await fetch(url, init)
         if (!response.ok) {throw new Error(`${url}: ${response.status} ${await response.text()}`.trim())}
         const total = Number(response.headers.get("Content-Length") ?? 0)
         download({loaded: 0, total})
@@ -53,6 +52,15 @@ export class PluginSession implements Terminable {
         // The engine asks for the bundle by its url; registered, it needs no credentials of its own
         await WclapBundles.register(url, bytes)
         return {url, bytes}
+    }
+
+    // Where a catalog plugin's bundle is, and what fetching it needs
+    static async locate(plugin: PluginEntry, source: BundleSource): Promise<{ url: string, init?: RequestInit }> {
+        if (source === "local") {return {url: `/bundles/${plugin.id}.wclap.tar.gz`}}
+        if (plugin.bundled !== undefined) {return {url: plugin.bundled}}
+        const url = await HostedIndex.bundleUrl(plugin.clapId)
+        if (url === null) {throw new Error(`${plugin.name} is not hosted by openDAW yet`)}
+        return {url, init: HostedHeaders}
     }
 
     // url: a registered bundle. Without an identity, the engine describes the bundle and the session runs its
