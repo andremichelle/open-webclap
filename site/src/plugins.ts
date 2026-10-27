@@ -98,5 +98,13 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         archive: "build/wet-chorus/wet-chorus.wclap.tar.gz", build: "scripts/build-wet-chorus.sh",
         credit: "https://github.com/yonie/WetChorus", source: port("wet-chorus"), license: "MIT",
         bundled: "/bundled/wet-chorus.wclap.tar.gz"
+    },
+    {
+        id: "glitchfest", name: "Glitchfest", kind: "audio-fx",
+        description: "Glitch effect: twelve rows of stutter, tape, pitch and more, blocks drawn into patterns on the transport",
+        clapId: "studio.opendaw.commons.glitchfest",
+        archive: "build/glitchfest/glitchfest.wclap.tar.gz", build: "scripts/build-glitchfest.sh",
+        credit: "https://github.com/andremichelle/opendaw-commons/tree/main/wclaps/glitchfest",
+        source: "https://github.com/andremichelle/opendaw-commons/tree/main/wclaps/glitchfest", license: "MIT"
     }
 ]
