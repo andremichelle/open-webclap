@@ -10,8 +10,10 @@ transient/steady or peak/steady, ported to WebCLAP. This is not an official ZL A
 Changes in this port (`patches/zl-splitter-webclap.patch`): the editor's analyzer loop, which runs on a thread
 upstream, runs one pass per repaint on the editor's thread, and the processor builds without its editor.
 Upstream has two stereo outputs, one per part. The bundle has one stereo output, which carries output 1 (left,
-mid, low, transient or peak); the Swap parameter puts the other part there. UI settings the editor saves live in
-the page's memory and are gone when it reloads.
+mid, low, transient or peak); the Swap parameter puts the other part there. The editor has no colour settings,
+no import or export of control settings, no tooltip language setting (tooltips are in English) and no Credit tab:
+the UI settings panel shows a one-line legal notice instead, and the credits are below. UI settings the editor
+saves live in the page's memory and are gone when it reloads.
 
 ## License
 
@@ -34,7 +36,19 @@ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the license
 | WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-splitter`, `ports/zl-common`) | both | André Michelle | AGPL-3.0 |
 | [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
 | [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
+| [Material Symbols](https://github.com/google/material-design-icons) icons | ui | Google LLC | Apache-2.0 (`licenses/Apache-2.0.txt`) |
 | [Inter](https://github.com/rsms/inter) font (subset) | ui | 2016 The Inter Project Authors | OFL-1.1 (`licenses/OFL-1.1.txt`) |
 | [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |
+
+ZLSplitter's own logo and the ZL Audio logo are not under the AGPL-3.0 (upstream's credits).
+
+ZLSplitter starts from the [pamplejuce](https://github.com/sudara/pamplejuce) JUCE template (not part of the
+bundle).
+
+## References
+
+- Martin Vicanek. A New Reverse IIR Filtering Algorithm. (2022).
+- Nigel Redmon. Cascading filters. (2016).
+- Derry Fitzgerald. Harmonic/percussive separation using median filtering. (2010).
 
 @JUCE_BUNDLED@

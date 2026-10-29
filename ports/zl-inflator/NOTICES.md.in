@@ -8,8 +8,9 @@ not an official ZL Audio release.
   Build it with `scripts/build-zl-inflator.sh`, which fetches every dependency below at the commit named here.
 
 Changes in this port (`patches/zl-inflator-webclap.patch`): the processor builds without its editor, and its meters
-hand what they measured to the editor's meters in the page. The editor's UI settings (style, window size) live in
-the page's memory and are gone when it reloads.
+hand what they measured to the editor's meters in the page. The editor always shows its default (dark) style; a
+double click on the logo no longer switches it. Its window size lives in the page's memory and is gone when it
+reloads.
 
 ## License
 

@@ -9,8 +9,8 @@ release.
   Build it with `scripts/build-zl-warm.sh`, which fetches every dependency below at the commit named here.
 
 Changes in this port (`patches/zl-warm-webclap.patch`): the processor builds without its editor. The meters run
-while the page is open and cross over to its meter panel. The editor's UI settings (style, window size) live in the
-page's memory and are gone when it reloads.
+while the page is open and cross over to its meter panel. The editor always shows its default (dark) style; a double
+click on the logo no longer switches it. Its window size lives in the page's memory and is gone when it reloads.
 
 ## License
 

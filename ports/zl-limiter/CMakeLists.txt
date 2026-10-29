@@ -59,9 +59,11 @@ add_custom_command(
 
 # ---------------------------------------------------------------------------------------------------------------
 # ZLLimiter, its sources as upstream globs them (one patch, see patches/zl-limiter-webclap.patch): the processor
-# in both modules (in ui.wasm as the editor's stand-in), the editor only in ui.wasm
+# in both modules (in ui.wasm as the editor's stand-in), the editor only in ui.wasm, without the preset browser,
+# the colour settings and the credits (the patch drops them from the editor)
 
-zl_sources("${ZL}" ZL_PROCESSOR_SOURCES ZL_EDITOR_SOURCES)
+zl_sources("${ZL}" ZL_PROCESSOR_SOURCES ZL_EDITOR_SOURCES
+    "^panel/preset_browser/" "/(colour_setting|credit)_panel\\.cpp$")
 
 set(ZL_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}" "${GENERATED}" "${ZL}/source")
 

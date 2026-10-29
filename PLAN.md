@@ -518,7 +518,12 @@ Makeup (GPL-3.0). ZLEComp is archived and left out.
   time in seconds and samples from the seconds timeline or from beats at the current tempo (openDAW sends only
   beats).
 - **Splitter:** two stereo outputs upstream; the bundle has one, carrying the first part, or the second with Swap.
-- **Open:** presets and UI settings the editors save to files live in the page's memory, ZL Equalizer 2's match EQ
+- **Trimmed editors:** no presets (the preset browser, ZL Equalizer 2's match target files, ZL Splitter's control
+  import/export), no colour schemes (the colour tab; the older four's light/dark switch on the logo), no tooltip
+  language (English), no resize corner. The credits tab is a one-line legal notice at the bottom of the settings
+  panel (copyright, license, no warranty, source links: GPL-3.0 section 5(d) asks a modified version to keep showing
+  what the original shows); the third-party credits and references are in each bundle's NOTICES.md.
+- **Open:** UI settings the editors save to files live in the page's memory, ZL Equalizer 2's match EQ
   fits its curve in one editor frame (the editor stalls while it does), ZL Warm's MiSans font has no license file
   upstream.
 

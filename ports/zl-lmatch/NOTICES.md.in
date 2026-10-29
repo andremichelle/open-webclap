@@ -7,10 +7,11 @@ release.
 - This port, and the complete source of this bundle: @SOURCE_URL@
   Build it with `scripts/build-zl-lmatch.sh`, which fetches every dependency below at the commit named here.
 
-Changes in this port (`patches/zl-lmatch-webclap.patch`): the processor builds without its editor, a block
-without a transport has no position, and the editor's stand-in leaves the gain parameter to the DSP side. The Aux
-(sidechain) input is a second input port; with Side: Aux, Learn matches to what the host feeds it. The editor's UI
-settings (style, window size) live in the page's memory and are gone when it reloads.
+Changes in this port (`patches/zl-lmatch-webclap.patch`): the processor builds without its editor, a block without a
+transport has no position, and the editor's stand-in leaves the gain parameter to the DSP side. The Aux (sidechain)
+input is a second input port; with Side: Aux, Learn matches to what the host feeds it. The editor always shows its
+default (dark) style; a double click on the logo no longer switches it. Its window size lives in the page's memory
+and is gone when it reloads.
 
 ## License
 

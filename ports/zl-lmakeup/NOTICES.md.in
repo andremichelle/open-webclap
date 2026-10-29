@@ -8,10 +8,10 @@ release.
   Build it with `scripts/build-zl-lmakeup.sh`, which fetches every dependency below at the commit named here.
 
 Changes in this port (`patches/zl-lmakeup-webclap.patch`): the processor builds without its editor, and a block
-without a transport has no position. The Aux (sidechain) input, the reference Effect mode makes the input's
-loudness up to, is a second input port; when the host feeds it nothing it is silent and Effect mode turns the input
-down as far as Bound allows. The editor's UI settings (style, window size) live in the page's memory and are gone
-when it reloads.
+without a transport has no position. The Aux (sidechain) input, the reference Effect mode makes the input's loudness
+up to, is a second input port; when the host feeds it nothing it is silent and Effect mode turns the input down as
+far as Bound allows. The editor always shows its default (dark) style; a double click on the logo no longer switches
+it. Its window size lives in the page's memory and is gone when it reloads.
 
 ## License
 

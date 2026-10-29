@@ -6,7 +6,46 @@ ZLSplitter for WebCLAP (ports/zl-splitter), all under ZL_WEBCLAP:
 - curve_panel.cpp: no threads, so the analyzer worker loop runs one pass per repaint (paintOverChildren) on the
   editor's thread instead of waiting for notify()
 - compact_combobox.cpp: the kit's JUCE has no popup item tooltips (ZL's JUCE fork adds them)
+- ui_setting_panel: no Colour and no Credit tab (the settings open on Control), a one-line legal notice at the
+  bottom; the CMakeLists drops colour_setting_panel.cpp and credit_panel.cpp from the build
+- control_setting_panel: no Import/Export Controls (control settings as files)
+- other_ui_setting_panel, interface_definitons.cpp, PluginEditor.cpp: no tooltip language setting, tooltips in
+  English whatever the state says
+- PluginEditor.cpp: not resizable, no resize corner (the page shows the editor at its size)
 
+--- a/source/PluginEditor.cpp
++++ b/source/PluginEditor.cpp
+@@ -16,8 +16,12 @@
+            zlstate::getStateParameterLayout()),
+     property_(state_),
+     base_(state_),
++#if ZL_WEBCLAP
++    main_panel_(p, base_, zlpanel::multilingual::kLang_en) { // no language setting: English, whatever the state says
++#else
+     main_panel_(p, base_, static_cast<zlpanel::multilingual::TooltipLanguage>(std::round(
+                     state_.getRawParameterValue(zlstate::PTooltipLang::kID)->load(std::memory_order::relaxed)))) {
++#endif
+     // set font
+ #if defined(JUCE_WINDOWS)
+     base_.font_ = juce::Typeface::createSystemTypefaceFor(
+@@ -34,6 +38,9 @@
+     // set size & size listener
+     setResizeLimits(zlstate::PWindowW::kMinV - 1, zlstate::PWindowH::kMinV - 1,
+                     zlstate::PWindowW::kMaxV, zlstate::PWindowH::kMaxV);
++#if ZL_WEBCLAP
++    setResizable(false, false); // no resize corner: the page shows the editor at its size
++#else
+     setResizable(true, p.wrapperType != PluginProcessor::wrapperType_AudioUnitv3);
+ 
+     this->resizableCorner = std::make_unique<zlgui::ResizeCorner>(base_, this, getConstrainer(),
+@@ -41,6 +48,7 @@
+     addChildComponent(this->resizableCorner.get());
+     this->resizableCorner->setAlwaysOnTop(true);
+     this->resizableCorner->resized();
++#endif
+ 
+     last_ui_width_.referTo(state_.getParameterAsValue(zlstate::PWindowW::kID));
+     last_ui_height_.referTo(state_.getParameterAsValue(zlstate::PWindowH::kID));
 --- a/source/PluginProcessor.cpp
 +++ b/source/PluginProcessor.cpp
 @@ -8,7 +8,9 @@
@@ -53,6 +92,20 @@ ZLSplitter for WebCLAP (ports/zl-splitter), all under ZL_WEBCLAP:
              }
              item.isEnabled = true;
              item.isTicked = false;
+--- a/source/gui/interface_definitons.cpp
++++ b/source/gui/interface_definitons.cpp
+@@ -270,7 +270,11 @@
+         fft_extra_speed_.store(loadPara(zlstate::PFFTExtraSpeed::kID));
+         mag_curve_thickness_.store(loadPara(zlstate::PMagCurveThickness::kID));
+         fft_curve_thickness_.store(loadPara(zlstate::PFFTCurveThickness::kID));
++#if ZL_WEBCLAP
++        tooltip_lang_id_ = 2; // English (PTooltipLang): no language setting, whatever the state says
++#else
+         tooltip_lang_id_ = static_cast<size_t>(std::round(loadPara(zlstate::PTooltipLang::kID)));
++#endif
+         colour_map1_idx_ = static_cast<size_t>(std::round(loadPara(zlstate::PColourMap1Idx::kID)));
+         colour_map2_idx_ = static_cast<size_t>(std::round(loadPara(zlstate::PColourMap2Idx::kID)));
+     }
 --- a/source/panel/curve_panel/curve_panel.cpp
 +++ b/source/panel/curve_panel/curve_panel.cpp
 @@ -43,7 +43,11 @@
@@ -93,6 +146,415 @@ ZLSplitter for WebCLAP (ports/zl-splitter), all under ZL_WEBCLAP:
      }
  
      void CurvePanel::repaintCallBackSlow() {
+--- a/source/panel/ui_setting_panel/control_setting_panel.cpp
++++ b/source/panel/ui_setting_panel/control_setting_panel.cpp
+@@ -58,6 +58,7 @@
+         slider_double_click_label_.setLookAndFeel(&name_laf_);
+         addAndMakeVisible(slider_double_click_label_);
+         addAndMakeVisible(slider_double_click_box_);
++#if ! ZL_WEBCLAP
+ 
+         import_label_.setText("Import Controls", juce::dontSendNotification);
+         import_label_.setJustificationType(juce::Justification::centred);
+@@ -69,6 +70,7 @@
+         export_label_.setLookAndFeel(&name_laf_);
+         export_label_.addMouseListener(this, false);
+         addAndMakeVisible(export_label_);
++#endif
+     }
+ 
+     ControlSettingPanel::~ControlSettingPanel() = default;
+@@ -105,7 +107,11 @@
+         const auto padding = juce::roundToInt(base_.getFontSize() * kPaddingScale * 3.f);
+         const auto slider_height = juce::roundToInt(base_.getFontSize() * kSliderHeightScale);
+ 
++#if ZL_WEBCLAP
++        return padding * 5 + slider_height * 4;
++#else
+         return padding * 6 + slider_height * 5;
++#endif
+     }
+ 
+     void ControlSettingPanel::resized() {
+@@ -146,15 +152,19 @@
+             slider_double_click_label_.setBounds(local_bound.removeFromLeft(slider_width * kLabelWidth));
+             local_bound.removeFromLeft(padding);
+             slider_double_click_box_.setBounds(local_bound.removeFromLeft(slider_width * 2).reduced(0, padding / 3));
+-        } {
++        }
++#if ! ZL_WEBCLAP
++        {
+             bound.removeFromTop(padding);
+             const auto label_width = bound.getWidth() / 2;
+             auto local_bound = bound.removeFromTop(slider_height);
+             import_label_.setBounds(local_bound.removeFromLeft(label_width));
+             export_label_.setBounds(local_bound.removeFromRight(label_width));
+         }
++#endif
+     }
+ 
++#if ! ZL_WEBCLAP
+     void ControlSettingPanel::mouseDown(const juce::MouseEvent &event) {
+         if (event.originalComponent == &import_label_) {
+             importControls();
+@@ -253,4 +263,5 @@
+             }
+         });
+     }
++#endif
+ } // zlpanel
+--- a/source/panel/ui_setting_panel/control_setting_panel.hpp
++++ b/source/panel/ui_setting_panel/control_setting_panel.hpp
+@@ -32,7 +32,9 @@
+ 
+         void resized() override;
+ 
++#if ! ZL_WEBCLAP
+         void mouseDown(const juce::MouseEvent &event) override;
++#endif
+ 
+     private:
+         PluginProcessor &p_ref_;
+@@ -49,6 +51,7 @@
+         juce::Label slider_double_click_label_;
+         zlgui::combobox::CompactCombobox slider_double_click_box_;
+ 
++#if ! ZL_WEBCLAP
+         juce::Label import_label_, export_label_;
+         std::unique_ptr<juce::FileChooser> chooser_;
+         inline auto static const kSettingDirectory =
+@@ -61,5 +64,6 @@
+         void importControls();
+ 
+         void exportControls();
++#endif
+     };
+ } // zlpanel
+--- a/source/panel/ui_setting_panel/other_ui_setting_panel.cpp
++++ b/source/panel/ui_setting_panel/other_ui_setting_panel.cpp
+@@ -18,7 +18,9 @@
+         fft_speed_slider_("Speed", base),
+         mag_curve_slider_("Mag", base),
+         fft_curve_slider_("FFT", base),
++#if ! ZL_WEBCLAP
+         tooltip_box_(zlstate::PTooltipLang::kChoices, base),
++#endif
+         font_mode_box_(zlstate::PFontMode::kChoices, base),
+         font_scale_slider_("Scale", base),
+         static_font_size_slider_("Static", base),
+@@ -54,11 +56,13 @@
+         fft_curve_slider_.getSlider().setDoubleClickReturnValue(true, 1.0);
+         addAndMakeVisible(fft_curve_slider_);
+ 
++#if ! ZL_WEBCLAP
+         tooltip_label_.setText("Tooltip", juce::dontSendNotification);
+         tooltip_label_.setJustificationType(juce::Justification::centredRight);
+         tooltip_label_.setLookAndFeel(&name_laf_);
+         addAndMakeVisible(tooltip_label_);
+         addAndMakeVisible(tooltip_box_);
++#endif
+ 
+         font_label_.setText("UI Scaling", juce::dontSendNotification);
+         font_label_.setJustificationType(juce::Justification::centredRight);
+@@ -85,7 +89,9 @@
+         fft_speed_slider_.getSlider().setValue(static_cast<double>(base_.getFFTExtraSpeed()));
+         mag_curve_slider_.getSlider().setValue(base_.getMagCurveThickness());
+         fft_curve_slider_.getSlider().setValue(base_.getFFTCurveThickness());
++#if ! ZL_WEBCLAP
+         tooltip_box_.getBox().setSelectedItemIndex(static_cast<int>(base_.getTooltipLangID()));
++#endif
+         font_mode_box_.getBox().setSelectedItemIndex(static_cast<int>(base_.getFontMode()), juce::sendNotificationSync);
+         font_scale_slider_.getSlider().setValue(static_cast<double>(base_.getFontScale()));
+         static_font_size_slider_.getSlider().setValue(static_cast<double>(base_.getFontSize()));
+@@ -99,7 +105,9 @@
+         base_.setFFTExtraSpeed(static_cast<float>(fft_speed_slider_.getSlider().getValue()));
+         base_.setMagCurveThickness(static_cast<float>(mag_curve_slider_.getSlider().getValue()));
+         base_.setFFTCurveThickness(static_cast<float>(fft_curve_slider_.getSlider().getValue()));
++#if ! ZL_WEBCLAP
+         base_.setTooltipLandID(static_cast<size_t>(tooltip_box_.getBox().getSelectedItemIndex()));
++#endif
+         base_.setFontMode(static_cast<size_t>(font_mode_box_.getBox().getSelectedItemIndex()));
+         base_.setFontScale(static_cast<float>(font_scale_slider_.getSlider().getValue()));
+         base_.setStaticFontSize(static_cast<float>(static_font_size_slider_.getSlider().getValue()));
+@@ -114,7 +122,11 @@
+         const auto padding = juce::roundToInt(base_.getFontSize() * kPaddingScale * 3.f);
+         const auto slider_height = juce::roundToInt(base_.getFontSize() * kSliderHeightScale);
+ 
++#if ZL_WEBCLAP
++        return 6 * padding + 5 * slider_height;
++#else
+         return 7 * padding + 6 * slider_height;
++#endif
+     }
+ 
+     void OtherUISettingPanel::resized() {
+@@ -148,6 +160,7 @@
+             local_bound.removeFromLeft(padding);
+             fft_curve_slider_.setBounds(local_bound.removeFromLeft(slider_width));
+         }
++#if ! ZL_WEBCLAP
+         {
+             bound.removeFromTop(padding);
+             auto local_bound = bound.removeFromTop(slider_height);
+@@ -155,6 +168,7 @@
+             local_bound.removeFromLeft(padding);
+             tooltip_box_.setBounds(local_bound.removeFromLeft(slider_width).reduced(0, padding / 3));
+         }
++#endif
+         {
+             bound.removeFromTop(padding);
+             auto local_bound = bound.removeFromTop(slider_height);
+--- a/source/panel/ui_setting_panel/other_ui_setting_panel.hpp
++++ b/source/panel/ui_setting_panel/other_ui_setting_panel.hpp
+@@ -42,8 +42,10 @@
+         zlgui::slider::CompactLinearSlider<true, true, true> fft_tilt_slider_, fft_speed_slider_;
+         juce::Label curve_thick_label_;
+         zlgui::slider::CompactLinearSlider<true, true, true> mag_curve_slider_, fft_curve_slider_;
++#if ! ZL_WEBCLAP
+         juce::Label tooltip_label_;
+         zlgui::combobox::CompactCombobox tooltip_box_;
++#endif
+         juce::Label font_label_;
+         zlgui::combobox::CompactCombobox font_mode_box_;
+         zlgui::slider::CompactLinearSlider<true, true, true> font_scale_slider_;
+--- a/source/panel/ui_setting_panel/ui_setting_panel.cpp
++++ b/source/panel/ui_setting_panel/ui_setting_panel.cpp
+@@ -13,10 +13,14 @@
+ namespace zlpanel {
+     UISettingPanel::UISettingPanel(PluginProcessor& p, zlgui::UIBase& base) :
+         p_ref_(p), base_(base),
++#if ! ZL_WEBCLAP
+         colour_panel_(p, base),
++#endif
+         control_panel_(p, base),
+         other_panel_(p, base),
++#if ! ZL_WEBCLAP
+         credit_panel_(base),
++#endif
+         save_drawable_(juce::Drawable::createFromImageData(BinaryData::save_svg, BinaryData::save_svgSize)),
+         close_drawable_(juce::Drawable::createFromImageData(BinaryData::close_svg, BinaryData::close_svgSize)),
+         reset_drawable_(
+@@ -38,10 +42,12 @@
+         addAndMakeVisible(view_port_);
+         save_button_.getButton().onClick = [this]() {
+             switch (current_panel_idx_) {
++#if ! ZL_WEBCLAP
+             case kColourP: {
+                 colour_panel_.saveSetting();
+                 break;
+             }
++#endif
+             case kControlP: {
+                 control_panel_.saveSetting();
+                 break;
+@@ -50,19 +56,23 @@
+                 other_panel_.saveSetting();
+                 break;
+             }
++#if ! ZL_WEBCLAP
+             case kCreditP: {
+                 break;
+             }
++#endif
+             }
+             base_.setPanelProperty(zlgui::kUISettingChanged,
+                                    !static_cast<bool>(base_.getPanelProperty(zlgui::kUISettingChanged)));
+         };
+         reset_button_.getButton().onClick = [this]() {
+             switch (current_panel_idx_) {
++#if ! ZL_WEBCLAP
+             case kColourP: {
+                 colour_panel_.resetSetting();
+                 break;
+             }
++#endif
+             case kControlP: {
+                 control_panel_.resetSetting();
+                 break;
+@@ -71,9 +81,11 @@
+                 other_panel_.resetSetting();
+                 break;
+             }
++#if ! ZL_WEBCLAP
+             case kCreditP: {
+                 break;
+             }
++#endif
+             }
+         };
+         close_button_.getButton().onClick = [this]() {
+@@ -81,10 +93,15 @@
+         };
+ 
+         panel_name_laf_.setFontScale(1.5f);
++#if ZL_WEBCLAP
++        panel_labels_[0].setText("Control", juce::dontSendNotification);
++        panel_labels_[1].setText("Other", juce::dontSendNotification);
++#else
+         panel_labels_[0].setText("Colour", juce::dontSendNotification);
+         panel_labels_[1].setText("Control", juce::dontSendNotification);
+         panel_labels_[2].setText("Other", juce::dontSendNotification);
+         panel_labels_[3].setText("Credit", juce::dontSendNotification);
++#endif
+         for (auto& pL : panel_labels_) {
+             pL.setInterceptsMouseClicks(true, false);
+             pL.addMouseListener(this, false);
+@@ -110,11 +127,22 @@
+         auto bound = getLocalBounds().toFloat();
+         bound = bound.withSizeKeepingCentre(bound.getWidth() * .75f, bound.getHeight() * 1.25f);
+         base_.fillRoundedShadowRectangle(g, bound, 0.5f * base_.getFontSize(), {.blur_radius = 0.5f});
++#if ZL_WEBCLAP
++        static const auto legal_text = juce::String(juce::CharPointer_UTF8(
++            "ZL Splitter \xc2\xa9 2024 zsliu98 \xc2\xb7 AGPL-3.0, no warranty \xc2\xb7 "
++            "Source: github.com/ZL-Audio/ZLSplitter \xc2\xb7 Port: github.com/andremichelle/open-webclap"));
++        g.setColour(base_.getTextColour().withAlpha(.5f));
++        g.setFont(base_.getFontSize() * 1.125f);
++        g.drawFittedText(legal_text, legal_bound_, juce::Justification::centred, 2, 1.f);
++#endif
+     }
+ 
+     void UISettingPanel::resized() {
+         auto bound = getLocalBounds().toFloat();
+         bound = bound.withSizeKeepingCentre(bound.getWidth() * .75f, bound.getHeight());
++#if ZL_WEBCLAP
++        legal_bound_ = bound.removeFromBottom(base_.getFontSize() * 2.5f).toNearestInt();
++#endif
+         {
+             auto label_bound = bound.removeFromTop(base_.getFontSize() * 3.f);
+             const auto label_width = label_bound.getWidth() / static_cast<float>(panel_labels_.size());
+@@ -123,18 +151,22 @@
+             }
+         }
+ 
++#if ! ZL_WEBCLAP
+         colour_panel_.setBounds(0, 0,
+                                 juce::roundToInt(bound.getWidth()),
+                                 colour_panel_.getIdealHeight());
++#endif
+         control_panel_.setBounds(0, 0,
+                                  juce::roundToInt(bound.getWidth()),
+                                  control_panel_.getIdealHeight());
+         other_panel_.setBounds(0, 0,
+                                juce::roundToInt(bound.getWidth()),
+                                other_panel_.getIdealHeight());
++#if ! ZL_WEBCLAP
+         credit_panel_.setBounds(0, 0,
+                                juce::roundToInt(bound.getWidth()),
+                                credit_panel_.getIdeatlHeight());
++#endif
+         other_panel_.setParentWidth(getWidth());
+ 
+         view_port_.setBounds(bound.removeFromTop(bound.getHeight() * .9125f).toNearestInt());
+@@ -160,7 +192,9 @@
+     }
+ 
+     void UISettingPanel::loadSetting() {
++#if ! ZL_WEBCLAP
+         colour_panel_.loadSetting();
++#endif
+         control_panel_.loadSetting();
+         other_panel_.loadSetting();
+     }
+@@ -177,10 +211,12 @@
+ 
+     void UISettingPanel::changeDisplayPanel() {
+         switch (current_panel_idx_) {
++#if ! ZL_WEBCLAP
+         case kColourP: {
+             view_port_.setViewedComponent(&colour_panel_, false);
+             break;
+         }
++#endif
+         case kControlP: {
+             view_port_.setViewedComponent(&control_panel_, false);
+             break;
+@@ -189,16 +225,20 @@
+             view_port_.setViewedComponent(&other_panel_, false);
+             break;
+         }
++#if ! ZL_WEBCLAP
+         case kCreditP: {
+             view_port_.setViewedComponent(&credit_panel_, false);
+             break;
+         }
++#endif
+         }
+     }
+ 
+     void UISettingPanel::visibilityChanged() {
+         if (isVisible()) {
++#if ! ZL_WEBCLAP
+             colour_panel_.loadSetting();
++#endif
+             control_panel_.loadSetting();
+             other_panel_.loadSetting();
+         }
+--- a/source/panel/ui_setting_panel/ui_setting_panel.hpp
++++ b/source/panel/ui_setting_panel/ui_setting_panel.hpp
+@@ -12,10 +12,14 @@
+ #include "../../PluginProcessor.hpp"
+ #include "../../gui/gui.hpp"
+ 
++#if ! ZL_WEBCLAP
+ #include "colour_setting_panel.hpp"
++#endif
+ #include "control_setting_panel.hpp"
+ #include "other_ui_setting_panel.hpp"
++#if ! ZL_WEBCLAP
+ #include "credit_panel.hpp"
++#endif
+ 
+ namespace zlpanel {
+     class UISettingPanel final : public juce::Component {
+@@ -37,28 +41,48 @@
+         zlgui::UIBase &base_;
+         juce::Viewport view_port_;
+ 
++#if ! ZL_WEBCLAP
+         ColourSettingPanel colour_panel_;
++#endif
+         ControlSettingPanel control_panel_;
+         OtherUISettingPanel other_panel_;
++#if ! ZL_WEBCLAP
+         CreditPanel credit_panel_;
++#endif
+ 
+         const std::unique_ptr<juce::Drawable> save_drawable_, close_drawable_, reset_drawable_;
+         zlgui::button::ClickButton save_button_, close_button_, reset_button_;
+ 
+         zlgui::label::NameLookAndFeel panel_name_laf_;
++#if ZL_WEBCLAP
++        std::array<juce::Label, 2> panel_labels_;
++#else
+         std::array<juce::Label, 4> panel_labels_;
++#endif
+ 
+         zlgui::label::NameLookAndFeel label_laf_;
+         juce::Label version_label_;
++#if ZL_WEBCLAP
++        juce::Rectangle<int> legal_bound_; // the legal text (in place of the Credit tab), painted
++#endif
+ 
+         enum PanelIdx {
++#if ZL_WEBCLAP
++            kControlP,
++            kOtherP
++#else
+             kColourP,
+             kControlP,
+             kOtherP,
+             kCreditP
++#endif
+         };
+ 
++#if ZL_WEBCLAP
++        PanelIdx current_panel_idx_ = kControlP;
++#else
+         PanelIdx current_panel_idx_ = kColourP;
++#endif
+ 
+         void changeDisplayPanel();
+ 
 --- a/source/zlp/controller.hpp
 +++ b/source/zlp/controller.hpp
 @@ -83,6 +83,7 @@

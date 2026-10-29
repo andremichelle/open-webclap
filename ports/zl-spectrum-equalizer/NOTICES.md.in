@@ -10,7 +10,8 @@ an official ZL Audio release.
 
 Changes in this port (`patches/zl-spectrum-equalizer-webclap.patch`): the editor's analyzer and curve loops, which
 run on threads upstream, run one pass per repaint on the editor's thread, and the processor builds without its
-editor. The sidechain is the bundle's second input. Presets and UI settings the editor saves live
+editor. The sidechain is the bundle's second input. The editor has no presets, no colour schemes, no tooltip
+language (English) and no credit tab (a legal notice line in the UI settings instead); the UI settings it saves live
 in the page's memory and are gone when it reloads.
 
 ## License
@@ -34,7 +35,17 @@ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the license
 | WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-spectrum-equalizer`, `ports/zl-common`) | both | André Michelle | AGPL-3.0 |
 | [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
 | [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
+| [Material Symbols](https://github.com/google/material-design-icons) icons | ui | Google LLC | Apache-2.0 (`licenses/Apache-2.0.txt`) |
 | [Inter](https://github.com/rsms/inter) font (subset) | ui | 2016 The Inter Project Authors | OFL-1.1 (`licenses/OFL-1.1.txt`) |
 | [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |
+
+## References
+
+Upstream credits these papers and articles (its project started from the
+[pamplejuce](https://github.com/sudara/pamplejuce) JUCE template):
+
+- Yuriy Ivantsov. On the ideal bilinear and biquadratic digital filter. (2025).
+- Nigel Redmon. Cascading filters. (2016).
+- Cleve Moler. Makima Piecewise Cubic Interpolation. MathWorks Blogs. (2019).
 
 @JUCE_BUNDLED@

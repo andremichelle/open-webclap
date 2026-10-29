@@ -51,7 +51,7 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
                                             CLAP_PLUGIN_FEATURE_STEREO, CLAP_PLUGIN_FEATURE_MONO, nullptr };
 
     static const ClapPluginInfo info {
-        "com.zlaudio.zllmatch",
+        "com.zlaudio.zllmakeup",
         "ZL Loudness Makeup",
         "ZL Audio",
         "https://github.com/ZL-Audio/ZLLMakeup",

@@ -62,7 +62,10 @@ add_custom_command(
 # ZLSpectrumEqualizer, its sources as upstream globs them (one patch, see patches/zl-spectrum-equalizer-webclap.patch):
 # the processor in both modules (in ui.wasm as the editor's stand-in), the editor only in ui.wasm
 
-zl_sources("${ZL}" ZL_PROCESSOR_SOURCES ZL_EDITOR_SOURCES)
+# without the preset browser, the colour scheme editor and the credit tab (removed from this port's editor)
+zl_sources("${ZL}" ZL_PROCESSOR_SOURCES ZL_EDITOR_SOURCES
+    "^panel/preset_browser/" "^panel/ui_setting_panel/colour_setting_panel\\.cpp$"
+    "^panel/ui_setting_panel/credit_panel\\.cpp$")
 
 set(ZL_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}" "${GENERATED}" "${ZL}/source")
 

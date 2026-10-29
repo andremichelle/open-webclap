@@ -2,8 +2,8 @@
 #
 #   zl_build [cmake args]          fetches the deps, configures and builds build/$PORT
 #   zl_bundle [file name]...       copies the page, bundles the licenses (the plugin's AGPL-3.0 or GPL-3.0 text,
-#                                  Inter's OFL if it embeds Inter, DejaVu, JUCE's, then the given files) and packs
-#                                  the archive
+#                                  Inter's OFL and Apache-2.0 for Material Symbols if it embeds them, DejaVu,
+#                                  JUCE's, then the given files) and packs the archive
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="$ROOT/build/$PORT"
@@ -28,11 +28,14 @@ zl_bundle() {
 
     # License and notices (LICENSE, NOTICES.md, licenses/)
     # The plugin's own license by its title (the GPL-3.0 text names the Affero license further down), Inter's OFL
-    # for the plugins that embed Inter
+    # for the plugins that embed Inter, Apache-2.0 for those with Material Symbols icons
     local license inter=()
     license="$(ls "$ROOT/external/$PORT"/LICENSE* | head -1)"
     if ls "$ROOT/external/$PORT"/assets/font/Inter* >/dev/null 2>&1; then
-        inter=("$ROOT/licenses/OFL-1.1.txt" OFL-1.1.txt)
+        inter+=("$ROOT/licenses/OFL-1.1.txt" OFL-1.1.txt)
+    fi
+    if [ -d "$ROOT/external/$PORT/assets/icons" ]; then
+        inter+=("$ROOT/licenses/Apache-2.0.txt" Apache-2.0.txt)
     fi
     source "$ROOT/scripts/bundle-license.sh"
     bundle_license "$BUNDLE" "$ROOT/ports/$PORT/NOTICES.md.in" \

@@ -1,7 +1,39 @@
 ZLWarm for WebCLAP (ports/zl-warm):
 
 - PluginProcessor.cpp: ZL_WEBCLAP_HEADLESS builds the processor without its editor (module.wasm)
+- panel/logo_panel.cpp, PluginEditor.h, under ZL_WEBCLAP: one style, the default (dark), whatever ui_style holds; a
+  double click on the logo no longer switches it, and the editor no longer listens to ui_style
+- PluginEditor.cpp: not resizable, no resize corner (the page shows the editor at its size)
 
+--- a/source/PluginEditor.cpp
++++ b/source/PluginEditor.cpp
+@@ -34,7 +34,11 @@
+     setResizeLimits(zlstate::windowW::minV, zlstate::windowH::minV, zlstate::windowW::maxV, zlstate::windowH::maxV);
+     getConstrainer()->setFixedAspectRatio(
+             static_cast<float>(zlstate::windowW::defaultV) / static_cast<float>(zlstate::windowH::defaultV));
++#if ZL_WEBCLAP
++    setResizable(false, false); // no resize corner: the page shows the editor at its size
++#else
+     setResizable(true, p.wrapperType != PluginProcessor::wrapperType_AudioUnitv3);
++#endif
+     lastUIWidth.referTo(p.states.getParameterAsValue(zlstate::windowW::ID));
+     lastUIHeight.referTo(p.states.getParameterAsValue(zlstate::windowH::ID));
+     setSize(lastUIWidth.getValue(), lastUIHeight.getValue());
+--- a/source/PluginEditor.h
++++ b/source/PluginEditor.h
+@@ -39,8 +39,12 @@
+     zlstate::Property property;
+     MainPanel mainPanel;
+     juce::Value lastUIWidth, lastUIHeight;
++#if ZL_WEBCLAP
++    constexpr const static std::array IDs{zlstate::windowW::ID, zlstate::windowH::ID}; // no style switching
++#else
+     constexpr const static std::array IDs{zlstate::uiStyle::ID,
+                                           zlstate::windowW::ID, zlstate::windowH::ID};
++#endif
+ 
+     void valueChanged(juce::Value &) override;
+ 
 --- a/source/PluginProcessor.cpp
 +++ b/source/PluginProcessor.cpp
 @@ -11,7 +11,9 @@
@@ -26,3 +58,34 @@ ZLWarm for WebCLAP (ports/zl-warm):
      //    return new juce::GenericAudioProcessorEditor(*this);
  }
  
+--- a/source/panel/logo_panel.cpp
++++ b/source/panel/logo_panel.cpp
+@@ -17,7 +17,12 @@
+             logoDrawable(juce::Drawable::createFromImageData(BinaryData::logo_svg, BinaryData::logo_svgSize)) {
+         processorRef = &p;
+         uiBase = &base;
++#if ZL_WEBCLAP
++        // WebCLAP: one style, the default, whatever ui_style a state or the settings file holds
++        uiBase->setStyle(static_cast<size_t>(zlstate::uiStyle::defaultV));
++#else
+         uiBase->setStyle(static_cast<size_t>(*p.states.getRawParameterValue(zlstate::uiStyle::ID)));
++#endif
+     }
+ 
+     LogoPanel::~LogoPanel() = default;
+@@ -55,6 +60,7 @@
+ 
+     void LogoPanel::mouseDoubleClick(const juce::MouseEvent &event) {
+         juce::ignoreUnused(event);
++#if ! ZL_WEBCLAP // WebCLAP: the logo does not switch the style
+         auto styleID = static_cast<size_t>(*processorRef->states.getRawParameterValue(zlstate::uiStyle::ID));
+         styleID = (styleID + 1) % (zlstate::uiStyle::maxV + 1);
+         uiBase->setStyle(styleID);
+@@ -62,6 +68,7 @@
+         para->beginChangeGesture();
+         para->setValueNotifyingHost(zlstate::uiStyle::convertTo01(static_cast<float>(styleID)));
+         para->endChangeGesture();
++#endif
+     }
+ 
+     void LogoPanel::setJustification(int justificationFlags) {
