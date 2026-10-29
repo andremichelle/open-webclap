@@ -14,6 +14,8 @@ import {ParameterList} from "@/ui/components/ParameterList"
 import {clearMessageLog, MessageLogView} from "@/ui/components/MessageLogView"
 import {Keyboard} from "@/ui/components/Keyboard"
 import {InputSource} from "@/ui/components/InputSource"
+import {NoteOutput} from "@/ui/components/NoteOutput"
+import {StepGrid} from "@/ui/components/StepGrid"
 import {Meter} from "@/ui/components/Meter"
 import {ColumnResizer} from "@/ui/components/ColumnResizer"
 import {HeaderTitle} from "@/ui/Header"
@@ -206,10 +208,13 @@ const Workbench = ({lifecycle, session, loading}: WorkbenchConstruct) => {
             </Panel>
             <Panel title="Plugin">
                 <PluginStatus lifecycle={lifecycle} session={session}/>
-                {kind === "instrument" && midiStatus}
+                {kind !== "audio-fx" && midiStatus}
             </Panel>
             {kind === "audio-fx" && (
                 <Panel title="Input"><InputSource lifecycle={lifecycle} session={session}/></Panel>
+            )}
+            {kind === "midi-fx" && (
+                <Panel title="Output"><NoteOutput lifecycle={lifecycle} session={session}/></Panel>
             )}
             <Panel title="Parameters" grow actions={<Frag>{parameterCount}{filter}</Frag>}>
                 <ParameterList lifecycle={lifecycle} session={session} filter={filter} count={parameterCount}/>
@@ -235,14 +240,18 @@ const Workbench = ({lifecycle, session, loading}: WorkbenchConstruct) => {
                     <LoadingProgress lifecycle={lifecycle} state={loading}/>
                 </div>
                 <div className="stack pending" onInit={stack => stack_ = stack}>
+                    {kind === "midi-fx" && (
+                        <PluginWindow lifecycle={lifecycle} session={session} log={log} panel onLayout={() => {}}/>
+                    )}
                     <PluginWindow lifecycle={lifecycle} session={session} log={log}
                                   onLayout={() => {
                                       stack_?.classList.remove("pending")
                                       loading_?.remove()
                                   }}/>
-                    {kind === "instrument" && (
+                    {kind !== "audio-fx" && (
                         <Keyboard lifecycle={lifecycle} session={session} midiStatus={midiStatus}/>
                     )}
+                    {kind === "midi-fx" && <StepGrid lifecycle={lifecycle} session={session}/>}
                 </div>
             </div>
             <ColumnResizer lifecycle={lifecycle} target={aside} minWidth={240} maxWidth={400}

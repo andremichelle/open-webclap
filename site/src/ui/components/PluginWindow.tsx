@@ -11,6 +11,7 @@ const className = Html.adoptStyleSheet(css, "PluginWindow")
 
 const FRAME_URL = `${import.meta.env.BASE_URL}wclap-frame.html`
 const DEFAULT_SIZE = {width: 640, height: 480}
+const PANEL_HEIGHT = 176 // openDAW's device panel surface
 const SAVE_DELAY_MS = 250
 
 // `file:///bundle/ui/index.html` and `/ui/index.html` both name a path in the bundle (as the studio does)
@@ -18,12 +19,13 @@ const pagePath = (uri: string): string =>
     uri.startsWith("file:") ? uri.replace(/^file:\/*/, "/").split("/").slice(2).join("/") : uri.replace(/^\//, "")
 
 // onLayout: the window has its size (or will not get one), what is laid out around it can show
-type Construct = { lifecycle: Lifecycle, session: PluginSession, log: MessageLog, onLayout: Exec }
+// panel: the page openDAW shows in its device panel (opendaw.device-panel/1) instead of the plugin window
+type Construct = { lifecycle: Lifecycle, session: PluginSession, log: MessageLog, onLayout: Exec, panel?: boolean }
 
 // The plugin's own page, the way openDAW Studio shows it: wclap-frame.html (from the studio) serves the bundle's
 // files through its service worker and relays the page's messages over a port. This side passes them on to the
 // engine and back.
-export const PluginWindow = ({lifecycle, session, log, onLayout}: Construct) => {
+export const PluginWindow = ({lifecycle, session, log, onLayout, panel = false}: Construct) => {
     const {engine, deviceUuid, deviceKey} = session
     const viewport: HTMLElement = <div className="viewport"/>
     const size: HTMLElement = <span className="size">waiting for the plugin…</span>
@@ -44,10 +46,15 @@ export const PluginWindow = ({lifecycle, session, log, onLayout}: Construct) => 
         close()
         const session_ = new Terminator()
         window_.session = session_
-        const gui = await engine.wclapOpenGui(deviceUuid)
-        if (window_.session !== session_) {return}
+        const gui = panel
+            ? await engine.wclapOpenPanel(deviceUuid, PANEL_HEIGHT).then(({uri, width}) => ({uri, width, height: PANEL_HEIGHT}))
+            : await engine.wclapOpenGui(deviceUuid)
+        if (window_.session !== session_) {
+            if (gui.uri.length > 0) {engine.wclapCloseGui(deviceUuid)}
+            return
+        }
         if (gui.uri.length === 0) {
-            size.textContent = "no plugin window"
+            size.textContent = panel ? "no device panel" : "no plugin window"
             onLayout()
             return
         }
@@ -75,8 +82,14 @@ export const PluginWindow = ({lifecycle, session, log, onLayout}: Construct) => 
                 post({type: "wclap-message", bytes})
             }),
             WclapGuis.subscribeResize(deviceKey, ({width, height}) => {
+                if (panel) {return}
                 setSize(width, height)
                 log.add("out", "host", `request_resize ${width} × ${height}`)
+            }),
+            WclapGuis.subscribeShow(deviceKey, visible => {
+                if (panel || !visible) {return}
+                log.add("out", "host", "request_show")
+                element.scrollIntoView({block: "nearest", behavior: "smooth"})
             }),
             Events.subscribe(window, "message", (event: MessageEvent) => {
                 if (event.source !== frame.contentWindow || event.data?.type !== "wclap-frame-ready") {return}
@@ -119,6 +132,10 @@ export const PluginWindow = ({lifecycle, session, log, onLayout}: Construct) => 
     }
     lifecycle.ownAll(
         session.subscribeStatus(status => {
+            if (panel && status.state === "ready" && status.panel !== true) {
+                size.textContent = "no device panel"
+                return
+            }
             if (status.state === "ready" && window_.session === null) {
                 open().catch(error => {
                     size.textContent = `could not open: ${error}`
@@ -132,14 +149,15 @@ export const PluginWindow = ({lifecycle, session, log, onLayout}: Construct) => 
         }),
         {terminate: close}
     )
-    return (
+    const element: HTMLElement = (
         <div className={className}>
             <div className="titlebar">
-                <span>Plugin window</span>
+                <span>{panel ? "Device panel" : "Plugin window"}</span>
                 {size}
                 {reopen}
             </div>
             {viewport}
         </div>
     )
+    return element
 }

@@ -55,6 +55,7 @@ export const Header = ({lifecycle}: { lifecycle: Lifecycle }) => {
         <nav>
             <NavMenu lifecycle={lifecycle} label="Instruments" color={Colors.green} links={linksOf("instrument")}/>
             <NavMenu lifecycle={lifecycle} label="Audio FX" color={Colors.blue} links={linksOf("audio-fx")}/>
+            <NavMenu lifecycle={lifecycle} label="Note FX" color={Colors.orange} links={linksOf("midi-fx")}/>
         </nav>
         <hr/>
         {present}

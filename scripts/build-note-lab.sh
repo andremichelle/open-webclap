@@ -21,5 +21,8 @@ OUT="$BUNDLE" CLAP_INCLUDE="$ROOT/external/clap/include" "$ROOT/ports/note-lab/b
 
 python3 "$ROOT/scripts/pack-wclap.py" "$BUNDLE" "$BUILD/note-lab.wclap.tar.gz"
 node "$ROOT/ports/note-lab/check.mjs" "$BUNDLE/module.wasm"
+# not in openDAW's catalogue yet: the site serves this one itself
+mkdir -p "$ROOT/site/public/bundled"
+cp "$BUILD/note-lab.wclap.tar.gz" "$ROOT/site/public/bundled/note-lab.wclap.tar.gz"
 echo "Built $BUNDLE — try it in the test host: python3 $ROOT/scripts/serve.py $ROOT, then"
 echo "http://127.0.0.1:8123/test-host/?bundle=/build/note-lab/web/note-lab.wclap"

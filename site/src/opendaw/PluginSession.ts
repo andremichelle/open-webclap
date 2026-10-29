@@ -1,16 +1,32 @@
-import {asInstanceOf, isDefined, Nullable, Observer, Procedure, Subscription, Terminable, Terminator, UUID} from "@opendaw/lib-std"
+import {asInstanceOf, int, isDefined, Nullable, Observer, Procedure, Subscription, Terminable, Terminator, UUID} from "@opendaw/lib-std"
 import {network} from "@opendaw/lib-runtime"
-import {AudioData} from "@opendaw/lib-dsp"
+import {AudioData, ClassicWaveform, PPQN} from "@opendaw/lib-dsp"
 import {
     AutomatableParameterFieldAdapter,
     BpmDetector,
+    InstrumentBox,
     InstrumentFactories,
     NoteSignal,
     WclapDeviceBoxAdapter,
     WclapInstrumentBoxAdapter,
+    WclapMidiEffectBoxAdapter,
     WclapStatus
 } from "@opendaw/studio-adapters"
-import {AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox, WclapDeviceBox, WclapInstrumentBox} from "@opendaw/studio-boxes"
+import {
+    AudioFileBox,
+    AudioRegionBox,
+    AudioUnitBox,
+    MIDIOutputBox,
+    MIDIOutputDeviceBox,
+    NoteEventBox,
+    NoteEventCollectionBox,
+    NoteRegionBox,
+    TrackBox,
+    VaporisateurDeviceBox,
+    WclapDeviceBox,
+    WclapInstrumentBox,
+    WclapMidiEffectBox
+} from "@opendaw/studio-boxes"
 import {
     AudioContentFactory,
     CaptureAudio,
@@ -19,6 +35,7 @@ import {
     Project,
     SampleService,
     SoundfontService,
+    WclapBoxes,
     WclapBundles
 } from "@opendaw/studio-core"
 import {PluginEntry, PluginKind} from "@/plugins"
@@ -33,11 +50,19 @@ export type InputKind = "none" | "microphone" | "file" | "tone" | "noise"
 // A catalog plugin's bundle, registered: the url the engine asks for and the archive's bytes
 export type DownloadedBundle = { url: string, bytes: ArrayBuffer }
 
-// Which plugin of a bundle a session runs, and how: an instrument, or an effect on an audio track
+// Which plugin of a bundle a session runs, and how: an instrument, an effect on an audio track, or a note effect
 export type PluginIdentity = { clapId: string, name: string, kind: PluginKind }
 
-// One plugin in its own openDAW project: an instrument on an instrument unit, or an effect on an audio track.
-// Notes go to the unit, effect input comes from the track (a looped sample) or the unit's monitored capture.
+// Where a note effect's notes go: a sine, or a MIDI output device
+export type NoteOutput = { kind: "sine" } | { kind: "midi", device: MIDIOutput }
+
+// a one bar pattern of sixteenth notes on the note effect's track
+export const PatternSteps = 16
+const StepPulses = PPQN.Bar / PatternSteps
+
+// One plugin in its own openDAW project: an instrument on an instrument unit, an effect on an audio track, or a
+// note effect between a note track and a sine (or a MIDI output). Notes go to the unit, effect input comes from
+// the track (a looped sample) or the unit's monitored capture.
 export class PluginSession implements Terminable {
     // Fetches a catalog plugin's bundle and registers it with openDAW
     // download: the bundle's bytes so far and in all (0 while the host does not say)
@@ -82,7 +107,7 @@ export class PluginSession implements Terminable {
                 throw new Error("The bundle holds no plugin")
             }
             identity = {clapId: info.clapId, name: info.name,
-                kind: info.features.includes("instrument") ? "instrument" : "audio-fx"}
+                kind: info.features.includes("instrument") ? "instrument" : info.features.includes("note-effect") ? "midi-fx" : "audio-fx"}
         }
         const {clapId, kind} = identity
         const created = project.editing.modify(() => {
@@ -90,23 +115,43 @@ export class PluginSession implements Terminable {
                 const {audioUnitBox, instrumentBox, trackBox} = project.api.createInstrument(InstrumentFactories.Wclap)
                 instrumentBox.url.setValue(url)
                 instrumentBox.clapId.setValue(clapId)
-                return {audioUnitBox, trackBox, device: instrumentBox as WclapInstrumentBox | WclapDeviceBox}
+                return {audioUnitBox, trackBox, device: instrumentBox as WclapBoxes.Any, instrument: null}
+            }
+            if (kind === "midi-fx") {
+                const {audioUnitBox, instrumentBox, trackBox} = project.api.createInstrument(InstrumentFactories.Vaporisateur)
+                PluginSession.#sine(instrumentBox)
+                const device = asInstanceOf(project.api.insertEffect(audioUnitBox.midiEffects, EffectFactories.MidiNamed.WclapMidi),
+                    WclapMidiEffectBox)
+                device.url.setValue(url)
+                device.clapId.setValue(clapId)
+                return {audioUnitBox, trackBox, device: device as WclapBoxes.Any, instrument: instrumentBox as InstrumentBox}
             }
             const {audioUnitBox, trackBox} = project.api.createInstrument(InstrumentFactories.Tape)
             const device = asInstanceOf(project.api.insertEffect(audioUnitBox.audioEffects, EffectFactories.Wclap), WclapDeviceBox)
             device.url.setValue(url)
             device.clapId.setValue(clapId)
-            return {audioUnitBox, trackBox, device: device as WclapInstrumentBox | WclapDeviceBox}
+            return {audioUnitBox, trackBox, device: device as WclapBoxes.Any, instrument: null}
         }, false).unwrap("Could not create the device")
         worklet ??= project.startAudioWorklet()
         await project.engine.isReady()
         return new PluginSession(env, identity, project, worklet, created.audioUnitBox, created.trackBox,
-            created.device, url)
+            created.device, url, created.instrument)
+    }
+
+    // the note effect's default output: one sine oscillator
+    static #sine(box: VaporisateurDeviceBox): void {
+        const [first, second] = box.oscillators.fields()
+        first.waveform.setValue(ClassicWaveform.sine)
+        first.volume.setValue(-6.0)
+        second.volume.setValue(Number.NEGATIVE_INFINITY)
     }
 
     readonly #terminator = new Terminator()
     readonly #input: { region: Nullable<AudioRegionBox>, file: Nullable<AudioFileBox>, sample: Nullable<string> } =
         {region: null, file: null, sample: null}
+    readonly #steps = new Map<string, NoteEventBox>()
+    #pattern: Nullable<NoteEventCollectionBox> = null
+    #instrument: Nullable<InstrumentBox>
 
     private constructor(readonly env: Env,
                         readonly identity: PluginIdentity,
@@ -114,8 +159,10 @@ export class PluginSession implements Terminable {
                         readonly worklet: EngineWorklet,
                         readonly audioUnitBox: AudioUnitBox,
                         readonly trackBox: TrackBox,
-                        readonly device: WclapInstrumentBox | WclapDeviceBox,
-                        readonly url: string) {
+                        readonly device: WclapBoxes.Any,
+                        readonly url: string,
+                        instrument: Nullable<InstrumentBox>) {
+        this.#instrument = instrument
         this.#terminator.own(project)
     }
 
@@ -134,9 +181,10 @@ export class PluginSession implements Terminable {
     }
 
     parameters(): ReadonlyArray<AutomatableParameterFieldAdapter> {
-        const adapter = this.device instanceof WclapInstrumentBox
-            ? this.project.boxAdapters.adapterFor(this.device, WclapInstrumentBoxAdapter)
-            : this.project.boxAdapters.adapterFor(this.device, WclapDeviceBoxAdapter)
+        const {boxAdapters} = this.project
+        const adapter = this.device instanceof WclapInstrumentBox ? boxAdapters.adapterFor(this.device, WclapInstrumentBoxAdapter)
+            : this.device instanceof WclapMidiEffectBox ? boxAdapters.adapterFor(this.device, WclapMidiEffectBoxAdapter)
+                : boxAdapters.adapterFor(asInstanceOf(this.device, WclapDeviceBox), WclapDeviceBoxAdapter)
         return adapter.parameters.parameters()
     }
 
@@ -156,6 +204,89 @@ export class PluginSession implements Terminable {
 
     midi(event: MIDIMessageEvent): void {
         this.engine.noteSignal(NoteSignal.fromEvent(event, this.audioUnitBox.address.uuid))
+    }
+
+    // Note effects: the instrument after the effect, a sine or a MIDI Output sending to `device`
+    setOutput(output: NoteOutput): void {
+        const target = this.#instrument
+        if (target === null) {return}
+        const {project} = this
+        this.#instrument = project.editing.modify(() => {
+            if (output.kind === "sine") {
+                const sine = asInstanceOf(project.api.replaceMIDIInstrument(target, InstrumentFactories.Vaporisateur)
+                    .asOption().unwrap("Could not create the sine"), VaporisateurDeviceBox)
+                PluginSession.#sine(sine)
+                return sine as InstrumentBox
+            }
+            const {rootBox} = project
+            const {device} = output
+            const outputBox = rootBox.outputMidiDevices.pointerHub.incoming()
+                .map(({box}) => box).find((box): box is MIDIOutputBox => box instanceof MIDIOutputBox && box.id.getValue() === device.id)
+                ?? MIDIOutputBox.create(project.boxGraph, UUID.generate(), box => {
+                    box.id.setValue(device.id)
+                    box.label.setValue(device.name ?? device.id)
+                    box.root.refer(rootBox.outputMidiDevices)
+                })
+            const midi = asInstanceOf(project.api.replaceMIDIInstrument(target, InstrumentFactories.MIDIOutput)
+                .asOption().unwrap("Could not create the MIDI output"), MIDIOutputDeviceBox)
+            midi.device.refer(outputBox.device)
+            return midi as InstrumentBox
+        }, false).unwrap("Could not change the output")
+    }
+
+    hasStep(step: int, pitch: int): boolean {return this.#steps.has(`${step}:${pitch}`)}
+
+    // Note effects: a sixteenth on the one bar pattern, on or off. Returns whether it is on now.
+    toggleStep(step: int, pitch: int): boolean {
+        const key = `${step}:${pitch}`
+        const {project} = this
+        return project.editing.modify(() => {
+            const existing = this.#steps.get(key)
+            if (isDefined(existing)) {
+                existing.delete()
+                this.#steps.delete(key)
+                return false
+            }
+            const events = this.#pattern ?? this.#createPattern()
+            this.#steps.set(key, NoteEventBox.create(project.boxGraph, UUID.generate(), box => {
+                box.events.refer(events.events)
+                box.position.setValue(step * StepPulses)
+                box.duration.setValue(StepPulses)
+                box.pitch.setValue(pitch)
+                box.velocity.setValue(0.8)
+            }))
+            return true
+        }, false).unwrap("Could not change the pattern")
+    }
+
+    playPattern(play: boolean): void {
+        const {engine, project} = this
+        if (!play) {
+            engine.stop()
+            return
+        }
+        project.editing.modify(() => {
+            const {loopArea} = project.timelineBox
+            loopArea.from.setValue(0)
+            loopArea.to.setValue(PPQN.Bar)
+            loopArea.enabled.setValue(true)
+        }, false)
+        engine.setPosition(0)
+        engine.play()
+    }
+
+    #createPattern(): NoteEventCollectionBox {
+        const {project} = this
+        const events = NoteEventCollectionBox.create(project.boxGraph, UUID.generate())
+        NoteRegionBox.create(project.boxGraph, UUID.generate(), box => {
+            box.regions.refer(this.trackBox.regions)
+            box.events.refer(events.owners)
+            box.position.setValue(0)
+            box.duration.setValue(PPQN.Bar)
+            box.loopDuration.setValue(PPQN.Bar)
+        })
+        this.#pattern = events
+        return events
     }
 
     // Effects: what plays into the track. The microphone runs through the unit's effects as monitoring, the

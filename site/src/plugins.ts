@@ -3,7 +3,7 @@
 // build script left in build/.
 // No DOM here: vite.config.ts reads this list too.
 
-export type PluginKind = "instrument" | "audio-fx"
+export type PluginKind = "instrument" | "audio-fx" | "midi-fx"
 
 export type PluginEntry = {
     id: string
@@ -98,6 +98,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         archive: "build/wet-chorus/wet-chorus.wclap.tar.gz", build: "scripts/build-wet-chorus.sh",
         credit: "https://github.com/yonie/WetChorus", source: port("wet-chorus"), license: "MIT",
         bundled: "/bundled/wet-chorus.wclap.tar.gz"
+    },
+    {
+        id: "note-lab", name: "Note Lab", kind: "midi-fx",
+        description: "The reference note effect: passes, harmonizes, echoes or holds the notes it gets",
+        clapId: "studio.opendaw.note-lab",
+        archive: "build/note-lab/note-lab.wclap.tar.gz", build: "scripts/build-note-lab.sh",
+        credit: port("note-lab"), source: port("note-lab"), license: "MIT",
+        bundled: "/bundled/note-lab.wclap.tar.gz"
     },
     {
         id: "glitchfest", name: "Glitchfest", kind: "audio-fx",

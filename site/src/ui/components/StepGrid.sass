@@ -1,0 +1,39 @@
+component
+  display: flex
+  flex-direction: column
+  row-gap: 0.5em
+  font-size: 0.75rem
+  user-select: none
+
+  > .bar
+    display: flex
+    align-items: center
+    gap: 0.75em
+
+    > .hint
+      color: var(--color-dark)
+
+  > .grid
+    display: grid
+    grid-template-columns: 2.5em repeat(var(--steps), 1fr)
+    gap: 2px
+
+    > .name
+      color: var(--color-gray)
+      font-size: 0.625rem
+      line-height: 1.25rem
+
+      &.sharp
+        color: var(--color-dark)
+
+    > .cell
+      height: 1.25rem
+      border-radius: 2px
+      background-color: var(--color-header-background)
+      cursor: pointer
+
+      &.beat
+        box-shadow: inset 1px 0 0 var(--color-dark)
+
+      &.on
+        background-color: var(--color-green)

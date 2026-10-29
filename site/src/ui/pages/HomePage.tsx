@@ -6,7 +6,7 @@ import {PluginSession} from "@/opendaw/PluginSession"
 
 const className = Html.adoptStyleSheet(css, "HomePage")
 
-const KindLabels = {"instrument": "Instrument", "audio-fx": "Audio effect"} as const
+const KindLabels = {"instrument": "Instrument", "audio-fx": "Audio effect", "midi-fx": "Note effect"} as const
 
 // Fetches the bundle (openDAW's want credentials, so no plain link) and saves it
 const DownloadLink = ({plugin}: { plugin: PluginEntry }) => {
