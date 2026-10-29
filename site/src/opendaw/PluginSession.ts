@@ -1,6 +1,6 @@
-import {asInstanceOf, int, isDefined, Nullable, Observer, Procedure, Subscription, Terminable, Terminator, UUID} from "@opendaw/lib-std"
+import {asInstanceOf, isDefined, Nullable, Observer, Procedure, Subscription, Terminable, Terminator, UUID} from "@opendaw/lib-std"
 import {network} from "@opendaw/lib-runtime"
-import {AudioData, ClassicWaveform, PPQN} from "@opendaw/lib-dsp"
+import {AudioData, ClassicWaveform} from "@opendaw/lib-dsp"
 import {
     AutomatableParameterFieldAdapter,
     BpmDetector,
@@ -18,9 +18,6 @@ import {
     AudioUnitBox,
     MIDIOutputBox,
     MIDIOutputDeviceBox,
-    NoteEventBox,
-    NoteEventCollectionBox,
-    NoteRegionBox,
     TrackBox,
     VaporisateurDeviceBox,
     WclapDeviceBox,
@@ -55,10 +52,6 @@ export type PluginIdentity = { clapId: string, name: string, kind: PluginKind }
 
 // Where a note effect's notes go: a sine, or a MIDI output device
 export type NoteOutput = { kind: "sine" } | { kind: "midi", device: MIDIOutput }
-
-// a one bar pattern of sixteenth notes on the note effect's track
-export const PatternSteps = 16
-const StepPulses = PPQN.Bar / PatternSteps
 
 // One plugin in its own openDAW project: an instrument on an instrument unit, an effect on an audio track, or a
 // note effect between a note track and a sine (or a MIDI output). Notes go to the unit, effect input comes from
@@ -149,8 +142,6 @@ export class PluginSession implements Terminable {
     readonly #terminator = new Terminator()
     readonly #input: { region: Nullable<AudioRegionBox>, file: Nullable<AudioFileBox>, sample: Nullable<string> } =
         {region: null, file: null, sample: null}
-    readonly #steps = new Map<string, NoteEventBox>()
-    #pattern: Nullable<NoteEventCollectionBox> = null
     #instrument: Nullable<InstrumentBox>
 
     private constructor(readonly env: Env,
@@ -232,61 +223,6 @@ export class PluginSession implements Terminable {
             midi.device.refer(outputBox.device)
             return midi as InstrumentBox
         }, false).unwrap("Could not change the output")
-    }
-
-    hasStep(step: int, pitch: int): boolean {return this.#steps.has(`${step}:${pitch}`)}
-
-    // Note effects: a sixteenth on the one bar pattern, on or off. Returns whether it is on now.
-    toggleStep(step: int, pitch: int): boolean {
-        const key = `${step}:${pitch}`
-        const {project} = this
-        return project.editing.modify(() => {
-            const existing = this.#steps.get(key)
-            if (isDefined(existing)) {
-                existing.delete()
-                this.#steps.delete(key)
-                return false
-            }
-            const events = this.#pattern ?? this.#createPattern()
-            this.#steps.set(key, NoteEventBox.create(project.boxGraph, UUID.generate(), box => {
-                box.events.refer(events.events)
-                box.position.setValue(step * StepPulses)
-                box.duration.setValue(StepPulses)
-                box.pitch.setValue(pitch)
-                box.velocity.setValue(0.8)
-            }))
-            return true
-        }, false).unwrap("Could not change the pattern")
-    }
-
-    playPattern(play: boolean): void {
-        const {engine, project} = this
-        if (!play) {
-            engine.stop()
-            return
-        }
-        project.editing.modify(() => {
-            const {loopArea} = project.timelineBox
-            loopArea.from.setValue(0)
-            loopArea.to.setValue(PPQN.Bar)
-            loopArea.enabled.setValue(true)
-        }, false)
-        engine.setPosition(0)
-        engine.play()
-    }
-
-    #createPattern(): NoteEventCollectionBox {
-        const {project} = this
-        const events = NoteEventCollectionBox.create(project.boxGraph, UUID.generate())
-        NoteRegionBox.create(project.boxGraph, UUID.generate(), box => {
-            box.regions.refer(this.trackBox.regions)
-            box.events.refer(events.owners)
-            box.position.setValue(0)
-            box.duration.setValue(PPQN.Bar)
-            box.loopDuration.setValue(PPQN.Bar)
-        })
-        this.#pattern = events
-        return events
     }
 
     // Effects: what plays into the track. The microphone runs through the unit's effects as monitoring, the

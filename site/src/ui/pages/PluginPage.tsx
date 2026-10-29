@@ -15,7 +15,6 @@ import {clearMessageLog, MessageLogView} from "@/ui/components/MessageLogView"
 import {Keyboard} from "@/ui/components/Keyboard"
 import {InputSource} from "@/ui/components/InputSource"
 import {NoteOutput} from "@/ui/components/NoteOutput"
-import {StepGrid} from "@/ui/components/StepGrid"
 import {Meter} from "@/ui/components/Meter"
 import {ColumnResizer} from "@/ui/components/ColumnResizer"
 import {HeaderTitle} from "@/ui/Header"
@@ -251,7 +250,6 @@ const Workbench = ({lifecycle, session, loading}: WorkbenchConstruct) => {
                     {kind !== "audio-fx" && (
                         <Keyboard lifecycle={lifecycle} session={session} midiStatus={midiStatus}/>
                     )}
-                    {kind === "midi-fx" && <StepGrid lifecycle={lifecycle} session={session}/>}
                 </div>
             </div>
             <ColumnResizer lifecycle={lifecycle} target={aside} minWidth={240} maxWidth={400}

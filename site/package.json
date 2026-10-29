@@ -10,18 +10,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@opendaw/lib-box": "^0.0.97",
-    "@opendaw/lib-dom": "^0.0.92",
-    "@opendaw/lib-dsp": "^0.0.96",
-    "@opendaw/lib-jsx": "^0.0.94",
-    "@opendaw/lib-midi": "^0.0.77",
-    "@opendaw/lib-runtime": "^0.0.88",
-    "@opendaw/lib-std": "^0.0.87",
-    "@opendaw/studio-adapters": "^0.3.7",
-    "@opendaw/studio-boxes": "^0.0.113",
-    "@opendaw/studio-core": "^0.2.9",
-    "@opendaw/studio-core-wasm": "^0.0.20",
-    "@opendaw/studio-enums": "^0.1.6"
+    "@opendaw/lib-box": "^0.0.100",
+    "@opendaw/lib-dom": "^0.0.94",
+    "@opendaw/lib-dsp": "^0.0.98",
+    "@opendaw/lib-jsx": "^0.0.96",
+    "@opendaw/lib-midi": "^0.0.79",
+    "@opendaw/lib-runtime": "^0.0.89",
+    "@opendaw/lib-std": "^0.0.88",
+    "@opendaw/studio-adapters": "^0.3.10",
+    "@opendaw/studio-boxes": "^0.0.116",
+    "@opendaw/studio-core": "^0.2.12",
+    "@opendaw/studio-core-wasm": "^0.0.23",
+    "@opendaw/studio-enums": "^0.1.9"
   },
   "devDependencies": {
     "@types/node": "^22.15.18",

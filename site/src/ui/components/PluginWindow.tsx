@@ -18,6 +18,14 @@ const SAVE_DELAY_MS = 250
 const pagePath = (uri: string): string =>
     uri.startsWith("file:") ? uri.replace(/^file:\/*/, "/").split("/").slice(2).join("/") : uri.replace(/^\//, "")
 
+const scrollParent = (from: HTMLElement): Nullable<HTMLElement> => {
+    for (let node = from.parentElement; node !== null; node = node.parentElement) {
+        const {overflowX, overflowY} = getComputedStyle(node)
+        if (/auto|scroll/.test(`${overflowX} ${overflowY}`)) {return node}
+    }
+    return null
+}
+
 // onLayout: the window has its size (or will not get one), what is laid out around it can show
 // panel: the page openDAW shows in its device panel (opendaw.device-panel/1) instead of the plugin window
 type Construct = { lifecycle: Lifecycle, session: PluginSession, log: MessageLog, onLayout: Exec, panel?: boolean }
@@ -103,9 +111,11 @@ export const PluginWindow = ({lifecycle, session, log, onLayout, panel = false}:
                         engine.wclapReceive(deviceUuid, data.bytes)
                         scheduleSave()
                     } else if (data?.type === "wclap-wheel") {
-                        // a wheel event the page did not use: scroll the window instead (deltaMode 1 lines, 2 pages)
-                        const unit = data.deltaMode === 1 ? 16 : data.deltaMode === 2 ? viewport.clientHeight : 1
-                        viewport.scrollBy(data.deltaX * unit, data.deltaY * unit)
+                        // a wheel event the page did not use: the column around the editor scrolls (deltaMode 1 lines, 2 pages)
+                        const parent = scrollParent(element)
+                        if (parent === null) {return}
+                        const unit = data.deltaMode === 1 ? 16 : data.deltaMode === 2 ? parent.clientHeight : 1
+                        parent.scrollBy(data.deltaX * unit, data.deltaY * unit)
                     } else if (data?.type === "wclap-key") {
                         // plain keys reach the page and the site (the computer keyboard plays notes in both)
                         window.dispatchEvent(new KeyboardEvent(data.kind, data.init))
