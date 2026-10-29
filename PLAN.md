@@ -490,9 +490,10 @@ output events, the host's changes back from `on_main_thread` (or from `process`,
 
 ## ZL Audio findings (2026-10-29)
 
-Nine plugins by ZL Audio (zsliu98): ZL Equalizer 2, Compressor, Limiter, Spectrum Equalizer and Splitter (the
-current generation, AGPL-3.0, one code base layout), and the older Inflator, Warm, Loudness Match and Loudness
-Makeup (GPL-3.0). ZLEComp is archived and left out.
+Eight plugins by ZL Audio (zsliu98): ZL Equalizer 2, Compressor, Limiter, Spectrum Equalizer and Splitter (the
+current generation, AGPL-3.0, one code base layout), and the older Inflator, Warm and Loudness Match (GPL-3.0).
+ZLEComp is archived and left out; Loudness Makeup was ported and removed again (its modes record and play back gain
+automation, which made it hard to control in a browser).
 
 - **Shared glue** (`ports/zl-common`): `zl_common.cmake` builds Highway (static dispatch, its WASM SIMD128 target),
   nlopt (its own CMake, Luksan solvers included as upstream) and KFR (sse41 on wasm SIMD, as KFR's CMake does for
@@ -521,9 +522,6 @@ Makeup (GPL-3.0). ZLEComp is archived and left out.
   `PageExtension::closed()` (stop what only the page reads: analyzers fill otherwise), and the play head reports
   time in seconds and samples from the seconds timeline or from beats at the current tempo (openDAW sends only
   beats).
-- **Port editors:** with `ZL_PORT_EDITOR`, `zl_ui_main.h` asks the port for its editor (`zlPortCreateEditor`) and
-  the processor builds headless in ui.wasm too. ZL Loudness Makeup has one: the same parameters as upstream's
-  editor, in a header bar and three panels (Gain, Detector, Makeup), dials that drag up and down.
 - **Splitter:** two stereo outputs upstream; the bundle has one, carrying the first part, or the second with Swap.
 - **Trimmed editors:** no presets (the preset browser, ZL Equalizer 2's match target files, ZL Splitter's control
   import/export), no colour schemes (the colour tab; the older four's light/dark switch on the logo), no tooltip

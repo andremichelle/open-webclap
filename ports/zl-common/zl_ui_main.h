@@ -10,9 +10,6 @@
 
         void zlPortInit (ZLApp&)                     after the bridge exists: install onPluginFrame
         void zlPortFrame (ZLApp&)                    every animation frame, before the bridge flushes
-        juce::AudioProcessorEditor* zlPortCreateEditor (PluginProcessor&)
-                                                     with ZL_PORT_EDITOR defined: the port's own editor instead
-                                                     of upstream's
 
     PluginProcessor is the plugin's processor class (a using declaration for plugins that name it otherwise).
     ZL_SETTINGS_PROCESSOR(p) names the dummy processor of the settings the processor saves in its state,
@@ -47,10 +44,6 @@ EM_JS (void, wclap_js_send, (const void* data, int size), {
 struct ZLApp;
 void zlPortInit (ZLApp&);
 void zlPortFrame (ZLApp&);
-
-#ifdef ZL_PORT_EDITOR
-juce::AudioProcessorEditor* zlPortCreateEditor (PluginProcessor&);
-#endif
 
 /** Reports changes of the editor's non-automatable settings (parameters_NA_) as non-parameter state. */
 struct ZLStateWatcher final : juce::AudioProcessorParameter::Listener
@@ -102,11 +95,7 @@ void sendToHost (const void* data, size_t size) { wclap_js_send (data, (int) siz
 
 void createEditor()
 {
-#ifdef ZL_PORT_EDITOR
-    app->editor.reset (zlPortCreateEditor (*app->processor));
-#else
     app->editor.reset (app->processor->createEditorIfNeeded());
-#endif
 
     if (app->editor == nullptr)
         return;

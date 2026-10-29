@@ -170,12 +170,5 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         clapId: "com.zlaudio.zllmatch",
         archive: "build/zl-lmatch/zl-lmatch.wclap.tar.gz", build: "scripts/build-zl-lmatch.sh",
         credit: "https://github.com/ZL-Audio/ZLLMatch", source: port("zl-lmatch"), license: "GPL-3.0"
-    },
-    {
-        id: "zl-lmakeup", name: "ZL Loudness Makeup", kind: "audio-fx",
-        description: "Loudness make-up: brings the input to the loudness of a reference on the sidechain",
-        clapId: "com.zlaudio.zllmakeup",
-        archive: "build/zl-lmakeup/zl-lmakeup.wclap.tar.gz", build: "scripts/build-zl-lmakeup.sh",
-        credit: "https://github.com/ZL-Audio/ZLLMakeup", source: port("zl-lmakeup"), license: "GPL-3.0"
     }
 ]

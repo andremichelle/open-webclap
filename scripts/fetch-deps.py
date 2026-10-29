@@ -215,7 +215,6 @@ ZL = [
     ("zl-inflator", "ZLInflator", "b71bf485eb84e37b61f8f15e7e04ce190d34230d"),
     ("zl-warm", "ZLWarm", "48093f38c079551924679c5b86bd02d348885f3a"),
     ("zl-lmatch", "ZLLMatch", "0a567f885bb11f479d220afbb1179c028494c0a2"),
-    ("zl-lmakeup", "ZLLMakeup", "cd21094f926d8d7d5dd90b4ae35f5a0ca6057eac"),
 ]
 DEPS += [(directory, "ZL-Audio/" + repo, commit, zl_filter) for directory, repo, commit in ZL]
 DEPS += [
