@@ -18,6 +18,7 @@ plugin gets there depends on what it is written with, so the ports here come fro
   turn a `juce::AudioProcessor` into `module.wasm` and run the plugin's unmodified JUCE editor in a browser canvas.
 - **Other plugins** bring their own build. Polarity SC Dark is a Rust/NIH-plug plugin built for `wasm32-wasip1`,
   with an HTML/Canvas interface ([port guide](ports/sc-dark/README.md)).
+- **Note effects** (MIDI effects) follow Note Lab: [porting a note effect](docs/porting-a-midi-effect.md).
 
 ## Plugins
 
@@ -32,6 +33,7 @@ plugin gets there depends on what it is written with, so the ports here come fro
 | [Polarity SC Dark](https://github.com/polarity/plugin.nih.polarity-sc-dark) | Spectral compressor with upward and downward compression | Rust/NIH-plug + WASI, with a separate HTML/Canvas interface, presets, draggable curve points, and help ([port guide](ports/sc-dark/README.md)) | GPL-3.0-or-later |
 | [OpenSpatialDelay](https://github.com/Spatial-Media-Lab/OpenSpatialDelay) | Spatial delay: each echo placed in 3D space and moved along trajectories, binaural (HRTF) or stereo | JUCE kit: an `AudioProcessor` like RipplerX, stereo out, no OSC (a stand-in `juce_osc`), three of the five HRTF sets. Trajectories run in `processBlock`, so their positions and the tap activity cross over as frames (`ports/open-spatial-delay/osd_frames.h`) | GPL-3.0 |
 | [WetChorus](https://github.com/yonie/WetChorus) | Bucket-brigade stereo chorus after a 1970s guitar combo | Plain CLAP, no JUCE: upstream's engine behind a small C++ wrapper (`ports/wet-chorus/plugin/wetchorus.cpp`), the original panel art on a canvas page. A demo of openDAW's device panel (`opendaw.device-panel/1`), so the site serves its bundle and openDAW's catalogue does not list it | MIT |
+| [Note Lab](ports/note-lab) | The reference note effect: passes, harmonizes, echoes or holds the notes it gets | Plain CLAP, no JUCE (`ports/note-lab/plugin/notelab.cpp`), notes in and out sample exact, a page for the window and openDAW's device panel. The template for porting a note effect ([guide](docs/porting-a-midi-effect.md)), the site serves its bundle | MIT |
 | [ZL Equalizer 2](https://github.com/ZL-Audio/ZLEqualizer) | Dynamic equalizer: 24 bands, each static or dynamic, match EQ, spectrum analyzer, loudness matching | JUCE kit: an `AudioProcessor` whose editor reads the controller directly (analyzers, dynamic gains, solo, loudness match), so those cross over as frames. The analyzer audio crosses as 16-bit frames, only the sources the editor shows. The editor's worker threads run one pass per repaint. Shared ZL glue in `ports/zl-common` | AGPL-3.0 |
 | [ZL Compressor](https://github.com/ZL-Audio/ZLCompressor) | Dynamic range processor with a sidechain equalizer, transfer curve and level history | JUCE kit, as ZL Equalizer 2: two controllers, a magnitude and an FFT analyzer stream (`ports/zl-compressor`) | AGPL-3.0 |
 | [ZL Limiter](https://github.com/ZL-Audio/ZLLimiter) | Lookahead limiter with true peak, oversampling, level history and loudness readouts | JUCE kit, as ZL Equalizer 2: the level analyzer and its measurement status as frames (`ports/zl-limiter`) | AGPL-3.0 |
