@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Note Lab</title>
+    <style>
+        :root {--ground: #141316; --panel: #1d1c20; --line: #2c2a31; --text: #c9c4d1; --dim: #6f6a78; --accent: #f08cc0}
+        html, body {margin: 0; height: 100%; overflow: hidden}
+        body {background: var(--ground); color: var(--text); font: 11px/1.2 system-ui, sans-serif; user-select: none;
+            -webkit-user-select: none; display: grid}
+        body.panel {grid-template-columns: 176px 1fr; padding: 0}
+        body.window {grid-template-columns: 300px 1fr; grid-template-rows: 300px 1fr; gap: 12px; padding: 12px;
+            box-sizing: border-box}
+        canvas {display: block; touch-action: none}
+        canvas.flower {width: 100%; aspect-ratio: 1}
+        body.window canvas.keys {grid-column: 1 / -1; width: 100%; height: 100%}
+        .controls {display: flex; flex-direction: column; gap: 8px; padding: 10px 10px 10px 4px; min-width: 0}
+        body.window .controls {padding: 0; gap: 12px}
+        .row {display: flex; align-items: center; gap: 6px}
+        .label {color: var(--dim); width: 64px; flex: none}
+        .presets {display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px}
+        .modes {display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; flex: 1}
+        button {font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+            border-radius: 3px; padding: 5px 0; cursor: pointer}
+        button:hover {border-color: var(--dim)}
+        button.active {color: var(--ground); background: var(--accent); border-color: var(--accent)}
+        .mode {color: var(--accent); font-size: 13px; min-height: 16px}
+        .slider {display: flex; align-items: center; gap: 6px; flex: 1}
+        .slider input {flex: 1; accent-color: var(--accent)}
+        .slider span {width: 52px; text-align: right; font-variant-numeric: tabular-nums}
+        .grow {flex: 1}
+        body.panel .window-only, body.window .panel-only {display: none}
+    </style>
+</head>
+<body>
+<canvas class="flower"></canvas>
+<div class="controls">
+    <div class="mode panel-only"></div>
+    <div class="presets"></div>
+    <div class="row window-only"><span class="label">Mode</span><div class="modes"></div></div>
+    <div class="row window-only" data-slider="2"><span class="label">Delay</span></div>
+    <div class="row window-only" data-slider="3"><span class="label">Repeats</span></div>
+    <div class="row window-only" data-slider="4"><span class="label">Transpose</span></div>
+    <div class="grow panel-only"></div>
+    <button class="big panel-only">Big View</button>
+</div>
+<canvas class="keys window-only"></canvas>
+<script>
+    // message types, see plugin/notelab.cpp
+    const PAGE_HELLO = 1, PAGE_POLL = 2, PAGE_PARAM_BEGIN = 3, PAGE_PARAM_SET = 4, PAGE_PARAM_END = 5, PAGE_HOVER = 6
+    const PAGE_SHOW_WINDOW = 7, PLUGIN_SNAPSHOT = 1, PLUGIN_DELTA = 2, ACTIVITY_OUTPUT = 1, ACTIVITY_ON = 2
+    const PRESET = 0, MODE = 1, DELAY = 2, REPEATS = 3, TRANSPOSE = 4, PARAM_COUNT = 5, INVALID_ID = 0xffffffff
+    const MODES = ["Thru", "Harmony", "Echo", "Hold"]
+    const SLIDERS = {
+        [DELAY]: {min: 10, max: 2000, step: 1, text: value => `${Math.round(value)} ms`},
+        [REPEATS]: {min: 1, max: 8, step: 1, text: value => `${value}`},
+        [TRANSPOSE]: {min: -24, max: 24, step: 1, text: value => `${value > 0 ? "+" : ""}${value} st`}
+    }
+    // updates at most every 33 ms, the plugin answers a poll only when something changed
+    const POLL_MILLIS = 33
+    const FADE_MILLIS = 600
+    const panel = new URLSearchParams(location.search).has("panel")
+    document.body.classList.add(panel ? "panel" : "window")
+    const state = {values: [0, 0, 250, 3, 0], hovered: INVALID_ID, gesture: INVALID_ID, lastPoll: 0, lastFrame: 0,
+        held: [new Set(), new Set()], level: [new Float32Array(128), new Float32Array(128)], dirty: true}
+
+    const post = bytes => window.parent.postMessage(bytes.buffer, "*")
+    const postParam = (type, id, value) => {
+        const message = new DataView(new ArrayBuffer(type === PAGE_PARAM_SET ? 16 : 8))
+        message.setUint8(0, type)
+        message.setUint32(4, id, true)
+        if (type === PAGE_PARAM_SET) {message.setFloat64(8, value, true)}
+        post(new Uint8Array(message.buffer))
+    }
+    const hover = id => {
+        if (state.hovered === id) {return}
+        state.hovered = id
+        const message = new DataView(new ArrayBuffer(8))
+        message.setUint8(0, PAGE_HOVER)
+        message.setUint32(4, id, true)
+        post(new Uint8Array(message.buffer))
+    }
+    const reportHover = (element, id) => {
+        element.addEventListener("pointerenter", () => hover(id))
+        element.addEventListener("pointerleave", () => {if (state.gesture === INVALID_ID) {hover(INVALID_ID)}})
+    }
+    const setValue = (id, value) => {
+        state.values[id] = value
+        render()
+    }
+    const pick = (id, value) => {
+        postParam(PAGE_PARAM_BEGIN, id)
+        setValue(id, value)
+        postParam(PAGE_PARAM_SET, id, value)
+        postParam(PAGE_PARAM_END, id)
+    }
+    // ctrl+click is the context click on macOS, it arrives as button 0
+    const button = (text, onPick) => {
+        const element = document.createElement("button")
+        element.textContent = text
+        element.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            onPick()
+        })
+        return element
+    }
+
+    const presetButtons = "ABCDEFGH".split("").map((letter, index) => button(letter, () => pick(PRESET, index)))
+    presetButtons.forEach(element => {
+        reportHover(element, PRESET)
+        document.querySelector(".presets").append(element)
+    })
+    const modeButtons = MODES.map((name, index) => button(name, () => pick(MODE, index)))
+    modeButtons.forEach(element => {
+        reportHover(element, MODE)
+        document.querySelector(".modes").append(element)
+    })
+    const sliders = Object.entries(SLIDERS).map(([key, {min, max, step}]) => {
+        const id = Number(key)
+        const wrapper = document.createElement("div")
+        wrapper.className = "slider"
+        const input = document.createElement("input")
+        Object.assign(input, {type: "range", min, max, step})
+        const text = document.createElement("span")
+        wrapper.append(input, text)
+        document.querySelector(`[data-slider="${id}"]`).append(wrapper)
+        reportHover(input, id)
+        input.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {
+                event.preventDefault()
+                return
+            }
+            state.gesture = id
+            postParam(PAGE_PARAM_BEGIN, id)
+        })
+        input.addEventListener("input", () => {
+            const value = Number(input.value)
+            setValue(id, value)
+            postParam(PAGE_PARAM_SET, id, value)
+        })
+        const end = () => {
+            if (state.gesture !== id) {return}
+            state.gesture = INVALID_ID
+            postParam(PAGE_PARAM_END, id)
+        }
+        input.addEventListener("pointerup", end)
+        input.addEventListener("lostpointercapture", end)
+        input.addEventListener("change", end)
+        return {id, input, text}
+    })
+    document.querySelector(".big").addEventListener("click", () => post(new Uint8Array([PAGE_SHOW_WINDOW])))
+
+    const render = () => {
+        const preset = state.values[PRESET], mode = state.values[MODE]
+        presetButtons.forEach((element, index) => element.classList.toggle("active", index === preset))
+        modeButtons.forEach((element, index) => element.classList.toggle("active", index === mode))
+        document.querySelector(".mode").textContent = `${"ABCDEFGH"[preset]} · ${MODES[mode] ?? ""}`
+        sliders.forEach(({id, input, text}) => {
+            if (state.gesture !== id) {input.value = String(state.values[id])}
+            text.textContent = SLIDERS[id].text(state.values[id])
+        })
+    }
+
+    const activity = (flags, key, velocity) => {
+        const side = flags & ACTIVITY_OUTPUT ? 1 : 0
+        if (flags & ACTIVITY_ON) {
+            state.held[side].add(key)
+            state.level[side][key] = Math.max(0.25, velocity / 127)
+        } else {
+            state.held[side].delete(key)
+        }
+    }
+    const readHeld = (view, offset, side) => {
+        state.held[side].clear()
+        for (let key = 0; key < 128; key++) {
+            if (view.getUint8(offset + (key >> 3)) & (1 << (key & 7))) {
+                state.held[side].add(key)
+                state.level[side][key] = Math.max(state.level[side][key], 0.6)
+            }
+        }
+    }
+    window.addEventListener("message", event => {
+        if (!(event.data instanceof ArrayBuffer)) {return}
+        const view = new DataView(event.data)
+        if (view.byteLength < 4) {return}
+        const type = view.getUint8(0)
+        if (type === PLUGIN_SNAPSHOT && view.byteLength >= 80) {
+            for (let id = 0; id < PARAM_COUNT; id++) {
+                if (id !== state.gesture) {state.values[id] = view.getFloat64(8 + id * 8, true)}
+            }
+            readHeld(view, 48, 0)
+            readHeld(view, 64, 1)
+        } else if (type === PLUGIN_DELTA) {
+            const mask = view.getUint8(1), count = view.getUint16(2, true)
+            let offset = 4
+            for (let id = 0; id < PARAM_COUNT; id++) {
+                if ((mask & (1 << id)) === 0) {continue}
+                if (id !== state.gesture) {state.values[id] = view.getFloat64(offset, true)}
+                offset += 8
+            }
+            for (let index = 0; index < count && offset + 4 <= view.byteLength; index++, offset += 4) {
+                activity(view.getUint8(offset), view.getUint8(offset + 1), view.getUint8(offset + 2))
+            }
+        } else {
+            return
+        }
+        render()
+    })
+
+    const flower = document.querySelector("canvas.flower")
+    const keys = document.querySelector("canvas.keys")
+    const fit = canvas => {
+        const ratio = window.devicePixelRatio || 1
+        const {width, height} = canvas.getBoundingClientRect()
+        if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+            canvas.width = Math.round(width * ratio)
+            canvas.height = Math.round(height * ratio)
+        }
+        const context = canvas.getContext("2d")
+        context.setTransform(ratio, 0, 0, ratio, 0, 0)
+        return {context, width, height}
+    }
+    const classLevel = (side, pitchClass) => {
+        let level = 0
+        for (let key = pitchClass; key < 128; key += 12) {level = Math.max(level, state.level[side][key])}
+        return level
+    }
+    // twelve petals, one per pitch class: the notes going out bloom, the notes coming in are the dots inside
+    const drawFlower = () => {
+        const {context, width} = fit(flower)
+        const centre = width / 2, radius = width * 0.42
+        context.clearRect(0, 0, width, width)
+        for (let pitchClass = 0; pitchClass < 12; pitchClass++) {
+            const angle = pitchClass / 12 * Math.PI * 2 - Math.PI / 2
+            const level = classLevel(1, pitchClass)
+            const length = radius * (0.35 + 0.65 * level)
+            context.save()
+            context.translate(centre, centre)
+            context.rotate(angle)
+            context.beginPath()
+            context.ellipse(length * 0.55, 0, length * 0.5, radius * 0.13 * (0.6 + level), 0, 0, Math.PI * 2)
+            context.fillStyle = `hsla(${330 - pitchClass * 6}, 70%, ${28 + level * 40}%, ${0.35 + level * 0.65})`
+            context.fill()
+            context.restore()
+            const input = classLevel(0, pitchClass)
+            context.beginPath()
+            context.arc(centre + Math.cos(angle) * radius * 0.22, centre + Math.sin(angle) * radius * 0.22,
+                1.5 + input * radius * 0.05, 0, Math.PI * 2)
+            context.fillStyle = `rgba(255, 255, 255, ${0.15 + input * 0.85})`
+            context.fill()
+        }
+        context.beginPath()
+        context.arc(centre, centre, radius * 0.1, 0, Math.PI * 2)
+        context.fillStyle = "#f6d36b"
+        context.fill()
+    }
+    // two rows of 128 keys, the notes coming in above, going out below
+    const drawKeys = () => {
+        if (panel) {return}
+        const {context, width, height} = fit(keys)
+        context.clearRect(0, 0, width, height)
+        const keyWidth = width / 128, rowHeight = (height - 4) / 2
+        for (let side = 0; side < 2; side++) {
+            const top = side * (rowHeight + 4)
+            for (let key = 0; key < 128; key++) {
+                const black = [1, 3, 6, 8, 10].includes(key % 12)
+                const level = state.level[side][key]
+                context.fillStyle = level > 0
+                    ? side === 0 ? `rgba(255, 255, 255, ${0.2 + level * 0.8})` : `hsla(${330 - key % 12 * 6}, 70%, 60%, ${0.2 + level * 0.8})`
+                    : black ? "#1a191d" : "#25232a"
+                context.fillRect(key * keyWidth, top, Math.max(1, keyWidth - 1), rowHeight)
+            }
+        }
+    }
+    const frame = time => {
+        const elapsed = Math.min(100, time - (state.lastFrame || time))
+        state.lastFrame = time
+        for (let side = 0; side < 2; side++) {
+            const level = state.level[side]
+            for (let key = 0; key < 128; key++) {
+                if (!state.held[side].has(key) && level[key] > 0) {level[key] = Math.max(0, level[key] - elapsed / FADE_MILLIS)}
+            }
+        }
+        if (time - state.lastPoll >= POLL_MILLIS) {
+            state.lastPoll = time
+            post(new Uint8Array([PAGE_POLL]))
+        }
+        drawFlower()
+        drawKeys()
+        requestAnimationFrame(frame)
+    }
+    render()
+    post(new Uint8Array([PAGE_HELLO]))
+    requestAnimationFrame(frame)
+</script>
+</body>
+</html>
