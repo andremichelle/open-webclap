@@ -17,6 +17,10 @@
         <div class="titlebar">
             <span>Plugin window</span>
             <span id="windowSize"></span>
+            <select id="view" title="openDAW shows a plugin with the opendaw:device-panel feature in its device panel, its Big View asks for the window (request_show)" disabled>
+                <option value="window">Window</option>
+                <option value="panel">Device panel</option>
+            </select>
             <button id="reopen" title="Close and reopen the plugin window (gui destroy, create, new page). The page says hello and gets a snapshot.">Reopen</button>
         </div>
         <div id="viewport"><iframe id="plugin" title="Plugin editor"></iframe></div>
@@ -40,6 +44,14 @@
                 <span class="muted" title="Off: behave like a host that ignores request_callback. The plugin then sends page updates from process.">(off tests the fallback)</span>
             </div>
             <div id="midi" class="row muted"></div>
+            <div class="row">
+                <label for="notesOut">Notes out</label>
+                <select id="notesOut" title="Where a note effect's notes go: a sine in the worklet, sample exact, or a MIDI output" disabled>
+                    <option value="sine">Sine</option>
+                    <option value="off">Off</option>
+                </select>
+                <span id="notesOutInfo" class="muted">not a note effect</span>
+            </div>
         </section>
         <section class="grow">
             <h2>Parameters <input id="filter" type="search" placeholder="Filter"></h2>

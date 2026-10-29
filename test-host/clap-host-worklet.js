@@ -12,10 +12,39 @@ const EVENT_SLOT = 48         // bytes per input event slot (the largest event w
 const MAX_EVENTS = 512
 const SCRATCH_BYTES = 1 << 20 // for page messages and state blobs
 
-const EVENT = {NOTE_ON: 0, NOTE_OFF: 1, PARAM_VALUE: 5, GESTURE_BEGIN: 7, GESTURE_END: 8, MIDI: 10}
+const EVENT = {NOTE_ON: 0, NOTE_OFF: 1, NOTE_CHOKE: 2, PARAM_VALUE: 5, GESTURE_BEGIN: 7, GESTURE_END: 8, MIDI: 10}
 const EXT = {
     PARAMS: "clap.params", STATE: "clap.state", GUI: "clap.gui", WEBVIEW: "clap.webview/3",
-    AUDIO_PORTS: "clap.audio-ports", NOTE_PORTS: "clap.note-ports", LOG: "clap.log", THREAD_CHECK: "clap.thread-check"
+    AUDIO_PORTS: "clap.audio-ports", NOTE_PORTS: "clap.note-ports", LOG: "clap.log", THREAD_CHECK: "clap.thread-check",
+    DEVICE_PANEL: "opendaw.device-panel/1"
+}
+const PANEL_HEIGHT = 176 // openDAW's device panel surface
+
+// The notes a note effect sends out, played sample exact: a sine per key, 5 ms attack, 120 ms release
+class SineVoices {
+    constructor() { this.voices = new Map() }
+    start(key, velocity) {
+        this.voices.set(key, {phase: 0, step: 440 * 2 ** ((key - 69) / 12) / sampleRate, level: 0,
+            target: 0.2 * velocity, rate: 1 / (0.005 * sampleRate)})
+    }
+    stop(key) {
+        const voice = this.voices.get(key)
+        if (voice) { voice.target = 0; voice.rate = voice.level / (0.12 * sampleRate) }
+    }
+    clear() { this.voices.clear() }
+    render(left, right, from, to) {
+        for (const [key, voice] of this.voices) {
+            for (let i = from; i < to; i++) {
+                voice.level = voice.level < voice.target ? Math.min(voice.target, voice.level + voice.rate * voice.target)
+                    : Math.max(voice.target, voice.level - voice.rate)
+                const sample = Math.sin(voice.phase * 2 * Math.PI) * voice.level
+                voice.phase = (voice.phase + voice.step) % 1
+                left[i] += sample
+                right[i] += sample
+            }
+            if (voice.target === 0 && voice.level === 0) this.voices.delete(key)
+        }
+    }
 }
 
 // AudioWorkletGlobalScope has no TextEncoder/TextDecoder
@@ -122,6 +151,11 @@ class ClapHost extends AudioWorkletProcessor {
         this.flushRequested = false
         this.honourCallbacks = true
         this.guiOpen = false
+        this.hasPanel = false
+        this.noteEffect = false
+        this.notesOut = []        // the note effect's output of the current call, [{offset, on, channel, key, velocity} | {offset, midi}]
+        this.sine = new SineVoices()
+        this.playSine = true
         this.port.onmessage = event => this.handle(event.data).catch(error => this.fail(error))
     }
 
@@ -189,6 +223,10 @@ class ClapHost extends AudioWorkletProcessor {
             case "loadState": this.loadState(m.bytes); break
             case "valueText": return this.port.postMessage({type: "valueText", id: m.id, text: this.valueText(m.id, m.value)})
             case "honourCallbacks": this.honourCallbacks = m.value; break
+            case "playSine":
+                this.playSine = m.value
+                if (!m.value) this.sine.clear()
+                break
         }
         this.afterMainThreadCall()
     }
@@ -224,6 +262,8 @@ class ClapHost extends AudioWorkletProcessor {
         this.gui = extension(EXT.GUI)
         this.webview = extension(EXT.WEBVIEW)
         this.audioPorts = extension(EXT.AUDIO_PORTS)
+        this.notePorts = extension(EXT.NOTE_PORTS)
+        const devicePanel = extension(EXT.DEVICE_PANEL)
 
         this.createProcess()
         if (!this.fn(this.plugin + 16)(this.plugin, sampleRate, 1, QUANTUM)) throw new Error("plugin.activate failed")
@@ -232,13 +272,27 @@ class ClapHost extends AudioWorkletProcessor {
 
         const features = []
         for (let p = this.u32(descriptor + 44); p && this.u32(p); p += 4) features.push(this.cstr(this.u32(p)))
+        const noteOutputs = this.notePorts ? this.fn(this.notePorts)(this.plugin, 0) : 0
+        const panel = this.panelInfo(devicePanel, features)
+        this.hasPanel = panel !== null
+        this.noteEffect = features.includes("note-effect") || (noteOutputs > 0 && this.outputPorts.length === 0)
         this.port.postMessage({
             type: "loaded",
             descriptor: {id, name: this.cstr(this.u32(descriptor + 16)), vendor: this.cstr(this.u32(descriptor + 20)),
                 version: this.cstr(this.u32(descriptor + 36)), features},
             params: this.paramInfos(), hasGui: !!(this.gui && this.webview), memoryBytes: memory.buffer.byteLength,
-            audioInputs: this.inputPorts.map(port => port.info), audioOutputs: this.outputPorts.map(port => port.info)
+            audioInputs: this.inputPorts.map(port => port.info), audioOutputs: this.outputPorts.map(port => port.info),
+            noteOutputs, noteEffect: this.noteEffect, panel
         })
+    }
+
+    // the device panel page and its width at openDAW's panel height, null without feature or extension
+    panelInfo(devicePanel, features) {
+        if (!devicePanel || !features.includes("opendaw:device-panel")) return null
+        const length = this.fn(devicePanel)(this.plugin, this.textPtr, 256)
+        const width = this.alloc(4)
+        if (length <= 0 || !this.fn(devicePanel + 4)(this.plugin, PANEL_HEIGHT, width)) return null
+        return {uri: this.cstr(this.textPtr), width: this.u32(width), height: PANEL_HEIGHT}
     }
 
     createHost() {
@@ -269,7 +323,12 @@ class ClapHost extends AudioWorkletProcessor {
             this.port.postMessage({type: "resize", width, height})
             return 1
         })
-        this.install(gui + 8, ["i32"], ["i32"], () => 0)
+        // request_show: a device panel page asks for the window, a host without panels has nothing to show
+        this.install(gui + 8, ["i32"], ["i32"], () => {
+            if (!this.hasPanel) return 0
+            this.port.postMessage({type: "requestShow"})
+            return 1
+        })
         this.install(gui + 12, ["i32"], ["i32"], () => 0)
         this.install(gui + 16, ["i32", "i32"], [], () => {})
 
@@ -480,7 +539,38 @@ class ClapHost extends AudioWorkletProcessor {
             this.port.postMessage({type: "paramOut", id, value, text: this.valueText(id, value)})
         } else if (type === EVENT.GESTURE_BEGIN || type === EVENT.GESTURE_END) {
             this.port.postMessage({type: "gesture", id: v.getUint32(ptr + 16, true), begin: type === EVENT.GESTURE_BEGIN})
+        } else if (!this.noteEffect) {
+            return
+        } else if (type === EVENT.NOTE_ON || type === EVENT.NOTE_OFF || type === EVENT.NOTE_CHOKE) {
+            this.notesOut.push({offset: v.getUint32(ptr + 4, true), on: type === EVENT.NOTE_ON, channel: v.getInt16(ptr + 22, true),
+                key: v.getInt16(ptr + 24, true), velocity: v.getFloat64(ptr + 32, true)})
+        } else if (type === EVENT.MIDI) {
+            const midi = [0, 1, 2].map(index => v.getUint8(ptr + 18 + index))
+            const status = midi[0] & 0xf0
+            if (status === 0x90 || status === 0x80) {
+                this.notesOut.push({offset: v.getUint32(ptr + 4, true), on: status === 0x90 && midi[2] > 0,
+                    channel: midi[0] & 15, key: midi[1], velocity: midi[2] / 127})
+            } else {
+                this.notesOut.push({offset: v.getUint32(ptr + 4, true), midi})
+            }
         }
+    }
+
+    // the note effect's output: sample exact on the sine, then to the page for the monitor and Web MIDI
+    playNotesOut(left, right, time) {
+        const events = this.notesOut.splice(0)
+        if (left && right && this.playSine) {
+            let position = 0
+            for (const event of events) {
+                const offset = Math.min(QUANTUM, event.offset)
+                if (offset > position) { this.sine.render(left, right, position, offset); position = offset }
+                if (event.key === undefined || event.key < 0) continue
+                if (event.on) this.sine.start(event.key, event.velocity)
+                else this.sine.stop(event.key)
+            }
+            this.sine.render(left, right, position, QUANTUM)
+        }
+        if (events.length > 0) this.port.postMessage({type: "notesOut", time: Number(time), events})
     }
 
     // Between process calls: flush if the plugin asked (so its output events arrive even while the audio is
@@ -528,6 +618,7 @@ class ClapHost extends AudioWorkletProcessor {
             const out = outputs[0], main = this.outputPorts[0]
             if (main) for (let ch = 0; ch < out.length; ch++)
                 out[ch].set(new Float32Array(this.memory.buffer, main.channels[Math.min(ch, main.channels.length - 1)], QUANTUM))
+            if (this.noteEffect) this.playNotesOut(out[0], out[1] ?? out[0], this.steadyTime - BigInt(QUANTUM))
 
             if (this.mainThreadRequested && this.honourCallbacks) {
                 this.mainThreadRequested = false

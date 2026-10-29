@@ -15,6 +15,7 @@ const logView = document.getElementById("log")
 const rows = new Map()   // clapId -> {root, range, value, info}
 const counts = {in: 0, out: 0}
 let bundle = null, node = null, context = null, storedState = null
+let guiPage = null, panel = null        // {uri, width, height} each, the window and openDAW's device panel
 
 // ---------------------------------------------------------------------------------------------------------------
 // Start
@@ -65,13 +66,25 @@ function fromWorklet(m) {
                 {textContent: `${d.vendor} · ${d.version} · ${d.id} · ${m.params.length} parameters · WebCLAP test host`}))
             document.title = `${d.name} · WebCLAP test host`
             buildParams(m.params)
+            panel = m.panel
+            document.getElementById("view").disabled = !panel
+            if (panel) log("out", `device panel ${panel.uri} ${panel.width} × ${panel.height}`, "host")
+            setupNotesOut(m.noteEffect, m.noteOutputs)
             if (m.hasGui) openGui()
             break
         }
         case "gui":
             if (!m.uri) { log("in", "plugin has no webview page"); break }
-            setWindowSize(m.width, m.height)
-            frame.src = `${bundle}/${m.uri.replace(/^\//, "")}`
+            guiPage = {uri: m.uri, width: m.width, height: m.height}
+            showPage()
+            break
+        case "requestShow":
+            log("out", "request_show", "host")
+            document.getElementById("view").value = "window"
+            showPage()
+            break
+        case "notesOut":
+            notesOut(m.time, m.events)
             break
         case "send":
             logFrame("out", m.bytes)
@@ -119,6 +132,15 @@ function fromWorklet(m) {
 }
 
 function openGui() { node.port.postMessage({type: "openGui"}) }
+
+// the window's page or the device panel's, both in the one gui session, the page says hello when it loads
+function showPage() {
+    const page = document.getElementById("view").value === "panel" && panel ? panel : guiPage
+    if (!page) return
+    setWindowSize(page.width, page.height)
+    frame.src = `${bundle}/${page.uri.replace(/^\//, "")}`
+}
+document.getElementById("view").addEventListener("change", showPage)
 
 function setWindowSize(width, height) {
     frame.style.width = `${width}px`
@@ -276,6 +298,73 @@ function note(key, on, velocity = 0.8) {
     node.port.postMessage({type: "note", on, key, velocity: on ? velocity : 0})
     const el = keyboard.querySelector(`[data-key="${key}"]`)
     if (el) el.classList.toggle("down", on)
+    if (noteEffect) log("in", noteText(on, key, on ? velocity : 0, 0), "note")
+}
+
+const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+function noteText(on, key, velocity, channel) {
+    return `${on ? "+" : "−"}${NAMES[key % 12]}${Math.floor(key / 12) - 1} (${key}) v${velocity.toFixed(2)} ch${channel + 1}`
+}
+
+// A note effect's output: the worklet plays it on its sine, or this page sends it to a MIDI output
+let noteEffect = false, midiAccess = null
+const notesOutSelect = document.getElementById("notesOut")
+const sounding = new Map()   // "channel:key" -> the MIDI output it went to, released when the output changes
+
+function setupNotesOut(isNoteEffect, noteOutputs) {
+    noteEffect = isNoteEffect
+    notesOutSelect.disabled = !noteEffect
+    document.getElementById("notesOutInfo").textContent = noteEffect
+        ? `note effect · ${noteOutputs} output note port${noteOutputs === 1 ? "" : "s"}` : "not a note effect"
+}
+
+function midiOutput() {
+    return midiAccess && notesOutSelect.value.startsWith("midi:") ? midiAccess.outputs.get(notesOutSelect.value.slice(5)) : null
+}
+
+function releaseSounding() {
+    for (const [id, output] of sounding) {
+        const [channel, key] = id.split(":").map(Number)
+        output.send([0x80 | channel, key, 0])
+    }
+    sounding.clear()
+}
+
+notesOutSelect.addEventListener("change", () => {
+    releaseSounding()
+    node.port.postMessage({type: "playSine", value: notesOutSelect.value === "sine"})
+    log("in", `notes out to ${notesOutSelect.selectedOptions[0].textContent}`, "host")
+})
+
+function notesOut(time, events) {
+    const output = midiOutput()
+    for (const event of events) {
+        const at = `sample ${time + event.offset} (+${event.offset})`
+        if (event.midi) {
+            log("out", `midi ${event.midi.map(byte => byte.toString(16).padStart(2, "0")).join(" ")} · ${at}`, "note")
+            if (output) output.send(event.midi)
+            continue
+        }
+        log("out", `${noteText(event.on, event.key, event.velocity, event.channel)} · ${at}`, "note")
+        if (!output || event.key < 0) continue
+        const channel = Math.max(0, event.channel) & 15, id = `${channel}:${event.key}`
+        if (event.on) {
+            output.send([0x90 | channel, event.key, Math.max(1, Math.round(event.velocity * 127))])
+            sounding.set(id, output)
+        } else {
+            output.send([0x80 | channel, event.key, Math.round(event.velocity * 127)])
+            sounding.delete(id)
+        }
+    }
+}
+
+function listMidiOutputs() {
+    const selected = notesOutSelect.value
+    for (const option of [...notesOutSelect.options]) if (option.value.startsWith("midi:")) option.remove()
+    for (const output of midiAccess.outputs.values()) {
+        notesOutSelect.append(Object.assign(document.createElement("option"), {value: `midi:${output.id}`, textContent: `MIDI: ${output.name}`}))
+    }
+    notesOutSelect.value = [...notesOutSelect.options].some(option => option.value === selected) ? selected : "sine"
 }
 
 for (let key = 36; key < 36 + 61; key++) {
@@ -309,6 +398,7 @@ window.addEventListener("keyup", e => {
 
 if (navigator.requestMIDIAccess) {
     navigator.requestMIDIAccess().then(access => {
+        midiAccess = access
         const attach = () => {
             const names = []
             for (const input of access.inputs.values()) {
@@ -317,9 +407,14 @@ if (navigator.requestMIDIAccess) {
                     const [status, a, b] = e.data
                     if (status >= 0xf0) return
                     node.port.postMessage({type: "midi", data: [status, a ?? 0, b ?? 0]})
+                    const kind = status & 0xf0
+                    if (noteEffect && (kind === 0x90 || kind === 0x80)) {
+                        log("in", noteText(kind === 0x90 && b > 0, a, (b ?? 0) / 127, status & 15), "note")
+                    }
                 }
             }
             document.getElementById("midi").textContent = names.length ? `MIDI in: ${names.join(", ")}` : "No MIDI inputs"
+            listMidiOutputs()
         }
         access.onstatechange = attach
         attach()
@@ -336,8 +431,8 @@ function logFrame(direction, buffer) {
     let text = `${name} ${buffer.byteLength} bytes`
     if (type === 3 && buffer.byteLength >= 16) text = `param ${label(view.getUint32(4, true))} = ${view.getFloat64(8, true).toFixed(4)}`
     else if (type === 4 && buffer.byteLength >= 9) text = `gesture ${label(view.getUint32(4, true))} ${view.getUint8(8) ? "begin" : "end"}`
-    else if (type === 2) text = `snapshot ${view.getUint32(4, true)} values, ${buffer.byteLength} bytes`
-    else if (type === 7) text = `resize ${view.getUint32(4, true)} × ${view.getUint32(8, true)}`
+    else if (type === 2 && buffer.byteLength >= 8) text = `snapshot ${view.getUint32(4, true)} values, ${buffer.byteLength} bytes`
+    else if (type === 7 && buffer.byteLength >= 12) text = `resize ${view.getUint32(4, true)} × ${view.getUint32(8, true)}`
     log(direction, text)
 }
 
@@ -346,7 +441,8 @@ let lastLine = null, repeat = 0
 function log(direction, text, kind = "page") {
     counts[direction]++
     document.getElementById("counts").textContent = `${counts.in} in · ${counts.out} out`
-    const prefix = kind === "host" ? "host  " : direction === "in" ? "UI → DSP" : "DSP → UI"
+    const prefix = kind === "host" ? "host  " : kind === "note" ? (direction === "in" ? "note in " : "note out")
+        : direction === "in" ? "UI → DSP" : "DSP → UI"
     const key = prefix + text.replace(/=.*$/, "")
     if (lastLine && lastLine.dataset.key === key) { // collapse drags into one line
         repeat++
@@ -354,7 +450,7 @@ function log(direction, text, kind = "page") {
         return
     }
     repeat = 0
-    const line = Object.assign(document.createElement("div"), {className: kind === "host" ? "host" : direction})
+    const line = Object.assign(document.createElement("div"), {className: kind === "host" || kind === "note" ? kind : direction})
     line.dataset.key = key
     line.textContent = `${prefix}  ${text}`
     logView.append(line)

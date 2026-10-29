@@ -64,6 +64,9 @@ select { max-width: 220px; }
 #audio { margin-left: auto; }
 #audio.on { border-color: var(--in); color: var(--in); }
 #log .host { color: var(--accent); }
+#log .note { color: #d9a0e0; }
+.titlebar #view { margin-left: auto; }
+.titlebar #view + button { margin-left: 0; }
 .module { margin: 8px 0 2px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 
 #keyboard { display: flex; position: relative; height: 64px; margin-top: 8px; user-select: none; touch-action: none; }
