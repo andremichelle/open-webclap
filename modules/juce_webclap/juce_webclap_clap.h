@@ -69,6 +69,9 @@ namespace juce::webclap
 
         /** A page said hello: it knows nothing yet, the next update sends everything, not only what changed. */
         virtual void opened() {}
+
+        /** The page went away (clap.gui destroy): stop what only it needs, such as feeding an analyzer. */
+        virtual void closed (AudioProcessor&) {}
     };
 
     /** Defined by ports that need it. The kit's default returns nullptr. */

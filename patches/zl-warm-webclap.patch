@@ -1,0 +1,28 @@
+ZLWarm for WebCLAP (ports/zl-warm):
+
+- PluginProcessor.cpp: ZL_WEBCLAP_HEADLESS builds the processor without its editor (module.wasm)
+
+--- a/source/PluginProcessor.cpp
++++ b/source/PluginProcessor.cpp
+@@ -11,7 +11,9 @@
+ */
+ 
+ #include "PluginProcessor.h"
++#if ! ZL_WEBCLAP_HEADLESS
+ #include "PluginEditor.h"
++#endif
+ 
+ //==============================================================================
+ PluginProcessor::PluginProcessor()
+@@ -139,7 +141,11 @@
+ }
+ 
+ juce::AudioProcessorEditor *PluginProcessor::createEditor() {
++#if ZL_WEBCLAP_HEADLESS
++    return nullptr; // module.wasm: the editor runs in the page (ui.wasm)
++#else
+     return new PluginEditor(*this);
++#endif
+     //    return new juce::GenericAudioProcessorEditor(*this);
+ }
+ 

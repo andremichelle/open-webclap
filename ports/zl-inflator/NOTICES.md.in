@@ -1,0 +1,37 @@
+# ZL Inflator for WebCLAP
+
+ZLInflator by ZL Audio (zsliu98), a distortion/saturation plugin to increase loudness, ported to WebCLAP. This is
+not an official ZL Audio release.
+
+- ZLInflator: https://github.com/ZL-Audio/ZLInflator (commit b71bf48, after version 0.3.0)
+- This port, and the complete source of this bundle: @SOURCE_URL@
+  Build it with `scripts/build-zl-inflator.sh`, which fetches every dependency below at the commit named here.
+
+Changes in this port (`patches/zl-inflator-webclap.patch`): the processor builds without its editor, and its meters
+hand what they measured to the editor's meters in the page. The editor's UI settings (style, window size) live in
+the page's memory and are gone when it reloads.
+
+## License
+
+The bundle as a whole is licensed under the **GNU Affero General Public License, version 3** (`LICENSE`).
+
+ZLInflator is GPL-3.0 (`licenses/GPL-3.0.txt`), Copyright (C) 2023 zsliu98. Both modules contain the JUCE
+framework, used under the AGPL-3.0, so `module.wasm` and `ui/ui.wasm` are AGPL-3.0. GPL-3.0 section 13 permits the
+combination.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licenses for details.
+
+## Components
+
+| Component | In | Copyright | License |
+|---|---|---|---|
+| [ZLInflator](https://github.com/ZL-Audio/ZLInflator) | both | 2023 zsliu98 | GPL-3.0 |
+| WebCLAP kit ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/juce_webclap`) | both | André Michelle | MIT |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-inflator`, `ports/zl-common`) | both | André Michelle | GPL-3.0 |
+| [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
+| [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
+| [Open Sans](https://github.com/googlefonts/opensans) SemiBold font | ui | 2010-2011 Google Corporation | Apache-2.0 (`licenses/Apache-2.0-OpenSans.txt`) |
+| [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |
+
+@JUCE_BUNDLED@

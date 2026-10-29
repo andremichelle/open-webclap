@@ -1,0 +1,201 @@
+ZLCompressor for WebCLAP (ports/zl-compressor), all under ZL_WEBCLAP:
+
+- PluginProcessor.cpp: ZL_WEBCLAP_HEADLESS builds the processor without its editor (module.wasm)
+- compress_controller.hpp, equalize_controller.hpp: ZLWebclapAccess (ports/zl-compressor/zl_compressor_access.h)
+  as a friend, for the status and controls that cross over as frames; lufs_matcher.hpp: setDiff, for the
+  stand-in's matcher
+- curve_panel.cpp, equalize_panel.cpp, response_panel.cpp: no threads, so the two worker loops run one pass per
+  repaint (CurvePanel::paintOverChildren) on the editor's thread instead of waiting for notify()
+- compact_combobox: the kit's JUCE names the display areas userArea/totalArea and has no popup item tooltips
+  (ZL's JUCE fork adds them)
+
+--- a/source/PluginProcessor.cpp
++++ b/source/PluginProcessor.cpp
+@@ -8,7 +8,9 @@
+ // You should have received a copy of the GNU Affero General Public License along with ZLCompressor. If not, see <https://www.gnu.org/licenses/>.
+ 
+ #include "PluginProcessor.hpp"
++#if ! ZL_WEBCLAP_HEADLESS
+ #include "PluginEditor.hpp"
++#endif
+ 
+ namespace {
+     juce::ValueTree copyWithType(const juce::ValueTree& source, const juce::Identifier& type) {
+@@ -504,7 +506,11 @@
+ }
+ 
+ juce::AudioProcessorEditor* PluginProcessor::createEditor() {
++#if ZL_WEBCLAP_HEADLESS
++    return nullptr; // module.wasm: the editor runs in the page (ui.wasm)
++#else
+     return new PluginEditor(*this);
++#endif
+ }
+ 
+ void PluginProcessor::getStateInformation(juce::MemoryBlock& dest_data) {
+--- a/source/dsp/loudness/lufs_matcher.hpp
++++ b/source/dsp/loudness/lufs_matcher.hpp
+@@ -77,6 +77,13 @@
+             return loudness_diff_.load(std::memory_order::relaxed);
+         }
+ 
++#if ZL_WEBCLAP
++        /** For an editor whose matcher runs elsewhere (the WebCLAP port's stand-in processor). */
++        void setDiff(const FloatType diff) {
++            loudness_diff_.store(diff, std::memory_order::relaxed);
++        }
++#endif
++
+     private:
+         LUFSMeter<FloatType> pre_loudness_meter_, post_loudness_meter_;
+         std::atomic<FloatType> loudness_diff_{FloatType(0)};
+--- a/source/gui/combobox/compact_combobox/compact_combobox.cpp
++++ b/source/gui/combobox/compact_combobox/compact_combobox.cpp
+@@ -25,7 +25,9 @@
+                 juce::PopupMenu::Item item;
+                 item.itemID = i + 1;
+                 item.text = choices[i];
++#if ! ZL_WEBCLAP // the kit's JUCE has no item tooltips (ZL's fork adds them)
+                 item.tooltipText = item_labels[static_cast<size_t>(i)];
++#endif
+                 item.isEnabled = true;
+                 item.isTicked = false;
+                 menu->addItem(std::move(item));
+@@ -57,7 +59,9 @@
+             item.itemID = static_cast<int>(i + 1);
+             item.text = "";
+             if (i < item_labels.size()) {
++#if ! ZL_WEBCLAP // the kit's JUCE has no item tooltips (ZL's fork adds them)
+                 item.tooltipText = item_labels[i];
++#endif
+             }
+             item.isEnabled = true;
+             item.isTicked = false;
+--- a/source/gui/combobox/compact_combobox/compact_combobox_look_and_feel.hpp
++++ b/source/gui/combobox/compact_combobox/compact_combobox_look_and_feel.hpp
+@@ -266,8 +266,13 @@
+                                                          static_cast<float>(insets.getLeft()),
+                                                          static_cast<float>(insets.getBottom()),
+                                                          static_cast<float>(insets.getRight()));
++#if ZL_WEBCLAP // the kit's JUCE names them userArea and totalArea (integer)
++                const auto screen_area = display->userArea.toFloat().getIntersection(
++                    safe_border.subtractedFrom(display->totalArea.toFloat()));
++#else
+                 const auto screen_area = display->userBounds.getIntersection(
+                     safe_border.subtractedFrom(display->logicalBounds));
++#endif
+                 available = available.getIntersection(parent->getLocalArea(nullptr, screen_area));
+             }
+ 
+--- a/source/panel/curve_panel/curve_panel.cpp
++++ b/source/panel/curve_panel/curve_panel.cpp
+@@ -50,7 +50,11 @@
+     void CurvePanel::paintOverChildren(juce::Graphics& g) {
+         juce::ignoreUnused(g);
+         equalize_panel_.repaintCallBackAfter();
++#if ZL_WEBCLAP
++        run(); // no threads (WebAssembly): one pass of the worker loop per repaint, on the editor's thread
++#else
+         notify();
++#endif
+     }
+ 
+     void CurvePanel::resized() {
+@@ -111,12 +115,16 @@
+ 
+     void CurvePanel::run() {
+         juce::ScopedNoDenormals no_denormals;
++#if ZL_WEBCLAP
++        do {
++#else
+         while (!threadShouldExit()) {
+             const auto flag = wait(-1);
+             juce::ignoreUnused(flag);
+             if (threadShouldExit()) {
+                 return;
+             }
++#endif
+             const MagDBRange mag_db_range{
+                 zlstate::PAnalyzerMaxDB::getDBFromIndex(
+                     analyzer_max_db_ref_.load(std::memory_order::relaxed)),
+@@ -129,7 +137,11 @@
+             if (equalize_show_ref_.load(std::memory_order::relaxed) > .5f) {
+                 equalize_panel_.run(*this);
+             }
++#if ZL_WEBCLAP
++        } while (false);
++#else
+         }
++#endif
+     }
+ 
+     void CurvePanel::repaintCallBackSlow() {
+--- a/source/panel/curve_panel/equalize_panel/equalize_panel.cpp
++++ b/source/panel/curve_panel/equalize_panel/equalize_panel.cpp
+@@ -136,7 +136,11 @@
+ 
+     void EqualizePanel::repaintCallBackAfter() {
+         button_panel_.repaintCallBackAfter();
++#if ZL_WEBCLAP
++        response_panel_.run(); // one pass per repaint (CurvePanel::paintOverChildren), no threads
++#else
+         response_panel_.notify();
++#endif
+     }
+ 
+     void EqualizePanel::updateSampleRate(const double sample_rate) {
+--- a/source/panel/curve_panel/equalize_panel/response_panel/response_panel.cpp
++++ b/source/panel/curve_panel/equalize_panel/response_panel/response_panel.cpp
+@@ -92,12 +92,16 @@
+ 
+     void ResponsePanel::run() {
+         juce::ScopedNoDenormals no_denormals;
++#if ZL_WEBCLAP
++        do { // one pass per repaint (EqualizePanel::repaintCallBackAfter), no threads
++#else
+         while (!threadShouldExit()) {
+             const auto flag = wait(-1);
+             juce::ignoreUnused(flag);
+             if (threadShouldExit()) {
+                 break;
+             }
++#endif
+             if (!updateCurveParameters()) {
+                 continue;
+             }
+@@ -132,7 +136,11 @@
+                            std::span<const size_t>(on_indices_),
+                            std::span<const float>(xs_), c_scale_, c_bias_, magnitudes_);
+             to_update_sum_ = false;
++#if ZL_WEBCLAP
++        } while (false);
++#else
+         }
++#endif
+     }
+ 
+     void ResponsePanel::parameterChanged(const juce::String& parameter_ID, const float value) {
+--- a/source/zlp/compress_controller.hpp
++++ b/source/zlp/compress_controller.hpp
+@@ -205,6 +205,9 @@
+         }
+ 
+     private:
++#if ZL_WEBCLAP
++        friend struct ZLWebclapAccess; // the WebCLAP port's frames (ports/zl-compressor)
++#endif
+         juce::AudioProcessor& processor_ref_;
+         double sample_rate_{48000.0};
+         std::array<zldsp::vector::aligned_vector<float>, 2> pre_buffer_, post_buffer_, analyzer_side_buffer_;
+--- a/source/zlp/equalize_controller.hpp
++++ b/source/zlp/equalize_controller.hpp
+@@ -137,6 +137,9 @@
+         }
+ 
+     private:
++#if ZL_WEBCLAP
++        friend struct ZLWebclapAccess; // the WebCLAP port's frames (ports/zl-compressor)
++#endif
+         zlchore::thread::Notifier to_update_{true};
+         zlchore::thread::Notifier to_update_gain_{true};
+         std::atomic<double> gain_db_{0.f};

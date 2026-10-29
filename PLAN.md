@@ -488,6 +488,40 @@ output events, the host's changes back from `on_main_thread` (or from `process`,
   per change, so it is not exposed. Two instances keep two caches. A worker would solve strikes off the audio
   thread, if hosts offer one.
 
+## ZL Audio findings (2026-10-29)
+
+Nine plugins by ZL Audio (zsliu98): ZL Equalizer 2, Compressor, Limiter, Spectrum Equalizer and Splitter (the
+current generation, AGPL-3.0, one code base layout), and the older Inflator, Warm, Loudness Match and Loudness
+Makeup (GPL-3.0). ZLEComp is archived and left out.
+
+- **Shared glue** (`ports/zl-common`): `zl_common.cmake` builds Highway (static dispatch, its WASM SIMD128 target),
+  nlopt (its own CMake, Luksan solvers included as upstream) and KFR (sse41 on wasm SIMD, as KFR's CMake does for
+  Emscripten) and splits the sources into processor and editor. `zl_ui_main.h` is the ui.wasm entry every ZL port
+  shares; a port adds `zlPortInit` and `zlPortFrame`. `zl_analyzer_stream.h` moves zldsp's `AnalyzerSenderBase`
+  FIFOs across: the DSP side drains them in `PageExtension::update`, the UI side pushes into the stand-in's sender.
+- **Threads.** The current generation's editors run their analyzers and response curves on `juce::Thread`s that
+  wait for `notify()` from `paintOverChildren`. The patches make each loop a `do { } while (false)` under
+  `ZL_WEBCLAP` and call it from `paintOverChildren`: one pass per repaint, on the editor's thread.
+- **JUCE.** ZL builds against a fork of JUCE develop: `Display::userBounds/logicalBounds` (the kit's JUCE:
+  `userArea/totalArea`) and `PopupMenu::Item::tooltipText` (missing, so combo box items have no tooltips) are the
+  only drift, patched in the plugins.
+- **Analyzer traffic.** Raw float for three stereo sources was 1.2 MB/s (ZL Equalizer 2). Now: only the sources the
+  editor shows (a mask in the port's controls frame), a source identical to an earlier one as one byte (the side
+  source copies the input without a sidechain), samples as 16 bits with a scale per channel (quantisation about
+  100 dB under the channel's peak). 0.4 MB/s for pre and post. Meters cross as deltas.
+- **DSP cost** (Node, the test host's worklet code, 48 kHz, 128-frame blocks): ZL Equalizer 2 with 8 boosted bands
+  0.33 % of real time, 8 dynamic bands 1.2 %, linear phase 0.44 %. Nothing worth changing.
+- **Kit additions:** every enabled input bus is a CLAP input port, so a sidechain is the second port, which openDAW
+  feeds as an aux input (unfed ports are silent); output buses beyond the main one are switched off.
+  `clap.latency` (linear-phase modes, lookahead, oversampling; a change while active asks the host for a restart),
+  `PageExtension::closed()` (stop what only the page reads: analyzers fill otherwise), and the play head reports
+  time in seconds and samples from the seconds timeline or from beats at the current tempo (openDAW sends only
+  beats).
+- **Splitter:** two stereo outputs upstream; the bundle has one, carrying the first part, or the second with Swap.
+- **Open:** presets and UI settings the editors save to files live in the page's memory, ZL Equalizer 2's match EQ
+  fits its curve in one editor frame (the editor stalls while it does), ZL Warm's MiSans font has no license file
+  upstream.
+
 ## Open questions
 
 - Worker with `OffscreenCanvas` from the start, or main thread first and the worker later?

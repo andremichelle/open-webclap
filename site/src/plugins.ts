@@ -106,5 +106,68 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         archive: "build/glitchfest/glitchfest.wclap.tar.gz", build: "scripts/build-glitchfest.sh",
         credit: "https://github.com/andremichelle/opendaw-commons/tree/main/wclaps/glitchfest",
         source: "https://github.com/andremichelle/opendaw-commons/tree/main/wclaps/glitchfest", license: "MIT"
+    },
+    {
+        id: "zl-equalizer", name: "ZL Equalizer 2", kind: "audio-fx",
+        description: "Dynamic equalizer: 24 bands, each static or dynamic, with match EQ, spectrum analyzer and loudness matching",
+        clapId: "com.zlaudio.zlequalizer",
+        archive: "build/zl-equalizer/zl-equalizer.wclap.tar.gz", build: "scripts/build-zl-equalizer.sh",
+        credit: "https://github.com/ZL-Audio/ZLEqualizer", source: port("zl-equalizer"), license: "AGPL-3.0"
+    },
+    {
+        id: "zl-compressor", name: "ZL Compressor", kind: "audio-fx",
+        description: "Dynamic range processor with a sidechain equalizer, transfer curve and level history",
+        clapId: "com.zlaudio.zlcompressor",
+        archive: "build/zl-compressor/zl-compressor.wclap.tar.gz", build: "scripts/build-zl-compressor.sh",
+        credit: "https://github.com/ZL-Audio/ZLCompressor", source: port("zl-compressor"), license: "AGPL-3.0"
+    },
+    {
+        id: "zl-limiter", name: "ZL Limiter", kind: "audio-fx",
+        description: "Lookahead limiter with true peak, oversampling, level history and loudness readouts",
+        clapId: "com.zlaudio.zllimiter",
+        archive: "build/zl-limiter/zl-limiter.wclap.tar.gz", build: "scripts/build-zl-limiter.sh",
+        credit: "https://github.com/ZL-Audio/ZLLimiter", source: port("zl-limiter"), license: "AGPL-3.0"
+    },
+    {
+        id: "zl-spectrum-equalizer", name: "ZL Spectrum Equalizer", kind: "audio-fx",
+        description: "Spectrum equalizer with dynamic bands, spectrum analyzer and loudness matching",
+        clapId: "com.zlaudio.zlspectrumequalizer",
+        archive: "build/zl-spectrum-equalizer/zl-spectrum-equalizer.wclap.tar.gz", build: "scripts/build-zl-spectrum-equalizer.sh",
+        credit: "https://github.com/ZL-Audio/ZLSpectrumEqualizer", source: port("zl-spectrum-equalizer"), license: "AGPL-3.0"
+    },
+    {
+        id: "zl-splitter", name: "ZL Splitter", kind: "audio-fx",
+        description: "Splitter: left/right, mid/side, low/high, transient/steady or peak/steady, one part on the output",
+        clapId: "com.zlaudio.zlsplitter",
+        archive: "build/zl-splitter/zl-splitter.wclap.tar.gz", build: "scripts/build-zl-splitter.sh",
+        credit: "https://github.com/ZL-Audio/ZLSplitter", source: port("zl-splitter"), license: "AGPL-3.0"
+    },
+    {
+        id: "zl-inflator", name: "ZL Inflator", kind: "audio-fx",
+        description: "Saturation that inflates the signal's loudness, with a curve control and oversampling",
+        clapId: "com.zlaudio.zlinflator",
+        archive: "build/zl-inflator/zl-inflator.wclap.tar.gz", build: "scripts/build-zl-inflator.sh",
+        credit: "https://github.com/ZL-Audio/ZLInflator", source: port("zl-inflator"), license: "GPL-3.0"
+    },
+    {
+        id: "zl-warm", name: "ZL Warm", kind: "audio-fx",
+        description: "Distortion and saturation with in and out meters",
+        clapId: "com.zlaudio.zlwarm",
+        archive: "build/zl-warm/zl-warm.wclap.tar.gz", build: "scripts/build-zl-warm.sh",
+        credit: "https://github.com/ZL-Audio/ZLWarm", source: port("zl-warm"), license: "GPL-3.0"
+    },
+    {
+        id: "zl-lmatch", name: "ZL Loudness Match", kind: "audio-fx",
+        description: "Loudness matching: measures the gain that matches the output's loudness to a reference",
+        clapId: "com.zlaudio.zllmatch",
+        archive: "build/zl-lmatch/zl-lmatch.wclap.tar.gz", build: "scripts/build-zl-lmatch.sh",
+        credit: "https://github.com/ZL-Audio/ZLLMatch", source: port("zl-lmatch"), license: "GPL-3.0"
+    },
+    {
+        id: "zl-lmakeup", name: "ZL Loudness Makeup", kind: "audio-fx",
+        description: "Loudness make-up: brings the input to the loudness of a reference on the sidechain",
+        clapId: "com.zlaudio.zllmakeup",
+        archive: "build/zl-lmakeup/zl-lmakeup.wclap.tar.gz", build: "scripts/build-zl-lmakeup.sh",
+        credit: "https://github.com/ZL-Audio/ZLLMakeup", source: port("zl-lmakeup"), license: "GPL-3.0"
     }
 ]

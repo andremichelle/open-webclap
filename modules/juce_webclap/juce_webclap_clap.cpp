@@ -48,6 +48,7 @@ class ClapPlayHead final : public AudioPlayHead
 {
 public:
     void set (const clap_event_transport_t* transport) { current = transport != nullptr ? *transport : clap_event_transport_t {}; valid = transport != nullptr; }
+    void setSampleRate (double rate) { sampleRate = rate; }
 
     Optional<PositionInfo> getPosition() const override
     {
@@ -67,8 +68,22 @@ public:
             info.setBarCount (current.bar_number);
         }
 
+        // Time in seconds and samples: from the seconds timeline, or from beats at the current tempo for hosts that
+        // send only beats (openDAW), exact while the tempo holds
+        Optional<double> seconds;
+
         if ((flags & CLAP_TRANSPORT_HAS_SECONDS_TIMELINE) != 0)
-            info.setTimeInSeconds ((double) current.song_pos_seconds / (double) CLAP_SECTIME_FACTOR);
+            seconds = (double) current.song_pos_seconds / (double) CLAP_SECTIME_FACTOR;
+        else if ((flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE) != 0 && (flags & CLAP_TRANSPORT_HAS_TEMPO) != 0 && current.tempo > 0.0)
+            seconds = (double) current.song_pos_beats / (double) CLAP_BEATTIME_FACTOR * 60.0 / current.tempo;
+
+        if (seconds.hasValue())
+        {
+            info.setTimeInSeconds (*seconds);
+
+            if (sampleRate > 0.0)
+                info.setTimeInSamples ((int64) std::llround (*seconds * sampleRate));
+        }
 
         if ((flags & CLAP_TRANSPORT_HAS_TIME_SIGNATURE) != 0)
             info.setTimeSignature (TimeSignature { current.tsig_num, current.tsig_denom });
@@ -81,6 +96,7 @@ public:
 
 private:
     clap_event_transport_t current {};
+    double sampleRate = 0.0;
     bool valid = false;
 };
 
@@ -95,7 +111,11 @@ public:
         plugin.init = [] (const clap_plugin_t* p) { return self (p).init(); };
         plugin.destroy = [] (const clap_plugin_t* p) { delete &self (p); };
         plugin.activate = [] (const clap_plugin_t* p, double sr, uint32_t minFrames, uint32_t maxFrames) { return self (p).activate (sr, minFrames, maxFrames); };
-        plugin.deactivate = [] (const clap_plugin_t* p) { self (p).processor->releaseResources(); };
+        plugin.deactivate = [] (const clap_plugin_t* p)
+        {
+            self (p).active = false;
+            self (p).processor->releaseResources();
+        };
         plugin.start_processing = [] (const clap_plugin_t*) { return true; };
         plugin.stop_processing = [] (const clap_plugin_t*) {};
         plugin.reset = [] (const clap_plugin_t* p) { self (p).processor->reset(); };
@@ -139,11 +159,29 @@ private:
         hostState = hostExtension<clap_host_state_t> (CLAP_EXT_STATE);
         hostGui = hostExtension<clap_host_gui_t> (CLAP_EXT_GUI);
         hostWebview = hostExtension<clap_host_webview_t> (CLAP_EXT_WEBVIEW);
+        hostLatency = hostExtension<clap_host_latency_t> (CLAP_EXT_LATENCY);
 
         processor.reset (createPluginFilter());
 
         if (processor == nullptr)
             return false;
+
+        // Every enabled input bus is a CLAP input port (a sidechain is the second, which hosts like openDAW feed),
+        // the output is the main bus only: buses beyond it are switched off, so the processor's layout matches the
+        // channels process() hands it
+        {
+            auto layout = processor->getBusesLayout();
+
+            for (int index = 1; index < layout.outputBuses.size(); ++index)
+                layout.outputBuses.getReference (index) = AudioChannelSet::disabled();
+
+            if (layout.outputBuses.size() > 1)
+                processor->setBusesLayout (layout);
+        }
+
+        for (int index = 0; index < processor->getBusCount (true); ++index)
+            if (auto* bus = processor->getBus (true, index); bus != nullptr && bus->isEnabled() && bus->getNumberOfChannels() > 0)
+                inputBuses.push_back (index);
 
         processor->setPlayHead (&playHead);
         extension = createPageExtension();
@@ -167,11 +205,26 @@ private:
 
     bool activate (double sampleRate, uint32_t, uint32_t maxFrames)
     {
-        const auto inputs = mainChannels (true), outputs = mainChannels (false);
-        processor->setPlayConfigDetails (inputs, outputs, sampleRate, (int) maxFrames);
+        const auto inputs = processor->getTotalNumInputChannels(), outputs = mainChannels (false);
+
+        if (inputBuses.size() > 1)
+            processor->setRateAndBufferSizeDetails (sampleRate, (int) maxFrames); // keeps the sidechain's layout
+        else
+            processor->setPlayConfigDetails (mainChannels (true), outputs, sampleRate, (int) maxFrames);
+
+        playHead.setSampleRate (sampleRate);
         processor->prepareToPlay (sampleRate, (int) maxFrames);
+        pumpMessages(); // latency set from callAsync or an AsyncUpdater after prepareToPlay
+
+        // The host may only be told about latency while deactivated or here, in activate
+        if (hostLatency != nullptr && processor->getLatencySamples() != reportedLatency)
+            hostLatency->changed (host);
+
+        reportedLatency = processor->getLatencySamples();
+        active = true;
 
         channels.assign ((size_t) jmax (inputs, outputs), nullptr);
+        filled.assign (channels.size(), false);
         scratch.setSize (jmax (inputs, outputs), (int) maxFrames);
         midi.ensureSize (4096);
         fallbackInterval = (int) (sampleRate / 30.0);
@@ -185,6 +238,12 @@ private:
             return bus->isEnabled() ? bus->getNumberOfChannels() : 0;
 
         return 0;
+    }
+
+    int inputPortChannels (size_t port) const
+    {
+        auto* bus = port < inputBuses.size() ? processor->getBus (true, inputBuses[port]) : nullptr;
+        return bus != nullptr ? bus->getNumberOfChannels() : 0;
     }
 
     //==============================================================================
@@ -205,23 +264,37 @@ private:
             pageMidi.clear();
         }
 
-        // Audio buffers: the processor works in place on the outputs (extra input channels on scratch).
+        // Audio buffers: the processor works in place on the outputs, input channels beyond them (a sidechain) on
+        // scratch, each input port at its bus's place in the buffer. Ports the host does not feed are silent.
         const auto numOut = process.audio_outputs_count > 0 ? (int) process.audio_outputs[0].channel_count : 0;
-        const auto numIn = process.audio_inputs_count > 0 ? (int) process.audio_inputs[0].channel_count : 0;
-        const auto numChannels = jmin ((int) channels.size(), jmax (numIn, numOut));
+        const auto numChannels = (int) channels.size();
 
         for (int ch = 0; ch < numChannels; ++ch)
+            channels[(size_t) ch] = ch < numOut ? process.audio_outputs[0].data32[ch] : scratch.getWritePointer (ch);
+
+        std::fill (filled.begin(), filled.end(), false);
+
+        for (size_t port = 0; port < inputBuses.size() && port < process.audio_inputs_count; ++port)
         {
-            float* out = ch < numOut ? process.audio_outputs[0].data32[ch] : scratch.getWritePointer (ch);
-            const float* in = ch < numIn ? process.audio_inputs[0].data32[ch] : nullptr;
+            const auto& input = process.audio_inputs[port];
 
-            if (in != nullptr && in != out)
-                std::memcpy (out, in, sizeof (float) * (size_t) frames);
-            else if (in == nullptr)
-                std::fill (out, out + frames, 0.0f);
+            for (int ch = 0; ch < inputPortChannels (port) && ch < (int) input.channel_count; ++ch)
+            {
+                const auto index = processor->getChannelIndexInProcessBlockBuffer (true, inputBuses[port], ch);
 
-            channels[(size_t) ch] = out;
+                if (index < 0 || index >= numChannels || input.data32 == nullptr || input.data32[ch] == nullptr)
+                    continue;
+
+                if (input.data32[ch] != channels[(size_t) index])
+                    std::memcpy (channels[(size_t) index], input.data32[ch], sizeof (float) * (size_t) frames);
+
+                filled[(size_t) index] = true;
+            }
         }
+
+        for (int ch = 0; ch < numChannels; ++ch)
+            if (! filled[(size_t) ch])
+                std::fill (channels[(size_t) ch], channels[(size_t) ch] + frames, 0.0f);
 
         AudioBuffer<float> buffer (channels.data(), numChannels, frames);
         processor->processBlock (buffer, midi);
@@ -421,6 +494,20 @@ private:
         // would make both sides reload each other's patches. The host is, unless it loaded the state itself.
         if (details.nonParameterStateChanged && origin != Origin::host && hostState != nullptr)
             hostState->mark_dirty (host);
+
+        // Latency the host has not been told yet: an active plugin asks for a restart (deactivate, activate)
+        if (details.latencyChanged && processor->getLatencySamples() != reportedLatency)
+        {
+            if (! active && hostLatency != nullptr)
+            {
+                reportedLatency = processor->getLatencySamples();
+                hostLatency->changed (host);
+            }
+            else if (active && host->request_restart != nullptr)
+            {
+                host->request_restart (host);
+            }
+        }
     }
 
     //==============================================================================
@@ -778,21 +865,32 @@ private:
         };
 
         static const clap_plugin_audio_ports_t audioPorts {
-            [] (const clap_plugin_t* p, bool isInput) { return self (p).mainChannels (isInput) > 0 ? 1u : 0u; },
+            [] (const clap_plugin_t* p, bool isInput)
+            {
+                return isInput ? (uint32_t) self (p).inputBuses.size() : (self (p).mainChannels (false) > 0 ? 1u : 0u);
+            },
             [] (const clap_plugin_t* p, uint32_t index, bool isInput, clap_audio_port_info_t* info)
             {
-                const auto channelCount = self (p).mainChannels (isInput);
+                auto& s = self (p);
+                const auto channelCount = isInput ? s.inputPortChannels (index) : (index == 0 ? s.mainChannels (false) : 0);
 
-                if (index != 0 || channelCount == 0)
+                if (channelCount == 0)
                     return false;
 
+                // The main input is the input bus 0 (in place with the output), a sidechain any other
+                const auto isMain = ! isInput || s.inputBuses[index] == 0;
                 *info = {};
-                info->id = isInput ? 0 : 1;
-                std::strncpy (info->name, isInput ? "Input" : "Output", CLAP_NAME_SIZE - 1);
-                info->flags = CLAP_AUDIO_PORT_IS_MAIN;
+                info->id = isInput ? (isMain ? 0 : 2 + index) : 1;
+
+                if (isMain)
+                    std::strncpy (info->name, isInput ? "Input" : "Output", CLAP_NAME_SIZE - 1);
+                else
+                    std::strncpy (info->name, s.processor->getBus (true, s.inputBuses[index])->getName().toRawUTF8(), CLAP_NAME_SIZE - 1);
+
+                info->flags = isMain ? CLAP_AUDIO_PORT_IS_MAIN : 0;
                 info->channel_count = (uint32_t) channelCount;
                 info->port_type = channelCount == 2 ? CLAP_PORT_STEREO : channelCount == 1 ? CLAP_PORT_MONO : nullptr;
-                info->in_place_pair = isInput ? 1 : 0;
+                info->in_place_pair = isMain ? (isInput ? 1 : 0) : CLAP_INVALID_ID;
                 return true;
             }
         };
@@ -822,6 +920,10 @@ private:
             }
         };
 
+        static const clap_plugin_latency_t latency {
+            [] (const clap_plugin_t* p) { return (uint32_t) jmax (0, self (p).processor->getLatencySamples()); }
+        };
+
         static const clap_plugin_gui_t gui {
             [] (const clap_plugin_t*, const char* api, bool isFloating) { return ! isFloating && std::strcmp (api, CLAP_WINDOW_API_WEBVIEW) == 0; },
             [] (const clap_plugin_t*, const char** api, bool* isFloating)
@@ -841,6 +943,10 @@ private:
             [] (const clap_plugin_t* p)
             {
                 auto& s = self (p);
+
+                if (s.pageOpen && s.extension != nullptr)
+                    s.extension->closed (*s.processor);
+
                 s.guiCreated = false;
                 s.pageOpen = false;
                 s.pageUpdateRequested = false;
@@ -880,6 +986,7 @@ private:
         if (std::strcmp (id, CLAP_EXT_AUDIO_PORTS) == 0) return &audioPorts;
         if (std::strcmp (id, CLAP_EXT_NOTE_PORTS) == 0)  return &notePorts;
         if (std::strcmp (id, CLAP_EXT_TAIL) == 0)        return &tail;
+        if (std::strcmp (id, CLAP_EXT_LATENCY) == 0)     return &latency;
         if (std::strcmp (id, CLAP_EXT_GUI) == 0)         return &gui;
         if (std::strcmp (id, CLAP_EXT_WEBVIEW) == 0)     return &webview;
         return nullptr;
@@ -892,6 +999,9 @@ private:
     const clap_host_state_t* hostState = nullptr;
     const clap_host_gui_t* hostGui = nullptr;
     const clap_host_webview_t* hostWebview = nullptr;
+    const clap_host_latency_t* hostLatency = nullptr;
+    int reportedLatency = 0; // what the host was told (clap.latency)
+    bool active = false;
 
     std::unique_ptr<AudioProcessor> processor;
     std::vector<AudioProcessorParameter*> parameters;
@@ -901,6 +1011,8 @@ private:
     ClapPlayHead playHead;
     MidiBuffer midi;
     std::vector<float*> channels;
+    std::vector<bool> filled;       // per buffer channel: an input port wrote it this block
+    std::vector<int> inputBuses;    // the enabled input buses, one CLAP input port each
     AudioBuffer<float> scratch;
 
     Origin origin = Origin::plugin;

@@ -197,6 +197,43 @@ DEPS += [
      lambda p: p.startswith(("src/hrtf/", "src/hdf/", "src/resampler/")) or p == "LICENSE"),
 ]
 
+
+def zl_filter(path):
+    return (path.startswith(("source/", "Source/", "assets/", "resources/"))
+            or path in ("LICENSE", "LICENSE.md", "README.md", "VERSION", "CMakeLists.txt"))
+
+
+# The ZL Audio plugins (zsliu98) at main at the time of writing, each with the submodules it builds with at its pins:
+# Google Highway, zldsp_fft (on Highway), nlopt (ZLEqualizer's EQ match), KFR (ZLSplitter) and friz (ZLWarm's
+# animations). JUCE is the shared one (ZL pins a fork with four small changes, see patches/zl-*.patch).
+ZL = [
+    ("zl-equalizer", "ZLEqualizer", "3ce598ee065b3d3847121e76e196feda7ed8f56d"),
+    ("zl-compressor", "ZLCompressor", "007478995b3bfde5bc756f404721ba37617dce65"),
+    ("zl-splitter", "ZLSplitter", "a8f31f6251933ff2e3366dde33939a68be5c0e71"),
+    ("zl-spectrum-equalizer", "ZLSpectrumEqualizer", "10388f0cb594c6a322f8652cd718aed28c2e2c39"),
+    ("zl-limiter", "ZLLimiter", "cb52b21f0d3c7c075acf3cbb13fb4eccedcfa184"),
+    ("zl-inflator", "ZLInflator", "b71bf485eb84e37b61f8f15e7e04ce190d34230d"),
+    ("zl-warm", "ZLWarm", "48093f38c079551924679c5b86bd02d348885f3a"),
+    ("zl-lmatch", "ZLLMatch", "0a567f885bb11f479d220afbb1179c028494c0a2"),
+    ("zl-lmakeup", "ZLLMakeup", "cd21094f926d8d7d5dd90b4ae35f5a0ca6057eac"),
+]
+DEPS += [(directory, "ZL-Audio/" + repo, commit, zl_filter) for directory, repo, commit in ZL]
+DEPS += [
+    ("zl-highway", "ZL-Audio/highway", "2607d3b5b0113992fe84d3848859eae13b3b52c1",
+     lambda p: p.startswith("hwy/") and "/tests/" not in p and not p.endswith("_test.cc") or p == "LICENSE"),
+    ("zl-nlopt", "ZL-Audio/nlopt", "ab0fd1ca07d11d6c2f52c4af0423ec02505352ea",
+     lambda p: p.startswith("src/") and not p.startswith(("src/octave/", "src/swig/")) or p in (
+         "COPYING", "COPYRIGHT", "nlopt_config.h.in", "nlopt.pc.in", "CMakeLists.txt") or p.startswith("cmake/")),
+    ("zl-kfr", "ZL-Audio/kfr", "9a35250946f33c0ce61a05fba32a88223211fdae",
+     lambda p: p.startswith(("include/", "src/")) or p == "LICENSE.txt"),
+    ("zl-friz", "ZL-Audio/animator", "9c3f6e04e74f67f1fdf84574e163dd05bb1e5480",
+     lambda p: p.startswith("Source/") or p == "LICENSE"),
+]
+# zldsp_fft where the plugins include it from (relative to their source/)
+DEPS += [(directory + "/zldsp_fft", "ZL-Audio/zldsp_fft", "dfc50e6c39680d9ee04fbb60fc6c935552630045",
+          lambda p: p.startswith("src/") or p == "LICENSE.md")
+         for directory in ("zl-equalizer", "zl-compressor", "zl-spectrum-equalizer")]
+
 FONT_PACKAGE ="https://registry.npmjs.org/dejavu-fonts-ttf/-/dejavu-fonts-ttf-2.37.3.tgz"
 FONT_FILES = ["package/ttf/DejaVuSans.ttf", "package/ttf/DejaVuSans-Bold.ttf", "package/LICENSE"]
 
@@ -258,7 +295,7 @@ def fetch_fonts():
 # patches/<prefix>-*.patch apply to external/<directory>
 PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "ripplerx"), ("odin2-", "odin2"),
                  ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
-                 ("libmysofa-", "libmysofa")]
+                 ("libmysofa-", "libmysofa")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():

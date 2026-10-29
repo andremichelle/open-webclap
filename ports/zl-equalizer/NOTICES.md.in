@@ -1,0 +1,40 @@
+# ZL Equalizer 2 for WebCLAP
+
+ZLEqualizer by ZL Audio (zsliu98), a dynamic equalizer with match EQ, ported to WebCLAP. This is not an official
+ZL Audio release.
+
+- ZLEqualizer: https://github.com/ZL-Audio/ZLEqualizer (commit 3ce598e, after version 1.4.1)
+- This port, and the complete source of this bundle: @SOURCE_URL@
+  Build it with `scripts/build-zl-equalizer.sh`, which fetches every dependency below at the commit named here.
+
+Changes in this port (`patches/zl-equalizer-webclap.patch`): the editor's analyzer and curve loops, which run on
+threads upstream, run one pass per repaint on the editor's thread, and the processor builds without its editor.
+The sidechain is the bundle's second input. Presets and UI settings the editor saves live in the page's memory and
+are gone when it reloads.
+
+## License
+
+The bundle as a whole is licensed under the **GNU Affero General Public License, version 3** (`LICENSE`).
+
+ZLEqualizer is AGPL-3.0 (`licenses/AGPL-3.0.txt`), Copyright (C) 2026 zsliu98. Both modules contain the JUCE
+framework, used under the AGPL-3.0.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licenses for details.
+
+## Components
+
+| Component | In | Copyright | License |
+|---|---|---|---|
+| [ZLEqualizer](https://github.com/ZL-Audio/ZLEqualizer) | both | 2026 zsliu98 | AGPL-3.0 |
+| [zldsp_fft](https://github.com/ZL-Audio/zldsp_fft) | both | zsliu98 | Apache-2.0 (`licenses/Apache-2.0-zldsp_fft.txt`) |
+| [Highway](https://github.com/google/highway) | both | Google LLC | Apache-2.0 (`licenses/Apache-2.0-Highway.txt`) |
+| [NLopt](https://github.com/stevengj/nlopt), with the Luksan solvers | ui | 2007-2024 Massachusetts Institute of Technology and the authors of its algorithms | LGPL-2.1-or-later as a whole (`licenses/NLopt-COPYING.txt`, `licenses/NLopt-luksan-COPYRIGHT.txt`) |
+| WebCLAP kit ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/juce_webclap`) | both | André Michelle | MIT |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-equalizer`, `ports/zl-common`) | both | André Michelle | AGPL-3.0 |
+| [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
+| [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
+| [Inter](https://github.com/rsms/inter) font (subset) | ui | 2016 The Inter Project Authors | OFL-1.1 (`licenses/OFL-1.1.txt`) |
+| [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |
+
+@JUCE_BUNDLED@

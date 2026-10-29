@@ -1,0 +1,58 @@
+ZLLMakeup for WebCLAP (ports/zl-lmakeup), all under ZL_WEBCLAP:
+
+- PluginProcessor.cpp: ZL_WEBCLAP_HEADLESS builds the processor without its editor (module.wasm)
+- controller.cpp: a block without a transport has no position (upstream dereferences the empty position)
+
+--- a/source/DSP/controller.cpp
++++ b/source/DSP/controller.cpp
+@@ -35,9 +35,17 @@
+ 
+ template<typename FloatType>
+ void Controller<FloatType>::processBlock(juce::AudioBuffer<FloatType> &buffer) {
++#if ZL_WEBCLAP
++    // A block without a transport has no position (upstream dereferences it)
++    const auto currentPos = processorRef->getPlayHead() != nullptr
++                                ? processorRef->getPlayHead()->getPosition()
++                                : juce::Optional<juce::AudioPlayHead::PositionInfo>{};
++    const auto currentTime = currentPos.hasValue() ? currentPos->getTimeInSamples().orFallback(0) : 0;
++#else
+     auto currentPos = processorRef->getPlayHead()->getPosition();
+-    if (std::abs(lastBufferSize + lastBufferTime -
+-                 currentPos->getTimeInSamples().orFallback(0)) > buffer.getNumSamples()) {
++    const auto currentTime = currentPos->getTimeInSamples().orFallback(0);
++#endif
++    if (std::abs(lastBufferSize + lastBufferTime - currentTime) > buffer.getNumSamples()) {
+         isPlaying.store(false);
+         if (modeID.load() == zldsp::mode::effect) {
+             gain.store(0);
+@@ -50,7 +58,7 @@
+         isPlaying.store(true);
+     }
+     lastBufferSize = buffer.getNumSamples();
+-    lastBufferTime = currentPos->getTimeInSamples().orFallback(0);
++    lastBufferTime = currentTime;
+     if (modeID.load() == zldsp::mode::effect && isPlaying.load()) {
+         fixedAudioBuffer.pushBuffer(buffer);
+         while (fixedAudioBuffer.isSubReady()) {
+--- a/source/PluginProcessor.cpp
++++ b/source/PluginProcessor.cpp
+@@ -1,5 +1,7 @@
+ #include "PluginProcessor.h"
++#if ! ZL_WEBCLAP_HEADLESS
+ #include "PluginEditor.h"
++#endif
+ 
+ //==============================================================================
+ PluginProcessor::PluginProcessor()
+@@ -118,7 +120,11 @@
+ }
+ 
+ juce::AudioProcessorEditor *PluginProcessor::createEditor() {
++#if ZL_WEBCLAP_HEADLESS
++    return nullptr; // module.wasm: the editor runs in the page (ui.wasm)
++#else
+     return new PluginEditor(*this);
++#endif
+ //    return new juce::GenericAudioProcessorEditor(*this);
+ }
+ 

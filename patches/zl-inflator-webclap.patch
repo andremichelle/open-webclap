@@ -1,0 +1,61 @@
+ZLInflator for WebCLAP (ports/zl-inflator):
+
+- PluginProcessor.cpp: ZL_WEBCLAP_HEADLESS builds the processor without its editor (module.wasm)
+- MeterSource.h, under ZL_WEBCLAP: takeBuffer (the DSP side takes what the meter measured since the last frame)
+  and feedBuffer (the editor's stand-in meter gets it), for the meters frame (ports/zl-inflator/zl_inflator_frames.h)
+
+--- a/Source/DSP/MeterSource.h
++++ b/Source/DSP/MeterSource.h
+@@ -106,6 +106,28 @@
+         dataFlag = false;
+     }
+ 
++#if ZL_WEBCLAP
++    // WebCLAP (ports/zl-inflator): the DSP side takes what the meter collected since the last call, the editor's
++    // stand-in meter is fed it, as if it had processed the audio itself
++    size_t getNumChannels() const { return bufferRMS.size(); }
++
++    void takeBuffer(FloatType *rms, FloatType *peak, size_t numChannels) {
++        for (size_t i = 0; i < numChannels && i < bufferRMS.size(); ++i) {
++            rms[i] = bufferRMS[i];
++            peak[i] = bufferPeak[i];
++        }
++        resetBuffer();
++    }
++
++    void feedBuffer(const FloatType *rms, const FloatType *peak, size_t numChannels) {
++        for (size_t i = 0; i < numChannels && i < bufferRMS.size(); ++i) {
++            bufferRMS[i] = juce::jmax(bufferRMS[i], rms[i]);
++            bufferPeak[i] = juce::jmax(bufferPeak[i], peak[i]);
++            peakMax[i] = juce::jmax(peakMax[i], peak[i]);
++        }
++    }
++#endif
++
+ private:
+     std::vector<FloatType> peakMax;
+     std::vector<FloatType> bufferRMS, bufferPeak;
+--- a/Source/PluginProcessor.cpp
++++ b/Source/PluginProcessor.cpp
+@@ -11,7 +11,9 @@
+ */
+ 
+ #include "PluginProcessor.h"
++#if ! ZL_WEBCLAP_HEADLESS
+ #include "PluginEditor.h"
++#endif
+ 
+ //==============================================================================
+ ZLInflatorAudioProcessor::ZLInflatorAudioProcessor()
+@@ -158,7 +160,11 @@
+ }
+ 
+ juce::AudioProcessorEditor *ZLInflatorAudioProcessor::createEditor() {
++#if ZL_WEBCLAP_HEADLESS
++    return nullptr; // module.wasm: the editor runs in the page (ui.wasm)
++#else
+     return new ZLInflatorAudioProcessorEditor(*this);
++#endif
+ //    return new juce::GenericAudioProcessorEditor(*this);
+ }
+ 

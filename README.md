@@ -32,6 +32,15 @@ plugin gets there depends on what it is written with, so the ports here come fro
 | [Polarity SC Dark](https://github.com/polarity/plugin.nih.polarity-sc-dark) | Spectral compressor with upward and downward compression | Rust/NIH-plug + WASI, with a separate HTML/Canvas interface, presets, draggable curve points, and help ([port guide](ports/sc-dark/README.md)) | GPL-3.0-or-later |
 | [OpenSpatialDelay](https://github.com/Spatial-Media-Lab/OpenSpatialDelay) | Spatial delay: each echo placed in 3D space and moved along trajectories, binaural (HRTF) or stereo | JUCE kit: an `AudioProcessor` like RipplerX, stereo out, no OSC (a stand-in `juce_osc`), three of the five HRTF sets. Trajectories run in `processBlock`, so their positions and the tap activity cross over as frames (`ports/open-spatial-delay/osd_frames.h`) | GPL-3.0 |
 | [WetChorus](https://github.com/yonie/WetChorus) | Bucket-brigade stereo chorus after a 1970s guitar combo | Plain CLAP, no JUCE: upstream's engine behind a small C++ wrapper (`ports/wet-chorus/plugin/wetchorus.cpp`), the original panel art on a canvas page. A demo of openDAW's device panel (`opendaw.device-panel/1`), so the site serves its bundle and openDAW's catalogue does not list it | MIT |
+| [ZL Equalizer 2](https://github.com/ZL-Audio/ZLEqualizer) | Dynamic equalizer: 24 bands, each static or dynamic, match EQ, spectrum analyzer, loudness matching | JUCE kit: an `AudioProcessor` whose editor reads the controller directly (analyzers, dynamic gains, solo, loudness match), so those cross over as frames. The analyzer audio crosses as 16-bit frames, only the sources the editor shows. The editor's worker threads run one pass per repaint. Shared ZL glue in `ports/zl-common` | AGPL-3.0 |
+| [ZL Compressor](https://github.com/ZL-Audio/ZLCompressor) | Dynamic range processor with a sidechain equalizer, transfer curve and level history | JUCE kit, as ZL Equalizer 2: two controllers, a magnitude and an FFT analyzer stream (`ports/zl-compressor`) | AGPL-3.0 |
+| [ZL Limiter](https://github.com/ZL-Audio/ZLLimiter) | Lookahead limiter with true peak, oversampling, level history and loudness readouts | JUCE kit, as ZL Equalizer 2: the level analyzer and its measurement status as frames (`ports/zl-limiter`) | AGPL-3.0 |
+| [ZL Spectrum Equalizer](https://github.com/ZL-Audio/ZLSpectrumEqualizer) | Spectrum equalizer with dynamic bands, spectrum analyzer and loudness matching | JUCE kit, as ZL Equalizer 2: the dynamic response curves the DSP computes cross as 16-bit frames (`ports/zl-spectrum-equalizer`) | AGPL-3.0 |
+| [ZL Splitter](https://github.com/ZL-Audio/ZLSplitter) | Splits into left/right, mid/side, low/high, transient/steady or peak/steady | JUCE kit, as ZL Equalizer 2, with KFR. One stereo output: the first part, or the second with Swap (`ports/zl-splitter`) | AGPL-3.0 |
+| [ZL Inflator](https://github.com/ZL-Audio/ZLInflator) | Saturation that raises loudness, with a shaping curve and oversampling | JUCE kit: an `AudioProcessor`, its meters as frames (`ports/zl-inflator`) | GPL-3.0 |
+| [ZL Warm](https://github.com/ZL-Audio/ZLWarm) | Distortion and saturation | JUCE kit: an `AudioProcessor`, its meters and their resets as frames (`ports/zl-warm`) | GPL-3.0 |
+| [ZL Loudness Match](https://github.com/ZL-Audio/ZLLMatch) | Learns the loudness difference to a target and applies it as gain | JUCE kit: an `AudioProcessor`, the gain as a frame. It learns against a target value or the sidechain, the second input (`ports/zl-lmatch`) | GPL-3.0 |
+| [ZL Loudness Makeup](https://github.com/ZL-Audio/ZLLMakeup) | Loudness make-up gain against a reference | JUCE kit: an `AudioProcessor`, the gain as a frame. Its reference is the sidechain, the second input (`ports/zl-lmakeup`) | GPL-3.0 |
 
 The license column is the plugin's and its port's (`ports/<port>/`). JUCE-built bundles link JUCE, so they ship as
 AGPL-3.0. SC Dark and coopiano do not link JUCE: SC Dark uses GPL-3.0-or-later, coopiano MIT. See
@@ -79,6 +88,8 @@ scripts/build-ripplerx.sh             # and RipplerX
 scripts/build-odin2.sh                # and Odin 2
 scripts/build-surge-xt.sh             # and Surge XT
 scripts/build-coopiano.sh             # and coopiano (no JUCE: a few seconds)
+scripts/build-zl-equalizer.sh         # and the ZL Audio plugins: zl-equalizer, zl-compressor, zl-limiter,
+                                      # zl-spectrum-equalizer, zl-splitter, zl-inflator, zl-warm, zl-lmatch, zl-lmakeup
 
 python3 scripts/serve.py .            # the test host, for any built bundle
 open "http://127.0.0.1:8123/test-host/?bundle=/build/obxf/web/obxf.wclap"

@@ -1,0 +1,40 @@
+# ZL Splitter for WebCLAP
+
+ZLSplitter by ZL Audio (zsliu98), a splitter that splits audio into left/right, mid/side, low/high,
+transient/steady or peak/steady, ported to WebCLAP. This is not an official ZL Audio release.
+
+- ZLSplitter: https://github.com/ZL-Audio/ZLSplitter (commit a8f31f6, after version 0.3.0)
+- This port, and the complete source of this bundle: @SOURCE_URL@
+  Build it with `scripts/build-zl-splitter.sh`, which fetches every dependency below at the commit named here.
+
+Changes in this port (`patches/zl-splitter-webclap.patch`): the editor's analyzer loop, which runs on a thread
+upstream, runs one pass per repaint on the editor's thread, and the processor builds without its editor.
+Upstream has two stereo outputs, one per part. The bundle has one stereo output, which carries output 1 (left,
+mid, low, transient or peak); the Swap parameter puts the other part there. UI settings the editor saves live in
+the page's memory and are gone when it reloads.
+
+## License
+
+The bundle as a whole is licensed under the **GNU Affero General Public License, version 3** (`LICENSE`).
+
+ZLSplitter is AGPL-3.0 (`licenses/AGPL-3.0.txt`), Copyright (C) 2026 zsliu98. Both modules contain the JUCE
+framework, used under the AGPL-3.0, and KFR, used under the GPL-2.0-or-later (here as version 3, which the
+AGPL-3.0 combines with).
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licenses for details.
+
+## Components
+
+| Component | In | Copyright | License |
+|---|---|---|---|
+| [ZLSplitter](https://github.com/ZL-Audio/ZLSplitter) | both | 2026 zsliu98 | AGPL-3.0 |
+| [KFR](https://github.com/kfrlib/kfr) ([ZL Audio's fork](https://github.com/ZL-Audio/kfr), commit 9a35250): kfr, kfr_dsp, kfr_dft | both | 2016-2023 Dan Cazarin | GPL-2.0-or-later (`licenses/GPL-2.0-KFR.txt`) |
+| WebCLAP kit ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/juce_webclap`) | both | André Michelle | MIT |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-splitter`, `ports/zl-common`) | both | André Michelle | AGPL-3.0 |
+| [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
+| [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
+| [Inter](https://github.com/rsms/inter) font (subset) | ui | 2016 The Inter Project Authors | OFL-1.1 (`licenses/OFL-1.1.txt`) |
+| [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |
+
+@JUCE_BUNDLED@

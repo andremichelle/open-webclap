@@ -1,0 +1,105 @@
+ZLSplitter for WebCLAP (ports/zl-splitter), all under ZL_WEBCLAP:
+
+- PluginProcessor.cpp: ZL_WEBCLAP_HEADLESS builds the processor without its editor (module.wasm)
+- controller.hpp: ZLWebclapAccess (ports/zl-splitter/zl_splitter_access.h) as a friend, for the analyzer switch
+  that crosses over as a frame
+- curve_panel.cpp: no threads, so the analyzer worker loop runs one pass per repaint (paintOverChildren) on the
+  editor's thread instead of waiting for notify()
+- compact_combobox.cpp: the kit's JUCE has no popup item tooltips (ZL's JUCE fork adds them)
+
+--- a/source/PluginProcessor.cpp
++++ b/source/PluginProcessor.cpp
+@@ -8,7 +8,9 @@
+ // You should have received a copy of the GNU Affero General Public License along with ZLSplitter. If not, see <https://www.gnu.org/licenses/>.
+ 
+ #include "PluginProcessor.hpp"
++#if ! ZL_WEBCLAP_HEADLESS
+ #include "PluginEditor.hpp"
++#endif
+ 
+ //==============================================================================
+ PluginProcessor::PluginProcessor() :
+@@ -217,7 +219,11 @@
+ }
+ 
+ juce::AudioProcessorEditor* PluginProcessor::createEditor() {
++#if ZL_WEBCLAP_HEADLESS
++    return nullptr; // module.wasm: the editor runs in the page (ui.wasm)
++#else
+     return new PluginEditor(*this);
++#endif
+ }
+ 
+ //==============================================================================
+--- a/source/gui/combobox/compact_combobox/compact_combobox.cpp
++++ b/source/gui/combobox/compact_combobox/compact_combobox.cpp
+@@ -23,7 +23,9 @@
+                 juce::PopupMenu::Item item;
+                 item.itemID = i + 1;
+                 item.text = choices[i];
++#if ! ZL_WEBCLAP // the kit's JUCE has no item tooltips (ZL's fork adds them)
+                 item.tooltipText = item_labels[static_cast<size_t>(i)];
++#endif
+                 item.isEnabled = true;
+                 item.isTicked = false;
+                 menu->addItem(item);
+@@ -55,7 +57,9 @@
+             item.itemID = static_cast<int>(i + 1);
+             item.text = "";
+             if (i < item_labels.size()) {
++#if ! ZL_WEBCLAP // the kit's JUCE has no item tooltips (ZL's fork adds them)
+                 item.tooltipText = item_labels[i];
++#endif
+             }
+             item.isEnabled = true;
+             item.isTicked = false;
+--- a/source/panel/curve_panel/curve_panel.cpp
++++ b/source/panel/curve_panel/curve_panel.cpp
+@@ -43,7 +43,11 @@
+ 
+     void CurvePanel::paintOverChildren(juce::Graphics& g) {
+         juce::ignoreUnused(g);
++#if ZL_WEBCLAP
++        run(); // No threads (WebAssembly): one pass of the worker loop per repaint, on the editor's thread
++#else
+         notify();
++#endif
+     }
+ 
+     void CurvePanel::resized() {
+@@ -55,9 +59,13 @@
+ 
+     void CurvePanel::run() {
+         juce::ScopedNoDenormals no_denormals;
++#if ZL_WEBCLAP
++        do {
++#else
+         while (!threadShouldExit()) {
+             const auto flag = wait(-1);
+             juce::ignoreUnused(flag);
++#endif
+             const auto c_analyzer_show = analyzer_show_ref_.load(std::memory_order::relaxed);
+             if (c_analyzer_show < .5f) {
+                 fft_panel_.run();
+@@ -69,7 +77,11 @@
+             if (threadShouldExit()) {
+                 return;
+             }
++#if ZL_WEBCLAP
++        } while (false);
++#else
+         }
++#endif
+     }
+ 
+     void CurvePanel::repaintCallBackSlow() {
+--- a/source/zlp/controller.hpp
++++ b/source/zlp/controller.hpp
+@@ -83,6 +83,7 @@
+         }
+ 
+     private:
++        friend struct ZLWebclapAccess; // the WebCLAP port's frames (ports/zl-splitter)
+         juce::AudioProcessor& p_ref_;
+         std::array<FloatType*, 2> out_buffer1_, out_buffer2_;
+         zldsp::splitter::LRSplitter<FloatType> lr_splitter_;

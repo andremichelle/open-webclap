@@ -1,0 +1,70 @@
+ZLLMatch for WebCLAP (ports/zl-lmatch), all under ZL_WEBCLAP:
+
+- PluginProcessor.cpp: ZL_WEBCLAP_HEADLESS builds the processor without its editor (module.wasm)
+- Controller.h: a block without a transport has no position (upstream dereferences the empty position); the
+  editor's stand-in (ui.wasm) does not start the timer that writes its controller's gain to the gain parameter,
+  the DSP side's does
+
+--- a/source/DSP/Controller.h
++++ b/source/DSP/Controller.h
+@@ -31,14 +31,26 @@
+     }
+ 
+     void process(juce::AudioBuffer<float> &buffer) noexcept {
++#if ZL_WEBCLAP
++        // A block without a transport has no position (upstream dereferences it)
++        const auto position = m_processor->getPlayHead() != nullptr
++                                  ? m_processor->getPlayHead()->getPosition()
++                                  : juce::Optional<juce::AudioPlayHead::PositionInfo>{};
++        matcher.setPosition(position.hasValue() ? position->getTimeInSamples().orFallback(0) : 0);
++#else
+         matcher.setPosition(m_processor->getPlayHead()->getPosition()->getTimeInSamples().orFallback(0));
++#endif
+         if (toReset.load()) {
+             reset();
+             toReset.store(false);
+         }
+         auto _modeID = modeID.load();
+         auto _gate = gate.load();
++#if ZL_WEBCLAP
++        if (_modeID == zldsp::mode::learn && position.hasValue() && position->getIsPlaying()) {
++#else
+         if (_modeID == zldsp::mode::learn && m_processor->getPlayHead()->getPosition()->getIsPlaying()) {
++#endif
+             mainMonitor.process(m_processor->getBusBuffer(buffer, true, 0),
+                                 _gate);
+             if (sideID == zldsp::side::aux && m_processor->getBusCount(true) >= 2) {
+@@ -204,7 +216,11 @@
+         } else if (parameterID == zldsp::mode::ID) {
+             modeID = static_cast<int>(newValue);
+             if (modeID == zldsp::mode::effect) {
++#if ZL_WEBCLAP && ! ZL_WEBCLAP_HEADLESS
++                // ui.wasm: the stand-in measures nothing, the DSP side's controller writes the gain parameter
++#else
+                 startTimerHz(60);
++#endif
+             } else {
+                 stopTimer();
+             }
+--- a/source/PluginProcessor.cpp
++++ b/source/PluginProcessor.cpp
+@@ -1,5 +1,7 @@
+ #include "PluginProcessor.h"
++#if ! ZL_WEBCLAP_HEADLESS
+ #include "PluginEditor.h"
++#endif
+ 
+ //==============================================================================
+ PluginProcessor::PluginProcessor()
+@@ -98,7 +100,11 @@
+ }
+ 
+ juce::AudioProcessorEditor* PluginProcessor::createEditor() {
++#if ZL_WEBCLAP_HEADLESS
++    return nullptr; // module.wasm: the editor runs in the page (ui.wasm)
++#else
+     return new PluginEditor (*this);
++#endif
+     //    return new juce::GenericAudioProcessorEditor (*this);
+ }
+ 
