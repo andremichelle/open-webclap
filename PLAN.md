@@ -521,6 +521,9 @@ Makeup (GPL-3.0). ZLEComp is archived and left out.
   `PageExtension::closed()` (stop what only the page reads: analyzers fill otherwise), and the play head reports
   time in seconds and samples from the seconds timeline or from beats at the current tempo (openDAW sends only
   beats).
+- **Port editors:** with `ZL_PORT_EDITOR`, `zl_ui_main.h` asks the port for its editor (`zlPortCreateEditor`) and
+  the processor builds headless in ui.wasm too. ZL Loudness Makeup has one: the same parameters as upstream's
+  editor, in a header bar and three panels (Gain, Detector, Makeup), dials that drag up and down.
 - **Splitter:** two stereo outputs upstream; the bundle has one, carrying the first part, or the second with Swap.
 - **Trimmed editors:** no presets (the preset browser, ZL Equalizer 2's match target files, ZL Splitter's control
   import/export), no colour schemes (the colour tab; the older four's light/dark switch on the logo), no tooltip

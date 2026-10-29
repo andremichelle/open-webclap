@@ -40,7 +40,7 @@ plugin gets there depends on what it is written with, so the ports here come fro
 | [ZL Inflator](https://github.com/ZL-Audio/ZLInflator) | Saturation that raises loudness, with a shaping curve and oversampling | JUCE kit: an `AudioProcessor`, its meters as frames (`ports/zl-inflator`) | GPL-3.0 |
 | [ZL Warm](https://github.com/ZL-Audio/ZLWarm) | Distortion and saturation | JUCE kit: an `AudioProcessor`, its meters and their resets as frames (`ports/zl-warm`) | GPL-3.0 |
 | [ZL Loudness Match](https://github.com/ZL-Audio/ZLLMatch) | Learns the loudness difference to a target and applies it as gain | JUCE kit: an `AudioProcessor`, the gain as a frame. It learns against a target value or the sidechain, the second input (`ports/zl-lmatch`) | GPL-3.0 |
-| [ZL Loudness Makeup](https://github.com/ZL-Audio/ZLLMakeup) | Loudness make-up gain against a reference | JUCE kit: an `AudioProcessor`, the gain as a frame. Its reference is the sidechain, the second input (`ports/zl-lmakeup`) | GPL-3.0 |
+| [ZL Loudness Makeup](https://github.com/ZL-Audio/ZLLMakeup) | Loudness make-up gain against a reference | JUCE kit: an `AudioProcessor`, the gain as a frame. Its reference is the sidechain, the second input. A new editor of the port's own: dark panels, small dials with coloured value arcs that drag up and down (`ports/zl-lmakeup/makeup_editor.cpp`) | GPL-3.0 |
 
 The license column is the plugin's and its port's (`ports/<port>/`). JUCE-built bundles link JUCE, so they ship as
 AGPL-3.0. SC Dark and coopiano do not link JUCE: SC Dark uses GPL-3.0-or-later, coopiano MIT. See

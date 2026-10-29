@@ -79,16 +79,16 @@ set(ZL_LIBRARIES juce_wasm)
 # ---------------------------------------------------------------------------------------------------------------
 # ui.wasm: editor + stand-in processor
 
+# The editor is the port's own (makeup_editor.cpp), not upstream's: the processor builds without it, as in module.wasm
 add_executable(ui
     ui_main.cpp
+    makeup_editor.cpp
     ${ZL_PROCESSOR_SOURCES}
-    ${ZL_EDITOR_SOURCES}
-    "${ZL}/source/State/property.cpp"
     "${GENERATED}/BinaryData.cpp"
     "${GENERATED}/WebFonts.cpp")
 
 target_include_directories(ui PRIVATE ${ZL_INCLUDE_DIRECTORIES})
-target_compile_definitions(ui PRIVATE ${ZL_DEFINITIONS} ZL_WEBCLAP_HEADLESS=0)
+target_compile_definitions(ui PRIVATE ${ZL_DEFINITIONS} ZL_WEBCLAP_HEADLESS=1)
 target_compile_options(ui PRIVATE -Wno-deprecated-declarations)
 target_link_libraries(ui PRIVATE ${ZL_LIBRARIES})
 target_link_options(ui PRIVATE ${JUCE_WEBCLAP_UI_LINK_OPTIONS})
