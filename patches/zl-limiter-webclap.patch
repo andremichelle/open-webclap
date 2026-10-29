@@ -13,6 +13,7 @@ ZLLimiter for WebCLAP (ports/zl-limiter), all under ZL_WEBCLAP:
 - other_ui_setting_panel, ui_state.cpp, main_panel.cpp: no tooltip language setting, tooltips in English
   whatever the state says
 - PluginEditor.cpp: not resizable, no resize corner (the page shows the editor at its size)
+- ui_setting_panel.cpp: no folder button in the settings footer (there is no settings file to reveal)
 
 --- a/source/PluginEditor.cpp
 +++ b/source/PluginEditor.cpp
@@ -422,7 +423,7 @@ ZLLimiter for WebCLAP (ports/zl-limiter), all under ZL_WEBCLAP:
          tab_bar_(base),
          view_port_(base.gui),
          save_button_(base_.gui,
-@@ -47,6 +57,15 @@
+@@ -47,10 +57,23 @@
          version_text_.setInterceptsMouseClicks(false, false);
          version_text_.setBufferedToImage(true);
          addAndMakeVisible(version_text_);
@@ -438,7 +439,31 @@ ZLLimiter for WebCLAP (ports/zl-limiter), all under ZL_WEBCLAP:
          addAndMakeVisible(tab_bar_);
          addAndMakeVisible(view_port_);
  
-@@ -85,6 +104,9 @@
++#if ZL_WEBCLAP // no settings folder to reveal: the page keeps the settings in memory
++        for (auto* button : {&save_button_, &reset_button_, &close_button_}) {
++#else
+         for (auto* button : {&save_button_, &reset_button_, &close_button_, &folder_open_button_}) {
++#endif
+             button->setImageAlpha(.55f, 1.f);
+             button->setBufferedToImage(true);
+             addAndMakeVisible(button);
+@@ -64,6 +87,7 @@
+         close_button_.getButton().onClick = [this]() {
+             base_.setPanelProperty(zlgui::PanelSettingIdx::kUISettingPanel, false);
+         };
++#if ! ZL_WEBCLAP
+         folder_open_button_.getButton().onClick = []() {
+             const juce::File ui_file =
+                 juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+@@ -72,6 +96,7 @@
+                 ui_file.revealToUser();
+             }
+         };
++#endif
+ 
+         tab_bar_.onTabSelected = [this](const int index) {
+             view_positions_[static_cast<size_t>(current_panel_idx_)] = view_port_.getViewPosition();
+@@ -85,6 +110,9 @@
      UISettingPanel::~UISettingPanel() {
          view_port_.setViewedComponent(nullptr, 0);
          version_text_.setLookAndFeel(nullptr);
@@ -448,7 +473,7 @@ ZLLimiter for WebCLAP (ports/zl-limiter), all under ZL_WEBCLAP:
      }
  
      void UISettingPanel::resized() {
-@@ -98,6 +120,9 @@
+@@ -98,6 +126,9 @@
          const auto content_top_margin = juce::roundToInt(font_size * .36f);
  
          auto bounds = getLocalBounds().reduced(padding);
@@ -458,7 +483,39 @@ ZLLimiter for WebCLAP (ports/zl-limiter), all under ZL_WEBCLAP:
          auto header = bounds.removeFromTop(header_height);
          auto footer = bounds.removeFromBottom(footer_height);
          footer.removeFromTop(padding);
-@@ -128,7 +153,9 @@
+@@ -107,17 +138,29 @@
+         bounds.removeFromTop(content_top_margin);
+         view_port_.setBounds(bounds);
+ 
++#if ZL_WEBCLAP
++        constexpr int kFooterCells = 4; // version, reset, save, close
++#else
++        constexpr int kFooterCells = 5;
++#endif
+         const auto get_footer_cell = [&footer](const int index) {
+-            const auto left = footer.getX() + footer.getWidth() * index / 5;
+-            const auto right = footer.getX() + footer.getWidth() * (index + 1) / 5;
++            const auto left = footer.getX() + footer.getWidth() * index / kFooterCells;
++            const auto right = footer.getX() + footer.getWidth() * (index + 1) / kFooterCells;
+             return juce::Rectangle<int>{left, footer.getY(), right - left, footer.getHeight()};
+         };
++#if ZL_WEBCLAP
+         version_text_.setBounds(get_footer_cell(0));
++        reset_button_.setBounds(get_footer_cell(1).withSizeKeepingCentre(button_size, button_size));
++        save_button_.setBounds(get_footer_cell(2).withSizeKeepingCentre(button_size, button_size));
++        close_button_.setBounds(get_footer_cell(3).withSizeKeepingCentre(button_size, button_size));
++#else
++        version_text_.setBounds(get_footer_cell(0));
+         folder_open_button_.setBounds(get_footer_cell(1).withSizeKeepingCentre(button_size, button_size));
+         folder_open_button_.getButton().setEdgeIndent(static_cast<int>(std::round(font_size * .175f)));
+         reset_button_.setBounds(get_footer_cell(2).withSizeKeepingCentre(button_size, button_size));
+         save_button_.setBounds(get_footer_cell(3).withSizeKeepingCentre(button_size, button_size));
+         close_button_.setBounds(get_footer_cell(4).withSizeKeepingCentre(button_size, button_size));
++#endif
+ 
+         background_.setBounds(getLocalBounds());
+         background_.setSurfaceBounds({tab_bar_.getBounds(), view_port_.getBounds()});
+@@ -128,7 +171,9 @@
      }
  
      void UISettingPanel::loadSetting() {
@@ -468,7 +525,7 @@ ZLLimiter for WebCLAP (ports/zl-limiter), all under ZL_WEBCLAP:
          control_panel_.loadSetting();
          other_panel_.loadSetting();
      }
-@@ -142,18 +169,24 @@
+@@ -142,18 +187,24 @@
      }
  
      int UISettingPanel::getIdealHeight() const {
@@ -493,7 +550,7 @@ ZLLimiter for WebCLAP (ports/zl-limiter), all under ZL_WEBCLAP:
          case kControlP: {
              panel = &control_panel_;
              ideal_height = control_panel_.getIdealHeight();
-@@ -164,11 +197,13 @@
+@@ -164,11 +215,13 @@
              ideal_height = other_panel_.getIdealHeight();
              break;
          }
@@ -507,7 +564,7 @@ ZLLimiter for WebCLAP (ports/zl-limiter), all under ZL_WEBCLAP:
          }
          tab_bar_.setSelectedIndex(static_cast<int>(current_panel_idx_));
          view_port_.setViewedComponent(panel, ideal_height);
-@@ -178,17 +213,21 @@
+@@ -178,17 +231,21 @@
  
      void UISettingPanel::saveCurrentPanel() {
          switch (current_panel_idx_) {
@@ -529,7 +586,7 @@ ZLLimiter for WebCLAP (ports/zl-limiter), all under ZL_WEBCLAP:
          }
          base_.setPanelProperty(zlgui::kUISettingChanged,
                                 !static_cast<bool>(base_.getPanelProperty(zlgui::kUISettingChanged)));
-@@ -196,28 +235,34 @@
+@@ -196,28 +253,34 @@
  
      void UISettingPanel::resetCurrentPanel() {
          switch (current_panel_idx_) {
