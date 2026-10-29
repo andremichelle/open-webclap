@@ -6,13 +6,15 @@
     finds them as it would.
 
     Frame payload, little endian:
-        u32 frames, f32 sampleRate, u8 sources, u8 encoding (1 = i16), u16 reserved
+        u32 frames, f32 sampleRate, u8 sources, u8 encoding (2), u16 reserved
         per source: u8 kind: channels (1 to 127), 0 = not sent (the editor does not show it, it gets silence),
                     0x80 | n = the same samples as source n (ZL's side source copies the input while no sidechain is used)
-        per sent source, per channel: f32 scale, frames * i16 (sample = i16 * scale)
+        per sent source, per channel: u8 mode, then for mode 0: f32 scale, frames * i16 (sample = i16 * scale)
+                    modes: 0 = samples, 1 = silence (all zero), 2 = the same samples as the channel before (mono)
 
     16 bits per sample with a scale per channel and frame: the quantisation noise sits about 100 dB below the
-    channel's peak, under the analyzers' floor, at half the bytes of floats. The DSP side sends only while the page
+    channel's peak, under the analyzers' floor, at half the bytes of floats. Silence and a mono signal on both
+    channels cost a byte per channel. The DSP side sends only while the page
     is open (PageExtension::update), so the FIFO fills and stops taking samples when nobody reads it, as it does
     upstream with the editor closed.
 */
@@ -39,7 +41,8 @@ struct AnalyzerHeader
 
 static_assert (sizeof (AnalyzerHeader) == 12);
 
-constexpr uint8_t analyzerEncoding = 1, analyzerAlias = 0x80;
+constexpr uint8_t analyzerEncoding = 2, analyzerAlias = 0x80;
+constexpr uint8_t channelSamples = 0, channelSilent = 1, channelAsBefore = 2;
 
 /** DSP side: what the sender's FIFO holds as one frame payload, at most maxFrames samples per channel (the
     oldest are dropped). Only the sources in mask (bit n = source n) are sent. Returns false if there is nothing to
@@ -108,7 +111,7 @@ bool drainAnalyzer (Sender<Float, N>& sender, std::vector<uint8_t>& out, int max
     }
 
     const AnalyzerHeader header { (uint32_t) frames, (float) sender.getSampleRate(), (uint8_t) N, analyzerEncoding, 0 };
-    out.resize (sizeof (header) + N + sent * (sizeof (float) + frames * sizeof (int16_t)));
+    out.resize (sizeof (header) + N + sent * (1 + sizeof (float) + frames * sizeof (int16_t))); // at most
     auto* p = out.data();
     std::memcpy (p, &header, sizeof (header));
     p += sizeof (header);
@@ -125,13 +128,33 @@ bool drainAnalyzer (Sender<Float, N>& sender, std::vector<uint8_t>& out, int max
             const auto* source = fifos[i][ch].data();
             const std::span<const float> parts[] { { source + range.start_index1, (std::size_t) range.block_size1 },
                                                    { source + range.start_index2, (std::size_t) range.block_size2 } };
+
+            if (ch > 0)
+            {
+                const auto* before = fifos[i][ch - 1].data();
+
+                if (std::memcmp (before + range.start_index1, parts[0].data(), parts[0].size_bytes()) == 0
+                    && std::memcmp (before + range.start_index2, parts[1].data(), parts[1].size_bytes()) == 0)
+                {
+                    *p++ = channelAsBefore;
+                    continue;
+                }
+            }
+
             float peak = 0.0f;
 
             for (const auto& part : parts)
                 for (const auto x : part)
                     peak = std::max (peak, std::abs (x));
 
-            const auto scale = peak > 0.0f && std::isfinite (peak) ? peak / 32767.0f : 1.0f;
+            if (! (peak > 0.0f) || ! std::isfinite (peak))
+            {
+                *p++ = channelSilent;
+                continue;
+            }
+
+            *p++ = channelSamples;
+            const auto scale = peak / 32767.0f;
             std::memcpy (p, &scale, sizeof (scale));
             p += sizeof (scale);
 
@@ -147,6 +170,7 @@ bool drainAnalyzer (Sender<Float, N>& sender, std::vector<uint8_t>& out, int max
         }
     }
 
+    out.resize ((std::size_t) (p - out.data()));
     fifo.finishRead (ready);
     return true;
 }
@@ -171,10 +195,22 @@ void feedAnalyzer (Sender<Float, N>& sender, const uint8_t* payload, std::size_t
         return;
 
     const auto* kinds = payload + sizeof (header);
+    const auto* end = payload + size;
     const auto frames = (std::size_t) header.frames;
     const auto channels = sender.getNumChannels();
-    const auto channelBytes = sizeof (float) + frames * sizeof (int16_t);
-    std::array<const uint8_t*, N> data {}; // each sent source's first channel
+    const auto sampleBytes = sizeof (float) + frames * sizeof (int16_t);
+    std::array<std::size_t, N> first {}; // each source's first channel in data
+    std::size_t total = 0;
+
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        first[i] = total;
+        total += channels[i];
+    }
+
+    // Per channel: its scale and samples, null for silence
+    static std::vector<const uint8_t*> data;
+    data.assign (total, nullptr);
     auto* p = kinds + N;
 
     for (std::size_t i = 0; i < N; ++i)
@@ -186,30 +222,44 @@ void feedAnalyzer (Sender<Float, N>& sender, const uint8_t* payload, std::size_t
         {
             const auto j = (std::size_t) (kinds[i] & ~analyzerAlias);
 
-            if (j >= i || data[j] == nullptr || channels[i] != channels[j])
+            if (j >= i || kinds[j] == 0 || (kinds[j] & analyzerAlias) != 0 || channels[i] != channels[j])
                 return;
 
-            data[i] = data[j];
+            std::copy_n (data.begin() + (std::ptrdiff_t) first[j], channels[i], data.begin() + (std::ptrdiff_t) first[i]);
             continue;
         }
 
         if (kinds[i] != channels[i])
             return;
 
-        data[i] = p;
-        p += channels[i] * channelBytes;
-    }
+        for (std::size_t ch = 0; ch < channels[i]; ++ch)
+        {
+            if (p >= end)
+                return;
 
-    if (p > payload + size)
-        return;
+            const auto mode = *p++;
+
+            if (mode == channelSamples)
+            {
+                if ((std::size_t) (end - p) < sampleBytes)
+                    return;
+
+                data[first[i] + ch] = p;
+                p += sampleBytes;
+            }
+            else if (mode == channelAsBefore && ch > 0)
+            {
+                data[first[i] + ch] = data[first[i] + ch - 1];
+            }
+            else if (mode != channelSilent)
+            {
+                return;
+            }
+        }
+    }
 
     static std::vector<std::vector<Float>> buffers;
     static std::vector<Float*> pointers;
-    std::size_t total = 0;
-
-    for (std::size_t i = 0; i < N; ++i)
-        total += channels[i];
-
     buffers.resize (total);
     pointers.resize (total);
 
@@ -228,9 +278,8 @@ void feedAnalyzer (Sender<Float, N>& sender, const uint8_t* payload, std::size_t
                 auto& buffer = buffers[index];
                 buffer.assign (block, Float (0));
 
-                if (data[i] != nullptr)
+                if (const auto* channel = data[index])
                 {
-                    const auto* channel = data[i] + ch * channelBytes;
                     float scale;
                     std::memcpy (&scale, channel, sizeof (scale));
                     const auto* samples = channel + sizeof (scale) + offset * sizeof (int16_t);

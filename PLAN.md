@@ -507,8 +507,12 @@ Makeup (GPL-3.0). ZLEComp is archived and left out.
   only drift, patched in the plugins.
 - **Analyzer traffic.** Raw float for three stereo sources was 1.2 MB/s (ZL Equalizer 2). Now: only the sources the
   editor shows (a mask in the port's controls frame), a source identical to an earlier one as one byte (the side
-  source copies the input without a sidechain), samples as 16 bits with a scale per channel (quantisation about
-  100 dB under the channel's peak). 0.4 MB/s for pre and post. Meters cross as deltas.
+  source copies the input while no sidechain is used, post equals pre while the EQ is flat), a channel identical to
+  the one before as one byte (mono on both channels), a silent channel as one byte, samples as 16 bits with a scale
+  per channel (quantisation about 100 dB under the channel's peak). Measured in Chrome at 48 kHz, white noise on
+  both channels: 97 kB/s for ZL Equalizer 2, Limiter and Splitter, 193 kB/s for Compressor and Spectrum Equalizer
+  (two streams differ), 0.6 kB/s in silence; stereo material doubles the noise figures. The older four send meters
+  only: about 1 kB/s. Meters cross as deltas.
 - **DSP cost** (Node, the test host's worklet code, 48 kHz, 128-frame blocks): ZL Equalizer 2 with 8 boosted bands
   0.33 % of real time, 8 dynamic bands 1.2 %, linear phase 0.44 %. Nothing worth changing.
 - **Kit additions:** every enabled input bus is a CLAP input port, so a sidechain is the second port, which openDAW
