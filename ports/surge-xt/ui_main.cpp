@@ -172,8 +172,9 @@ void runEngineChores()
 {
     auto& synth = *app->processor->surge;
 
-    // Patch browser loads are queued for the audio thread; with none, they run here
-    synth.processAudioThreadOpsWhenAudioEngineUnavailable();
+    // Patch browser loads are queued for the audio thread; with none, they run here, also while the meters say
+    // audio is running (that is the DSP side's audio, this engine never plays)
+    synth.processAudioThreadOpsWhenAudioEngineUnavailable (true);
 
     // A new patch in the editor: the DSP side gets all of it (ProcessorBridge sends the state). Not before the DSP
     // side's own patch is in: until then the editor's engine has a patch of its own, which must not replace it.
