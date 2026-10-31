@@ -272,7 +272,7 @@ private:
     juce::Rectangle<int> labelArea;
 };
 
-/** A choice as text tabs, the current one light and underlined. */
+/** A choice as text tabs, the current one light. */
 class Choice final : public juce::Component
 {
 public:
@@ -291,10 +291,6 @@ public:
             const auto current = index == parameter.getIndex();
             g.setColour (current ? colours::text : colours::caption);
             g.drawText (name, area, juce::Justification::centred);
-
-            if (current)
-                g.fillRect (juce::Rectangle<float> ((float) area.getCentreX() - width * 0.5f,
-                                                    (float) area.getCentreY() + 7.0f, width, 1.0f));
         }
     }
 
@@ -310,6 +306,7 @@ public:
             if (event.x >= right)
             {
                 gesture (parameter, parameter.convertTo0to1 ((float) index));
+                repaint();
                 return;
             }
         }
@@ -966,7 +963,8 @@ class MaximizerPage final : public Page
 public:
     MaximizerPage (juce::AudioProcessorValueTreeState& state, const Spectrum& analyzer)
         : Page ("Maximizer", colours::blue, analyzer),
-          mode (*dynamic_cast<juce::AudioParameterChoice*> (state.getParameter (Processor::id (Processor::maximizer, "Mode")))),
+          modeParameter (*dynamic_cast<juce::AudioParameterChoice*> (state.getParameter (Processor::id (Processor::maximizer, "Mode")))),
+          mode (modeParameter),
           threshold (state, Processor::id (Processor::maximizer, "Threshold"), "Threshold", accent, decibels(), false, 60),
           ceiling (state, Processor::id (Processor::maximizer, "Ceiling"), "Ceiling", accent, decibels()),
           release (state, Processor::id (Processor::maximizer, "Release"), "Release", accent, milliseconds()),
@@ -978,6 +976,12 @@ public:
 
     void refresh (const Meters& meters, bool) override
     {
+        if (const auto index = modeParameter.getIndex(); index != shownMode) // changed here or by the host
+        {
+            shownMode = index;
+            mode.repaint();
+        }
+
         const auto level = [] (float gain) { return juce::jlimit (0.0f, 1.0f, 1.0f + juce::Decibels::gainToDecibels (gain, -48.0f) / 48.0f); };
         const std::array<float, 3> values { level (meters.input), meters.maximizer / 12.0f, level (meters.output) };
 
@@ -992,7 +996,7 @@ public:
     {
         mode.setBounds (getLocalBounds().removeFromTop (24).withTrimmedRight (6).removeFromRight (190));
         auto area = content();
-        meterArea = area.removeFromRight (84);
+        meterArea = area.removeFromRight (84).withTrimmedTop (8); // apart from the modes above
         area.removeFromRight (6);
         // Threshold large, the three small dials beside it, their labels on one line
         const auto bottom = area.getCentreY() + 40;
@@ -1015,7 +1019,9 @@ public:
     }
 
 private:
+    juce::AudioParameterChoice& modeParameter;
     Choice mode;
+    int shownMode = -1;
     Dial threshold, ceiling, release, trim;
     juce::Rectangle<int> meterArea;
     std::array<float, 3> shown {};
