@@ -132,8 +132,9 @@ struct RadarSamples final : juce::webclap::SampleSlots
         if (key != 0)
             return;
 
-        radarOf (processor).commitSample();
-        RadarPage::changed (processor); // a state that embedded the sample no longer needs to
+        // Marked only when the state changes (it embedded the sample): a delivery after a project load is no edit
+        if (radarOf (processor).commitSample())
+            RadarPage::changed (processor);
     }
 
     void clear (juce::AudioProcessor& processor, std::uint32_t key) override

@@ -70,17 +70,35 @@ int patternIndexOf (Processor& processor)
     return juce::jlimit (0, numPatterns - 1, juce::roundToInt (processor.state.getRawParameterValue ("pattern")->load()) - 1);
 }
 
+/** A control of one parameter: the editors tell the host which parameter is under the mouse
+    (getControlParameterIndex), which offers its menu there (openDAW: automation, MIDI learn). */
+struct ParameterControl
+{
+    virtual ~ParameterControl() = default;
+    virtual juce::AudioProcessorParameter& controlledParameter() = 0;
+};
+
+/** The parameter of the component or of the control it is part of, -1 for none. */
+int controlParameterIndex (juce::Component& component)
+{
+    for (auto* c = &component; c != nullptr; c = c->getParentComponent())
+        if (auto* control = dynamic_cast<ParameterControl*> (c))
+            return control->controlledParameter().getParameterIndex();
+
+    return -1;
+}
+
 //==============================================================================
 /** A dial in the template's style: a dark knob with a pointer inside a thin track, the value as a coloured arc
     (from the centre for bipolar parameters). Drags up and down, a double click returns to the default. The label
     shows the value while hovered or dragged. */
-class Dial final : public juce::Component
+class Dial final : public juce::Component, public ParameterControl
 {
 public:
     Dial (juce::AudioProcessorValueTreeState& state, const juce::String& id, const juce::String& name,
           juce::Colour colour, Format formatValue, bool bipolar = false, int knobSize = 36)
         : caption (name), accent (colour), centred (bipolar), knob (knobSize), format (std::move (formatValue)),
-          attachment (state, id, slider)
+          attachment (state, id, slider), parameter (*state.getParameter (id))
     {
         const auto& parameter = *state.getParameter (id);
         slider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
@@ -174,10 +192,14 @@ private:
     Look look;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
     juce::Rectangle<int> labelArea;
+    juce::AudioProcessorParameter& parameter;
+
+public:
+    juce::AudioProcessorParameter& controlledParameter() override { return parameter; }
 };
 
 /** A choice as text tabs, the current one light. */
-class Choice final : public juce::Component
+class Choice final : public juce::Component, public ParameterControl
 {
 public:
     explicit Choice (juce::AudioParameterChoice& p)
@@ -224,6 +246,9 @@ private:
 
     juce::AudioParameterChoice& parameter;
     juce::ParameterAttachment attachment;
+
+public:
+    juce::AudioProcessorParameter& controlledParameter() override { return parameter; }
 };
 
 /** A button as a rounded pill; lit while on. */
@@ -1499,7 +1524,7 @@ private:
 
 //==============================================================================
 /** A pattern's slot: its number and a small picture of its segments. Lit while picked, marked while it plays. */
-class PatternCell final : public juce::Component
+class PatternCell final : public juce::Component, public ParameterControl
 {
 public:
     PatternCell (Processor& p, Session& s, int slot, bool compact)
@@ -1602,6 +1627,11 @@ private:
     Session& session;
     const int index;
     const bool small;
+
+public:
+    juce::AudioProcessorParameter& controlledParameter() override { return parameterOf (processor, "pattern"); }
+
+private:
     Pattern shown;
     bool wasPicked = false, wasPlaying = false;
 };
@@ -1626,6 +1656,8 @@ juce::String sampleText (const Waveform& waveform)
 class WindowEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
+    int getControlParameterIndex (juce::Component& component) override { return controlParameterIndex (component); }
+
     WindowEditor (Processor& p, Session& s)
         : AudioProcessorEditor (p), processor (p), session (s), view (p, s, true),
           selectTool ("Select", icons::select(), true, colours::violet),
@@ -2025,6 +2057,8 @@ private:
 class PanelEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
+    int getControlParameterIndex (juce::Component& component) override { return controlParameterIndex (component); }
+
     PanelEditor (Processor& p, Session& s)
         : AudioProcessorEditor (p), processor (p), session (s), view (p, s, false),
           barsDial (p.state, "bars", "Bars", colours::teal, bars(), false, 30),

@@ -100,6 +100,16 @@ public:
         emit (w);
     }
 
+    /** The parameter under the mouse (clap.param-hovered), noHover for none. See juce_webclap_hover.h. */
+    static constexpr uint32 noHover = 0xffffffffu;
+
+    void sendHover (uint32 clapId)
+    {
+        protocol::Writer w (protocol::hover);
+        w.u32 (clapId);
+        emit (w);
+    }
+
     /** Asks the host for the plugin's window (from a device panel's page). */
     void requestWindow() { emit (protocol::Writer (protocol::show)); }
 

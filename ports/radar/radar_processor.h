@@ -58,7 +58,7 @@ public:
     static constexpr double maxHostSampleSeconds = 600.0;
 
     float* prepareSample (std::uint32_t frames, std::uint32_t channels, double rate);
-    void commitSample();
+    bool commitSample(); // true if the state changed (it embedded the sample)
     void clearHostSample();
 
     /** The name of the sample the page hands the host (the host's slot carries no name). */

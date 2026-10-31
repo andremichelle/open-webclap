@@ -144,10 +144,12 @@ float* Processor::prepareSample (std::uint32_t newFrames, std::uint32_t channels
     return staging.data();
 }
 
-void Processor::commitSample()
+bool Processor::commitSample()
 {
     if (staging.empty())
-        return;
+        return false;
+
+    const auto stateChanges = sampleEmbedded; // the state embedded the sample, it holds only the name now
 
     const auto count = (size_t) stagingFrames;
     left.assign (staging.begin(), staging.begin() + (std::ptrdiff_t) count);
@@ -163,6 +165,7 @@ void Processor::commitSample()
     staging = {};
     restart = true;
     ++sampleRevision;
+    return stateChanges;
 }
 
 void Processor::clearHostSample()

@@ -15,6 +15,7 @@
 
 #include <juce_webclap/juce_webclap.h>
 #include <juce_webclap/juce_webclap_bridge.h>
+#include <juce_webclap/juce_webclap_hover.h>
 
 #include "oxygen_editor.h"
 #include "oxygen_frames.h"
@@ -36,6 +37,7 @@ struct App
     std::unique_ptr<oxygen_webclap::Processor> processor;
     std::unique_ptr<juce::AudioProcessorEditor> editor;
     std::unique_ptr<juce::webclap::ProcessorBridge> bridge;
+    std::unique_ptr<juce::webclap::ParameterHover> hover; // after the editor and the bridge: destroyed first
     double pixelRatio = 1.0;
     int lastWidth = 0, lastHeight = 0;
 };
@@ -72,6 +74,9 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_init (double pixelRatio)
     app->bridge = std::make_unique<juce::webclap::ProcessorBridge> (*app->processor, sendToHost);
 
     app->editor.reset (oxygen_webclap::createEditor (*app->processor));
+
+    if (app->editor != nullptr)
+        app->hover = std::make_unique<juce::webclap::ParameterHover> (*app->editor, *app->bridge);
 
     app->bridge->onPluginFrame = [] (juce::uint8 type, const juce::uint8* payload, size_t size)
     {

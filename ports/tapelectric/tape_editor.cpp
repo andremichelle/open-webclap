@@ -78,16 +78,34 @@ juce::String hertz (float hz)
     return hz < 1000.0f ? (hz < 100.0f ? juce::String (hz, 1) : juce::String (juce::roundToInt (hz))) + " Hz" : juce::String (hz / 1000.0f, 1) + " kHz";
 }
 
+/** A control of one parameter: the editor tells the host which parameter is under the mouse (getControlParameterIndex),
+    which offers its menu there (openDAW: automation, MIDI learn). */
+struct ParameterControl
+{
+    virtual ~ParameterControl() = default;
+    virtual juce::AudioProcessorParameter& controlledParameter() = 0;
+};
+
+/** The parameter of the component or of the control it is part of, -1 for none. */
+int controlParameterIndex (juce::Component& component)
+{
+    for (auto* c = &component; c != nullptr; c = c->getParentComponent())
+        if (auto* control = dynamic_cast<ParameterControl*> (c))
+            return control->controlledParameter().getParameterIndex();
+
+    return -1;
+}
+
 /** A dial in the template's style: a dark knob with a pointer inside a thin track, the value as a coloured arc
     (from the centre for bipolar parameters). Drags up and down, a double click returns to the default. The label
     shows the value while hovered or dragged. */
-class Dial final : public juce::Component
+class Dial final : public juce::Component, public ParameterControl
 {
 public:
     Dial (juce::AudioProcessorValueTreeState& state, const juce::String& id, const juce::String& name,
           juce::Colour colour, Format formatValue, bool bipolar = false)
         : caption (name), accent (colour), centred (bipolar), format (std::move (formatValue)),
-          attachment (state, id, slider)
+          attachment (state, id, slider), controlled (*state.getParameter (id))
     {
         const auto& parameter = *state.getParameter (id);
         slider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
@@ -193,16 +211,20 @@ private:
     Look look;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
     juce::Rectangle<int> labelArea;
+    juce::AudioProcessorParameter& controlled;
+
+public:
+    juce::AudioProcessorParameter& controlledParameter() override { return controlled; }
 };
 
 /** A vertical fader: a thin track filled from the bottom in the accent colour, a light cap. Drags, a double
     click returns to the default, the label shows the value while hovered or dragged. */
-class Fader final : public juce::Component
+class Fader final : public juce::Component, public ParameterControl
 {
 public:
     Fader (juce::AudioProcessorValueTreeState& state, const juce::String& id, const juce::String& name,
            juce::Colour colour, Format formatValue)
-        : caption (name), format (std::move (formatValue)), attachment (state, id, slider)
+        : caption (name), format (std::move (formatValue)), attachment (state, id, slider), controlled (*state.getParameter (id))
     {
         const auto& parameter = *state.getParameter (id);
         look.accent = colour;
@@ -270,10 +292,14 @@ private:
     Look look;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
     juce::Rectangle<int> labelArea;
+    juce::AudioProcessorParameter& controlled;
+
+public:
+    juce::AudioProcessorParameter& controlledParameter() override { return controlled; }
 };
 
 /** A choice as underlined text: a click steps to the next choice. */
-class Choice final : public juce::Component, private juce::AudioProcessorValueTreeState::Listener,
+class Choice final : public juce::Component, public ParameterControl, private juce::AudioProcessorValueTreeState::Listener,
                      private juce::AsyncUpdater
 {
 public:
@@ -320,6 +346,9 @@ private:
     juce::AudioProcessorValueTreeState& state;
     juce::String id;
     juce::AudioParameterChoice& parameter;
+
+public:
+    juce::AudioProcessorParameter& controlledParameter() override { return parameter; }
 };
 
 /** A button as a rounded pill. */
@@ -757,6 +786,8 @@ private:
 class Editor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
+    int getControlParameterIndex (juce::Component& component) override { return controlParameterIndex (component); }
+
     explicit Editor (Processor& p)
         : AudioProcessorEditor (p), processor (p), state (p.apvts),
           humView (state), eqView (state), motorView (state),

@@ -22,6 +22,7 @@
 
 #include <clap/clap.h>
 #include <clap/ext/draft/webview.h>
+#include <clap/ext/draft/param-hovered.h>
 
 #include <unordered_set>
 
@@ -169,6 +170,7 @@ private:
         hostGui = hostExtension<clap_host_gui_t> (CLAP_EXT_GUI);
         hostWebview = hostExtension<clap_host_webview_t> (CLAP_EXT_WEBVIEW);
         hostLatency = hostExtension<clap_host_latency_t> (CLAP_EXT_LATENCY);
+        hostHovered = hostExtension<clap_host_param_hovered_t> (CLAP_EXT_PARAM_HOVERED);
 
         processor.reset (createPluginFilter());
 
@@ -600,6 +602,16 @@ private:
                     hostState->mark_dirty (host);
 
                 requestHostFlush();
+                break;
+            }
+
+            case protocol::hover:
+            {
+                const auto id = r.get<uint32>();
+
+                if (r.ok && hostHovered != nullptr && hostHovered->update != nullptr)
+                    hostHovered->update (host, id == ProcessorBridge::noHover || findParameter (id) != nullptr ? id : CLAP_INVALID_ID);
+
                 break;
             }
 
@@ -1072,6 +1084,7 @@ private:
     const clap_host_gui_t* hostGui = nullptr;
     const clap_host_webview_t* hostWebview = nullptr;
     const clap_host_latency_t* hostLatency = nullptr;
+    const clap_host_param_hovered_t* hostHovered = nullptr;
     int reportedLatency = 0; // what the host was told (clap.latency)
     bool active = false;
 

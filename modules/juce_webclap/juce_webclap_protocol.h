@@ -13,6 +13,8 @@
         resize    UI -> DSP   u32 width, u32 height (logical pixels)
         midi      UI -> DSP   1 to 3 MIDI bytes (notes from the editor's keyboard), played in the next process
         show      UI -> DSP   no payload: the page (a device panel) asks for the plugin's window (clap.gui request_show)
+        hover     UI -> DSP   u32 clapId of the parameter under the mouse, 0xffffffff for none (clap.param-hovered):
+                              hosts offer their parameter menu (automation, MIDI learn) on a right click there
 
     Types from firstPluginType on are the port's own: what an editor needs beyond parameters and state
     (ports/ripplerx, through PageExtension and ProcessorBridge), or a whole protocol for plugins whose editor
@@ -46,7 +48,8 @@ namespace protocol
         stream   = 6,
         resize   = 7,
         midi     = 8,
-        show     = 9
+        show     = 9,
+        hover    = 10
     };
 
     constexpr uint8 firstPluginType = 64;

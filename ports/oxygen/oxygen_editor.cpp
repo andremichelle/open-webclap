@@ -163,16 +163,34 @@ void gesture (juce::RangedAudioParameter& parameter, float normalised)
     parameter.endChangeGesture();
 }
 
+/** A control of one parameter: the editor tells the host which parameter is under the mouse (getControlParameterIndex),
+    which offers its menu there (openDAW: automation, MIDI learn). */
+struct ParameterControl
+{
+    virtual ~ParameterControl() = default;
+    virtual juce::AudioProcessorParameter& controlledParameter() = 0;
+};
+
+/** The parameter of the component or of the control it is part of, -1 for none. */
+int controlParameterIndex (juce::Component& component)
+{
+    for (auto* c = &component; c != nullptr; c = c->getParentComponent())
+        if (auto* control = dynamic_cast<ParameterControl*> (c))
+            return control->controlledParameter().getParameterIndex();
+
+    return -1;
+}
+
 /** A dial in the template's style: a dark knob with a pointer inside a thin track, the value as a coloured arc
     (from the centre for bipolar parameters). Drags up and down, a double click returns to the default. The label
     shows the value while hovered or dragged. */
-class Dial final : public juce::Component
+class Dial final : public juce::Component, public ParameterControl
 {
 public:
     Dial (juce::AudioProcessorValueTreeState& state, const juce::String& id, const juce::String& name,
           juce::Colour colour, Format formatValue, bool bipolar = false, int knobSize = 36)
         : caption (name), accent (colour), centred (bipolar), knob (knobSize), format (std::move (formatValue)),
-          attachment (state, id, slider)
+          attachment (state, id, slider), controlled (*state.getParameter (id))
     {
         const auto& parameter = *state.getParameter (id);
         slider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
@@ -271,10 +289,14 @@ private:
     Look look;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
     juce::Rectangle<int> labelArea;
+    juce::AudioProcessorParameter& controlled;
+
+public:
+    juce::AudioProcessorParameter& controlledParameter() override { return controlled; }
 };
 
 /** A choice as text tabs, the current one light. */
-class Choice final : public juce::Component
+class Choice final : public juce::Component, public ParameterControl
 {
 public:
     explicit Choice (juce::AudioParameterChoice& p) : parameter (p) { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
@@ -315,6 +337,9 @@ public:
 
 private:
     juce::AudioParameterChoice& parameter;
+
+public:
+    juce::AudioProcessorParameter& controlledParameter() override { return parameter; }
 };
 
 /** A vertical meter: a dark track filled in the accent colour, from the bottom (levels) or the top (reduction). */
@@ -1125,6 +1150,8 @@ private:
 class Editor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
+    int getControlParameterIndex (juce::Component& component) override { return controlParameterIndex (component); }
+
     explicit Editor (Processor& p)
         : AudioProcessorEditor (p), state (p.state),
           tabs ({ { "EQ", colours::violet, bypass (Processor::eq) },
