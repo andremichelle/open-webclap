@@ -49,7 +49,8 @@ Format decibels (bool sign = false)
 
 Format milliseconds()
 {
-    return [] (float v) { return juce::String (v, v < 10.0f ? 1 : 0) + " ms"; };
+    // String (v, 0) is not "no decimals" but JUCE's default format: whole numbers go through roundToInt
+    return [] (float v) { return (v < 10.0f ? juce::String (v, 1) : juce::String (juce::roundToInt (v))) + " ms"; };
 }
 
 Format ratio()
@@ -69,7 +70,7 @@ Format linearGain()
 
 juce::String hertz (float hz)
 {
-    return hz < 1000.0f ? juce::String (juce::roundToInt (hz)) + " Hz" : juce::String (hz / 1000.0f, hz < 10000.0f ? 1 : 0) + " kHz";
+    return hz < 1000.0f ? juce::String (juce::roundToInt (hz)) + " Hz" : (hz < 10000.0f ? juce::String (hz / 1000.0f, 1) : juce::String (juce::roundToInt (hz / 1000.0f))) + " kHz";
 }
 
 /** An RBJ bell's magnitude in dB at a frequency, at 48 kHz (what the views draw; the processor's own rate only

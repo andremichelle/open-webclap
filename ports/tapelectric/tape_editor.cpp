@@ -36,14 +36,20 @@ using Format = std::function<juce::String (float)>;
 
 const juce::String times = juce::String::fromUTF8 ("\xc3\x97");
 
+/** A number with this many decimals: String (v, 0) is not "no decimals" but JUCE's default format. */
+juce::String fixed (float v, int decimals)
+{
+    return decimals > 0 ? juce::String (v, decimals) : juce::String (juce::roundToInt (v));
+}
+
 Format percent (int decimals = 0)
 {
-    return [decimals] (float v) { return juce::String (v * 100.0f, decimals) + "%"; };
+    return [decimals] (float v) { return fixed (v * 100.0f, decimals) + "%"; };
 }
 
 Format number (int decimals)
 {
-    return [decimals] (float v) { return juce::String (v, decimals); };
+    return [decimals] (float v) { return fixed (v, decimals); };
 }
 
 Format multiple()
@@ -69,7 +75,7 @@ Format pan()
 
 juce::String hertz (float hz)
 {
-    return hz < 1000.0f ? juce::String (hz, hz < 100.0f ? 1 : 0) + " Hz" : juce::String (hz / 1000.0f, 1) + " kHz";
+    return hz < 1000.0f ? (hz < 100.0f ? juce::String (hz, 1) : juce::String (juce::roundToInt (hz))) + " Hz" : juce::String (hz / 1000.0f, 1) + " kHz";
 }
 
 /** A dial in the template's style: a dark knob with a pointer inside a thin track, the value as a coloured arc
