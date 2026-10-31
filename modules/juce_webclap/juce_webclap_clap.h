@@ -12,7 +12,8 @@
 
     The port defines getClapPluginInfo() and createPluginFilter(), and compiles juce_webclap_clap.cpp with the
     JUCE modules juce_core (juce_core_wasm.cpp), juce_events (juce_events_wasm.cpp), juce_data_structures,
-    juce_audio_basics and juce_audio_processors_headless. No GUI module is needed.
+    juce_audio_basics and juce_audio_processors_headless. No GUI module is needed. With ClapPluginInfo::devicePanel
+    it also implements opendaw.device-panel/1.
 
     A port whose editor needs more than parameters, state and keyboard notes (a meter, a setting kept outside
     the state) also defines createPageExtension().
@@ -45,6 +46,10 @@ namespace juce::webclap
         const char* webviewUri = "/ui/index.html"; // page in the bundle, see clap.webview get_uri
         int editorWidth = 800;                     // window size until the page reports the editor's own
         int editorHeight = 600;
+
+        /** openDAW's device panel (opendaw.device-panel/1): the window's page, its width scaled to the panel's
+            height from the editor's size. List the feature "opendaw:device-panel" too. */
+        bool devicePanel = false;
     };
 
     /** Defined by the port. */

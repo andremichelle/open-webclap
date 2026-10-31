@@ -108,6 +108,13 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         source: port("tapelectric"), license: "AGPL-3.0"
     },
     {
+        id: "oxygen", name: "oXygen", kind: "audio-fx",
+        description: "Mastering chain: graphic EQ, dynamic EQ, multiband compressor, stereo imager and maximizer",
+        clapId: "com.wamphyre.oxygen",
+        archive: "build/oxygen/oxygen.wclap.tar.gz", build: "scripts/build-oxygen.sh",
+        credit: "https://github.com/Wamphyre/oXygen", source: port("oxygen"), license: "BSD-3-Clause (AGPL-3.0 as built)"
+    },
+    {
         id: "wet-chorus", name: "WetChorus", kind: "audio-fx",
         description: "Bucket-brigade stereo chorus after a 1970s guitar combo, a demo of openDAW's device panel",
         clapId: "studio.opendaw.commons.wet-chorus",

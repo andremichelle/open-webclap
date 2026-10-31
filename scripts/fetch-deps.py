@@ -193,6 +193,14 @@ DEPS += [
     for name, folder in (("droplets", "synths/droplets"), ("tapelectric", "effects/tapelectric"))
 ]
 
+# oXygen (Wamphyre) at main at the time of writing: the mastering modules and their DSP, without the assistant
+# (threads, file loading) and upstream's editor, which the port replaces
+DEPS += [
+    ("oxygen", "Wamphyre/oXygen", "e261ea518c70316d0aab2cdef2c995f114dac694",
+     lambda p: p.startswith(("Source/Modules/", "Source/DSP/")) or p in ("Source/MasteringModule.h", "LICENSE",
+                                                                        "README.md")),
+]
+
 # Only the three small HRTF sets are hosted, the KU100 sets are 20 and 37 MB
 OSD_HRTF = ("HRTF/mit_kemar_large_pinna.sofa", "HRTF/cipic_subject_003.sofa", "HRTF/hutubs_pp2.sofa")
 
@@ -312,7 +320,7 @@ def fetch_fonts():
 # patches/<prefix>-*.patch apply to external/<directory>
 PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "ripplerx"), ("odin2-", "odin2"),
                  ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
-                 ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric")] + [(d + "-", d) for d, _, _ in ZL]
+                 ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric"), ("oxygen-", "oxygen")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():

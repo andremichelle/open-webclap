@@ -989,6 +989,25 @@ private:
         if (std::strcmp (id, CLAP_EXT_LATENCY) == 0)     return &latency;
         if (std::strcmp (id, CLAP_EXT_GUI) == 0)         return &gui;
         if (std::strcmp (id, CLAP_EXT_WEBVIEW) == 0)     return &webview;
+
+        // openDAW's device panel: the window's page, as wide as the editor at the panel's height
+        struct DevicePanel
+        {
+            int32_t (*getUri) (const clap_plugin_t*, char*, uint32_t);
+            bool (*getWidth) (const clap_plugin_t*, uint32_t height, uint32_t* width);
+        };
+
+        static const DevicePanel devicePanel {
+            [] (const clap_plugin_t* p, char* uri, uint32_t capacity) { return self (p).getUri (uri, capacity); },
+            [] (const clap_plugin_t*, uint32_t height, uint32_t* width)
+            {
+                const auto& info = getClapPluginInfo();
+                *width = (uint32_t) roundToInt ((double) height * info.editorWidth / info.editorHeight);
+                return true;
+            }
+        };
+
+        if (getClapPluginInfo().devicePanel && std::strcmp (id, "opendaw.device-panel/1") == 0) return &devicePanel;
         return nullptr;
     }
 

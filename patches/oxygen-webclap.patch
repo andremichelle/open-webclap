@@ -1,0 +1,200 @@
+oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
+- upstream's module editors are left out (the port has its own, they are not fetched)
+- the dynamic EQ, the multiband compressor and the maximizer report their gain reduction for the port's meters
+  (the multiband compressor keeps the most of each block)
+- the maximizer's soft ceiling stage runs once more at the host rate, after downsampling: the downsampling filter
+  rebuilds peaks above the ceiling past about 10 dB of limiting
+
+--- a/Source/Modules/DynamicEqModule.cpp
++++ b/Source/Modules/DynamicEqModule.cpp
+@@ -1,5 +1,7 @@
+ #include "DynamicEqModule.h"
++#if ! OXYGEN_WEBCLAP
+ #include "../GUI/DynamicEqEditor.h"
++#endif
+ #include <cmath>
+ 
+ namespace oxygen
+@@ -158,6 +160,10 @@
+ 
+     juce::AudioProcessorEditor* DynamicEqModule::createEditor()
+     {
++#if OXYGEN_WEBCLAP
++        return nullptr;
++#else
+         return new DynamicEqEditor(*this, apvts);
++#endif
+     }
+ }
+--- a/Source/Modules/DynamicEqModule.h
++++ b/Source/Modules/DynamicEqModule.h
+@@ -28,6 +28,9 @@
+         juce::AudioProcessorValueTreeState apvts;
+         juce::RangedAudioParameter* getBypassParameter() const override { return apvts.getParameter("Bypass"); }
+ 
++        /** The cut a band applies now, in dB (0 when idle), for meters. */
++        float getGainReductionDb(int band) const { return runtimeStates[(size_t) band].currentGainReductionDb; }
++
+     private:
+         struct BandRuntimeState
+         {
+--- a/Source/Modules/EqualizerModule.cpp
++++ b/Source/Modules/EqualizerModule.cpp
+@@ -1,5 +1,7 @@
+ #include "EqualizerModule.h"
++#if ! OXYGEN_WEBCLAP
+ #include "../GUI/EqualizerEditor.h"
++#endif
+ #include <cmath>
+ #include <limits>
+ 
+@@ -121,7 +123,11 @@
+ 
+     juce::AudioProcessorEditor* EqualizerModule::createEditor()
+     {
++#if OXYGEN_WEBCLAP
++        return nullptr;
++#else
+         return new EqualizerEditor(*this, apvts);
++#endif
+     }
+ 
+ }
+--- a/Source/Modules/MaximizerModule.cpp
++++ b/Source/Modules/MaximizerModule.cpp
+@@ -1,5 +1,7 @@
+ #include "MaximizerModule.h"
++#if ! OXYGEN_WEBCLAP
+ #include "../GUI/MaximizerEditor.h"
++#endif
+ #include <array>
+ #include <cmath>
+ 
+@@ -269,6 +271,12 @@
+ 
+         oversampling.processSamplesDown(outputBlock);
+ 
++#if OXYGEN_WEBCLAP
++        // The downsampling filter rebuilds peaks the oversampled stages removed: past about 10 dB of limiting
++        // they pass the ceiling (by 0.7 dB at 18 dB). The same soft stage at the host rate keeps them under it.
++        const float hostRateCeiling = decibelsToGainSafe(lastCeiling);
++#endif
++
+         for (int ch = 0; ch < numChannels; ++ch)
+         {
+             auto* data = buffer.getWritePointer(ch);
+@@ -276,6 +284,9 @@
+             {
+                 if (!std::isfinite(data[i]))
+                     data[i] = 0.0f;
++#if OXYGEN_WEBCLAP
++                data[i] = softSaturateToCeiling(data[i], hostRateCeiling * modeTuning.finalSafetyOnset, hostRateCeiling);
++#endif
+             }
+         }
+     }
+@@ -354,7 +365,11 @@
+ 
+     juce::AudioProcessorEditor* MaximizerModule::createEditor()
+     {
++#if OXYGEN_WEBCLAP
++        return nullptr;
++#else
+         return new MaximizerEditor(*this, apvts);
++#endif
+     }
+ 
+ }
+--- a/Source/Modules/MaximizerModule.h
++++ b/Source/Modules/MaximizerModule.h
+@@ -33,6 +33,9 @@
+         juce::AudioProcessorValueTreeState apvts;
+         juce::RangedAudioParameter* getBypassParameter() const override { return apvts.getParameter("Bypass"); }
+ 
++        /** The limiter's gain reduction at the end of the last block, in dB (0 or less), for meters. */
++        float getGainReductionDb() const { return juce::Decibels::gainToDecibels(currentGain, -60.0f); }
++
+     private:
+         static constexpr double parameterSmoothingMs = 20.0;
+         static constexpr size_t maxSupportedChannels = 2;
+--- a/Source/Modules/MultibandCompressorModule.cpp
++++ b/Source/Modules/MultibandCompressorModule.cpp
+@@ -1,5 +1,7 @@
+ #include "MultibandCompressorModule.h"
++#if ! OXYGEN_WEBCLAP
+ #include "../GUI/MultibandCompressorEditor.h"
++#endif
+ #include <cmath>
+ #include <limits>
+ 
+@@ -245,6 +247,8 @@
+         if (numChannels == 0 || numSamples == 0)
+             return;
+ 
++        state.gainReductionDb = 0.0f;
++
+         for (int sample = 0; sample < numSamples; ++sample)
+         {
+             float peakDetector = 0.0f;
+@@ -285,6 +289,7 @@
+                 }
+ 
+                 gain = juce::Decibels::decibelsToGain(gainReductionDb);
++                state.gainReductionDb = juce::jmin(state.gainReductionDb, gainReductionDb);
+             }
+ 
+             if (!std::isfinite(gain))
+@@ -300,7 +305,11 @@
+ 
+     juce::AudioProcessorEditor* MultibandCompressorModule::createEditor()
+     {
++#if OXYGEN_WEBCLAP
++        return nullptr;
++#else
+         return new MultibandCompressorEditor(*this, apvts);
++#endif
+     }
+ 
+ }
+--- a/Source/Modules/MultibandCompressorModule.h
++++ b/Source/Modules/MultibandCompressorModule.h
+@@ -24,6 +24,9 @@
+         juce::AudioProcessorValueTreeState apvts;
+         juce::RangedAudioParameter* getBypassParameter() const override { return apvts.getParameter("Bypass"); }
+ 
++        /** The most gain reduction a band applied in the last block, in dB (0 or less), for meters. */
++        float getGainReductionDb(int band) const { return bandRuntimeStates[(size_t) band].gainReductionDb; }
++
+     private:
+ 
+         struct BandParams
+@@ -41,6 +44,7 @@
+             float attackCoeff = 0.0f;
+             float releaseCoeff = 0.0f;
+             float envelope = 0.0f;
++            float gainReductionDb = 0.0f;
+         };
+ 
+         dsp::FourBandCrossover<float> crossover;
+--- a/Source/Modules/StereoImagerModule.cpp
++++ b/Source/Modules/StereoImagerModule.cpp
+@@ -1,5 +1,7 @@
+ #include "StereoImagerModule.h"
++#if ! OXYGEN_WEBCLAP
+ #include "../GUI/StereoImagerEditor.h"
++#endif
+ #include <cmath>
+ 
+ namespace oxygen
+@@ -215,7 +217,11 @@
+ 
+     juce::AudioProcessorEditor* StereoImagerModule::createEditor()
+     {
++#if OXYGEN_WEBCLAP
++        return nullptr;
++#else
+         return new StereoImagerEditor(*this, apvts);
++#endif
+     }
+ 
+ }
