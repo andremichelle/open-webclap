@@ -92,4 +92,29 @@ namespace juce::webclap
 
     /** Defined by ports that need it. The kit's default returns nullptr. */
     std::unique_ptr<PageExtension> createPageExtension();
+
+    /** A port whose samples openDAW may keep (opendaw.samples/1): the host stores each sample by a key the port
+        chooses, in its project (not in the plugin's state), and hands its frames over. Everything runs on the
+        plugin's (only) thread; the frames arrive between process calls. Hosts without the extension never call
+        it: the port keeps its samples itself. */
+    struct SampleSlots
+    {
+        virtual ~SampleSlots() = default;
+
+        /** Called once at init when the host keeps samples: from now on the state need not carry them. */
+        virtual void hostKeepsSamples (AudioProcessor&) {}
+
+        /** A slot's sample is coming: room for channels * frames floats, a channel after the other, or null to
+            refuse it. */
+        virtual float* prepare (AudioProcessor&, uint32_t key, uint32_t frames, uint32_t channels, double sampleRate) = 0;
+
+        /** The frames are written to what prepare returned. */
+        virtual void commit (AudioProcessor&, uint32_t key) = 0;
+
+        /** The slot has no sample (any more). */
+        virtual void clear (AudioProcessor&, uint32_t key) = 0;
+    };
+
+    /** Defined by a port that uses SampleSlots (none by default). */
+    std::unique_ptr<SampleSlots> createSampleSlots();
 }

@@ -34,7 +34,8 @@ const juce::String minus = juce::String::fromUTF8 ("\xe2\x88\x92");
 
 Format milliseconds()
 {
-    return [] (float v) { return v < 1000.0f ? juce::String (v, v < 10.0f ? 1 : 0) + " ms" : juce::String (v / 1000.0f, 2) + " s"; };
+    // String (v, 0) is not "no decimals" but JUCE's default format: whole numbers go through roundToInt
+    return [] (float v) { return v < 10.0f ? juce::String (v, 1) + " ms" : v < 1000.0f ? juce::String (juce::roundToInt (v)) + " ms" : juce::String (v / 1000.0f, 2) + " s"; };
 }
 
 Format semitones()
@@ -1552,10 +1553,12 @@ public:
             g.setColour (colours::text);
         }
 
-        g.drawText (juce::String (index + 1), label.removeFromTop (small ? 11.0f : 13.0f), juce::Justification::topLeft);
+        const auto number = juce::String (index + 1);
+        const auto numberEnd = label.getX() + juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), number);
+        g.drawText (number, label.removeFromTop (small ? 11.0f : 13.0f), juce::Justification::topLeft);
 
-        // The picture, on the right
-        const auto side = juce::jmin (bounds.getHeight() - 6.0f, bounds.getWidth() * 0.6f);
+        // The picture, on the right, clear of the number (two digits take more room)
+        const auto side = juce::jmin (bounds.getHeight() - 6.0f, bounds.getRight() - 4.0f - (numberEnd + 4.0f));
         const auto picture = juce::Rectangle<float> (side, side).withCentre ({ bounds.getRight() - side * 0.5f - 4.0f, bounds.getCentreY() });
         g.setColour (colours::background);
         g.fillEllipse (picture);
@@ -1742,7 +1745,7 @@ public:
 
         for (const auto& [title, area] : { std::pair { "Loop", loopArea }, std::pair { "Mode", modeArea },
                                            std::pair { "Amp", ampArea }, std::pair { "Edit", snapArea } })
-            drawTitle (g, title, area.withHeight (24).withTrimmedLeft (12));
+            drawTitle (g, title, area.withHeight (24).withTrimmedLeft (12).translated (0, 2));
 
         g.setColour (colours::divider);
 
@@ -2031,6 +2034,8 @@ public:
           play (*dynamic_cast<juce::AudioParameterChoice*> (p.state.getParameter ("play")))
     {
         addAndMakeVisible (play);
+        edit.onClick = [this] { if (session.openWindow) session.openWindow(); };
+        addAndMakeVisible (edit);
         // The pattern that plays (a note may pick it), else the picked one
         view.shownPattern = [this]
         {
@@ -2069,7 +2074,10 @@ public:
         sideArea = bounds;
 
         auto side = bounds.reduced (8, 6);
+        side.removeFromTop (2);
         nameArea = side.removeFromTop (16);
+        edit.setBounds (nameArea.removeFromRight (40).withSizeKeepingCentre (40, 16));
+        nameArea.removeFromRight (4);
         play.setBounds (nameArea.removeFromRight (84));
         side.removeFromTop (4);
         auto grid = side.removeFromTop (60);
@@ -2118,6 +2126,7 @@ private:
     RadarView view;
     Dial barsDial, grainDial, pitchDial, volumeDial;
     Choice play;
+    Pill edit { "Edit" };
     std::vector<std::unique_ptr<PatternCell>> cells;
     juce::Rectangle<int> sideArea, nameArea;
     int shownWaveform = -1, shownPlayback = -1, shownPatterns = -1, shownPattern = -1;

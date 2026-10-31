@@ -42,7 +42,7 @@ struct App
     std::unique_ptr<radar::Processor> processor;
     radar::Session session;
     std::uint32_t pageId = 0;
-    bool panel = false;
+    bool panel = false, toldHostKeeps = false;
     std::unique_ptr<juce::AudioProcessorEditor> editor;
     std::unique_ptr<juce::webclap::ProcessorBridge> bridge;
     double pixelRatio = 1.0;
@@ -100,6 +100,13 @@ void receiveFrame (juce::uint8 type, const juce::uint8* payload, size_t size)
 
         if (in.read (waveform.bins.data(), bins * 2) == bins * 2)
         {
+            // The host keeps samples: the page hands it its files (once is enough)
+            if (const auto hostKeeps = ! in.isExhausted() && (in.readByte() & 1) != 0; hostKeeps && ! app->toldHostKeeps)
+            {
+                app->toldHostKeeps = true;
+                toPage ("samples:host");
+            }
+
             session.waveform = std::move (waveform);
             session.loading = false;
             ++session.waveformRevision;
@@ -149,6 +156,7 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_init (double pixelRatio)
 
     app->session.sendPattern = [] (int index) { sendPattern (index); };
     app->session.openSampleFile = [] { toPage ("open-sample"); };
+    app->session.openWindow = [] { app->bridge->requestWindow(); };
     app->editor.reset (app->panel ? radar::createPanelEditor (*app->processor, app->session)
                                   : radar::createWindowEditor (*app->processor, app->session));
     app->bridge->onPluginFrame = [] (juce::uint8 type, const juce::uint8* payload, size_t size) { receiveFrame (type, payload, size); };
@@ -237,7 +245,8 @@ EMSCRIPTEN_KEEPALIVE void wclap_ui_receive (const uint8_t* data, int size)
 }
 
 /** What the page has for the editor: 1 and a sample frame's payload (radar_frames.h), decoded from a dropped or
-    picked file; 2 and 1 or 0 while a file is dragged over the page or not. */
+    picked file; 2 and 1 or 0 while a file is dragged over the page or not; 3 and the name of a file the page handed
+    the host, which keeps the sample. */
 EMSCRIPTEN_KEEPALIVE void wclap_ui_page_input (const uint8_t* data, int size)
 {
     if (app == nullptr || size < 2)
@@ -252,6 +261,14 @@ EMSCRIPTEN_KEEPALIVE void wclap_ui_page_input (const uint8_t* data, int size)
     else if (data[0] == 2)
     {
         app->session.dragging = data[1] != 0;
+    }
+    else if (data[0] == 3)
+    {
+        // The page handed a file to the host (opendaw.samples/1): its name goes to the DSP side, the frames come
+        // from the host
+        app->session.loading = true;
+        app->session.dragging = false;
+        app->bridge->sendPluginFrame (radar::Frame::sampleName, data + 1, (size_t) size - 1);
     }
 }
 

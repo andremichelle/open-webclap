@@ -43,6 +43,7 @@ struct Session
 
     std::function<void (int index)> sendPattern;
     std::function<void()> openSampleFile;
+    std::function<void()> openWindow; // the device panel asks the host for the window
 };
 
 juce::AudioProcessorEditor* createWindowEditor (Processor&, Session&);

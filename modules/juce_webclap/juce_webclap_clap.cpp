@@ -34,6 +34,9 @@ int dispatchPendingMessages(); // juce_wasm_Messaging.cpp
 /** Ports without a PageExtension get none (a port defines its own createPageExtension to replace this). */
 __attribute__ ((weak)) std::unique_ptr<PageExtension> createPageExtension() { return nullptr; }
 
+/** Ports without samples the host keeps get none. */
+__attribute__ ((weak)) std::unique_ptr<SampleSlots> createSampleSlots() { return nullptr; }
+
 namespace
 {
 //==============================================================================
@@ -43,6 +46,12 @@ void pumpMessages()
     dispatchPendingMessages();
     Timer::callPendingTimersSynchronously();
 }
+
+/** openDAW's opendaw.samples/1 on the host's side. */
+struct HostSamples
+{
+    bool (*available) (const clap_host_t*);
+};
 
 class ClapPlayHead final : public AudioPlayHead
 {
@@ -185,6 +194,12 @@ private:
 
         processor->setPlayHead (&playHead);
         extension = createPageExtension();
+        sampleSlots = createSampleSlots();
+
+        // openDAW keeps the samples (opendaw.samples/1): a marker, its one function says it is there
+        if (const auto* samples = hostExtension<HostSamples> ("opendaw.samples/1");
+            sampleSlots != nullptr && samples != nullptr && samples->available != nullptr && samples->available (host))
+            sampleSlots->hostKeepsSamples (*processor);
 
         for (auto* parameter : processor->getParameters())
         {
@@ -469,11 +484,10 @@ private:
         if (origin != Origin::host)
             outEvents.push_back ({ CLAP_EVENT_PARAM_VALUE, id, (double) jlimit (0.0f, 1.0f, value) });
 
-        if (origin != Origin::page)
-        {
-            pageValues.insert (id);
-            requestPageUpdate();
-        }
+        // Every page hears of it, also of a change a page made: another page (openDAW's device panel beside the
+        // window) shows the same parameter, the page that made it skips the echo (ProcessorBridge::applyValue)
+        pageValues.insert (id);
+        requestPageUpdate();
 
         if (origin == Origin::plugin)
             requestHostFlush();
@@ -589,6 +603,12 @@ private:
                 break;
             }
 
+            case protocol::show:
+                if (hostGui != nullptr && hostGui->request_show != nullptr)
+                    hostGui->request_show (host);
+
+                break;
+
             case protocol::resize:
             {
                 const auto width = r.get<uint32>();
@@ -622,6 +642,8 @@ private:
         pumpMessages();
         return true;
     }
+
+    void pumpMessagesAfterSample() { pumpMessages(); }
 
     void requestPageUpdate()
     {
@@ -1019,6 +1041,26 @@ private:
         };
 
         if (getClapPluginInfo().devicePanel && std::strcmp (id, "opendaw.device-panel/1") == 0) return &devicePanel;
+
+        // openDAW's sample slots: the host hands over the samples it keeps for the port
+        struct PluginSamples
+        {
+            float* (*prepare) (const clap_plugin_t*, uint32_t key, uint32_t frames, uint32_t channels, double rate);
+            void (*commit) (const clap_plugin_t*, uint32_t key);
+            void (*clear) (const clap_plugin_t*, uint32_t key);
+        };
+
+        static const PluginSamples pluginSamples {
+            [] (const clap_plugin_t* p, uint32_t key, uint32_t frames, uint32_t channels, double rate) -> float*
+            {
+                auto& s = self (p);
+                return frames > 0 && channels > 0 ? s.sampleSlots->prepare (*s.processor, key, frames, channels, rate) : nullptr;
+            },
+            [] (const clap_plugin_t* p, uint32_t key) { auto& s = self (p); s.sampleSlots->commit (*s.processor, key); s.pumpMessagesAfterSample(); },
+            [] (const clap_plugin_t* p, uint32_t key) { auto& s = self (p); s.sampleSlots->clear (*s.processor, key); s.pumpMessagesAfterSample(); }
+        };
+
+        if (sampleSlots != nullptr && std::strcmp (id, "opendaw.samples/1") == 0) return &pluginSamples;
         return nullptr;
     }
 
@@ -1034,6 +1076,7 @@ private:
     bool active = false;
 
     std::unique_ptr<AudioProcessor> processor;
+    std::unique_ptr<SampleSlots> sampleSlots;
     std::vector<AudioProcessorParameter*> parameters;
     std::vector<clap_id> idsByIndex;
     std::unordered_map<clap_id, AudioProcessorParameter*> parametersById;

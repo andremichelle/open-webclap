@@ -38,7 +38,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Processor::createLayout()
 {
     using namespace juce;
     AudioProcessorValueTreeState::ParameterLayout layout;
-    const auto ms = [] (float v, int) { return String (v, v < 10.0f ? 1 : 0) + " ms"; };
+    const auto ms = [] (float v, int) { return (v < 10.0f ? String (v, 1) : String (roundToInt (v))) + " ms"; }; // String (v, 0) keeps decimals
 
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "pattern", 1 }, "Pattern", 1, numPatterns, 1));
     layout.add (std::make_unique<AudioParameterInt> (ParameterID { "bars", 1 }, "Bars", 1, 16, 2));
@@ -66,6 +66,8 @@ void Processor::prepareToPlay (double sampleRate_, int)
 {
     rate = sampleRate_;
     restart = true;
+    tailLength = juce::jmax (1, juce::roundToInt (0.005 * rate)); // the fast release of a retriggered loop
+    tail = {};
 }
 
 bool Processor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -124,9 +126,52 @@ bool Processor::loadSample (const std::uint8_t* payload, size_t size)
     sampleName = name;
     sampleRate = newRate;
     frames = (int) newFrames;
+    sampleEmbedded = true; // kept in the state until the host has the sample (a slot delivered it)
     restart = true;
     ++sampleRevision;
     return true;
+}
+
+float* Processor::prepareSample (std::uint32_t newFrames, std::uint32_t channels, double rate)
+{
+    if (rate < 8000.0 || rate > 384000.0 || newFrames > (std::uint32_t) (maxHostSampleSeconds * rate))
+        return nullptr;
+
+    staging.assign ((size_t) newFrames * channels, 0.0f);
+    stagingFrames = (int) newFrames;
+    stagingChannels = (int) channels;
+    stagingRate = rate;
+    return staging.data();
+}
+
+void Processor::commitSample()
+{
+    if (staging.empty())
+        return;
+
+    const auto count = (size_t) stagingFrames;
+    left.assign (staging.begin(), staging.begin() + (std::ptrdiff_t) count);
+
+    if (stagingChannels > 1)
+        right.assign (staging.begin() + (std::ptrdiff_t) count, staging.begin() + (std::ptrdiff_t) (2 * count));
+    else
+        right.clear();
+
+    sampleRate = stagingRate;
+    frames = stagingFrames;
+    sampleEmbedded = false;
+    staging = {};
+    restart = true;
+    ++sampleRevision;
+}
+
+void Processor::clearHostSample()
+{
+    left.clear();
+    right.clear();
+    frames = 0;
+    sampleEmbedded = false;
+    ++sampleRevision;
 }
 
 juce::MemoryBlock Processor::describeSample() const
@@ -161,6 +206,7 @@ juce::MemoryBlock Processor::describeSample() const
         out.writeByte ((char) juce::jlimit (-127, 127, juce::roundToInt (high * 127.0f)));
     }
 
+    out.writeByte (hostKeepsSamples ? 1 : 0); // flags: 1 the page hands files to the host
     return out.getMemoryBlock();
 }
 
@@ -176,6 +222,7 @@ void Processor::noteOn (int noteKey, float noteVelocity)
     held.push_back (noteKey);
     key = noteKey;
     velocity = noteVelocity;
+    retrigger = true;
 }
 
 void Processor::noteOff (int noteKey)
@@ -293,12 +340,43 @@ void Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer
                 held.clear();
         }
 
+        // Note: every note starts the loop again, the one playing fades out fast beside it
+        if (std::exchange (retrigger, false) && ! free && envelope > 0.0f && frames > 0)
+        {
+            tail = { headA, headB, lastGainA, lastGainB, lastLevel, lastStep, tailLength, tailLength };
+            envelope = 0.0f;
+            restart = true;
+            freePhase = 0.0;
+        }
+
+        if (tail.remaining > 0 && frames > 0)
+        {
+            const auto fadeOut = (float) tail.remaining-- / (float) tail.length;
+            const auto& r = right.empty() ? left : right;
+            outL[i] += tail.level * fadeOut * (read (left, tail.headA) * tail.gainA + read (left, tail.headB) * tail.gainB);
+            outR[i] += tail.level * fadeOut * (read (r, tail.headA) * tail.gainA + read (r, tail.headB) * tail.gainB);
+            tail.headA = std::fmod (tail.headA + tail.step, (double) frames);
+            tail.headB = std::fmod (tail.headB + tail.step, (double) frames);
+        }
+
         // Free plays while the transport runs, the notes only pick the pattern or the pitch; Note plays while one is held
         const auto noted = ! held.empty();
         const auto gate = free ? locked : noted;
         envelope = gate ? juce::jmin (1.0f, envelope + attackStep) : juce::jmax (0.0f, envelope - releaseStep);
+        // Free keeps the pattern a note picked after it ends, until the Pattern parameter moves; Note only while held
+        const auto picked = juce::jlimit (0, numPatterns - 1, juce::roundToInt (patternParameter->load()) - 1);
+
+        if (picked != lastPicked)
+        {
+            lastPicked = picked;
+            latched = -1;
+        }
+
+        if (keysPickPatterns && noted)
+            latched = key % numPatterns;
+
         playback.pattern = keysPickPatterns && noted ? key % numPatterns
-                                                    : juce::jlimit (0, numPatterns - 1, juce::roundToInt (patternParameter->load()) - 1);
+                                                     : free && keysPickPatterns && latched >= 0 ? latched : picked;
 
         const auto phase = locked ? std::fmod (ppq / quartersPerTurn + i * turnsPerSample, 1.0) : freePhase;
 
@@ -353,6 +431,10 @@ void Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer
         outL[i] += level * (read (left, headA) * gainA + read (left, headB) * gainB);
         outR[i] += level * (read (r, headA) * gainA + read (r, headB) * gainB);
 
+        lastGainA = gainA;
+        lastGainB = gainB;
+        lastLevel = level;
+        lastStep = step;
         headA = std::fmod (headA + step, (double) frames);
         headB = std::fmod (headB + step, (double) frames);
         playback.mix = mix;
@@ -381,7 +463,15 @@ void Processor::getStateInformation (juce::MemoryBlock& destData)
     for (const auto& pattern : patterns)
         pattern.write (out);
 
-    // The sample last: a state without it (the page's) keeps the one there is
+    // The sample last: a state without it (the page's) keeps the one there is. 0 none, 1 the sample (16 bit), 2 its
+    // name only: the host keeps the audio (opendaw.samples/1) and hands it over after a load.
+    if (hostKeepsSamples && ! sampleEmbedded)
+    {
+        out.writeByte (2);
+        out.writeString (sampleName);
+        return;
+    }
+
     out.writeByte (frames > 0 ? 1 : 0);
 
     if (frames > 0)
@@ -427,7 +517,17 @@ void Processor::setStateInformation (const void* data, int sizeInBytes)
     if (in.isExhausted())
         return;
 
-    if (in.readByte() == 0)
+    const auto kind = in.readByte();
+
+    if (kind == 2) // the host keeps the audio: it arrives through the slot (setSample)
+    {
+        sampleName = in.readString();
+        sampleEmbedded = false;
+        ++sampleRevision;
+        return;
+    }
+
+    if (kind == 0)
     {
         const std::uint8_t none[12] {};
         loadSample (none, sizeof (none));

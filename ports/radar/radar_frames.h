@@ -8,8 +8,10 @@
                           as 16 bit, a channel after the other. No frames clear the sample. The page's script decodes
                           the file and builds it (ui/index.html).
     waveform  DSP to page u32 frames, u32 rate, u16 channels, u16 name bytes, the name, u16 bins, then per bin the
-                          lowest and the highest value as i8 (both channels): the sample's overview.
+                          lowest and the highest value as i8 (both channels): the sample's overview; then u8
+                          flags, 1: the host keeps samples (the page hands it files, see sampleName).
     playback  DSP to page Playback, about 30 times a second while it changes.
+    sampleName page to DSP the name (UTF-8) of the file the page handed the host for slot 0 (opendaw.samples/1).
 */
 
 #pragma once
@@ -22,6 +24,7 @@ constexpr std::uint8_t pattern = juce::webclap::protocol::firstPluginType;
 constexpr std::uint8_t sample = pattern + 1;
 constexpr std::uint8_t waveform = pattern + 2;
 constexpr std::uint8_t playback = pattern + 3;
+constexpr std::uint8_t sampleName = pattern + 4;
 
 constexpr int waveformBins = 2048;
 } // namespace radar::Frame

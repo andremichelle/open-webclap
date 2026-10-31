@@ -100,6 +100,9 @@ public:
         emit (w);
     }
 
+    /** Asks the host for the plugin's window (from a device panel's page). */
+    void requestWindow() { emit (protocol::Writer (protocol::show)); }
+
     void sendResize (int width, int height)
     {
         protocol::Writer w (protocol::resize);
@@ -301,6 +304,11 @@ private:
 
     void applyValue (uint32 id, double value)
     {
+        // The DSP side tells every page of every change, also this page's own: a value this page is dragging or
+        // has not sent yet is newer than what comes back
+        if (activeGestures.count (id) > 0 || pendingValue.count (id) > 0)
+            return;
+
         if (auto* parameter = findParameter (id))
         {
             const auto v = (float) jlimit (0.0, 1.0, value);

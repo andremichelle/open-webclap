@@ -1,6 +1,8 @@
 /*
     Radar as module.wasm: the port's processor (radar_processor.h) wrapped by juce_webclap_clap.cpp. No editor code.
 
+    Where openDAW keeps the sample (opendaw.samples/1), SampleSlots takes its frames and the state keeps only its name.
+
     The PageExtension takes the pages' edits and samples and tells every page about them (radar_frames.h): a
     pattern a page edited goes to all pages (the one that sent it skips it), a new sample or a loaded state sends the
     waveform and the patterns again, the playback goes out while it changes. The pages get no state in their
@@ -38,6 +40,11 @@ struct RadarPage final : juce::webclap::PageExtension
                 due[(size_t) index] = source;
                 changed (processor);
             }
+        }
+        else if (type == radar::Frame::sampleName)
+        {
+            radar.nameSample (juce::String::fromUTF8 (static_cast<const char*> (payload), (int) juce::jmin (size, (std::size_t) 1024)));
+            changed (processor);
         }
         else if (type == radar::Frame::sample)
         {
@@ -107,7 +114,40 @@ struct RadarPage final : juce::webclap::PageExtension
     int seenState = 0, seenSample = 0;
     radar::Playback sentPlayback;
 };
+
+/** openDAW keeps Radar's sample in the project (opendaw.samples/1, slot 0) and hands its frames over. */
+struct RadarSamples final : juce::webclap::SampleSlots
+{
+    static radar::Processor& radarOf (juce::AudioProcessor& processor) { return static_cast<radar::Processor&> (processor); }
+
+    void hostKeepsSamples (juce::AudioProcessor& processor) override { radarOf (processor).hostKeepsSamples = true; }
+
+    float* prepare (juce::AudioProcessor& processor, std::uint32_t key, std::uint32_t frames, std::uint32_t channels, double rate) override
+    {
+        return key == 0 ? radarOf (processor).prepareSample (frames, channels, rate) : nullptr;
+    }
+
+    void commit (juce::AudioProcessor& processor, std::uint32_t key) override
+    {
+        if (key != 0)
+            return;
+
+        radarOf (processor).commitSample();
+        RadarPage::changed (processor); // a state that embedded the sample no longer needs to
+    }
+
+    void clear (juce::AudioProcessor& processor, std::uint32_t key) override
+    {
+        if (key == 0)
+            radarOf (processor).clearHostSample();
+    }
+};
 } // namespace
+
+std::unique_ptr<juce::webclap::SampleSlots> juce::webclap::createSampleSlots()
+{
+    return std::make_unique<RadarSamples>();
+}
 
 std::unique_ptr<juce::webclap::PageExtension> juce::webclap::createPageExtension()
 {
