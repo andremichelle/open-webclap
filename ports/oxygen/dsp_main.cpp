@@ -2,7 +2,7 @@
     oXygen as module.wasm: the port's processor (oxygen_processor.h) wrapped by juce_webclap_clap.cpp. No editor
     code: the modules build without upstream's (patches/oxygen-webclap.patch), the port's runs in the page.
 
-    The PageExtension sends the meters (oxygen_frames.h).
+    The PageExtension sends the meters and the spectrum (oxygen_frames.h).
 */
 
 #include <juce_webclap/juce_webclap_clap.h>
@@ -21,7 +21,17 @@ struct OxygenPage final : juce::webclap::PageExtension
 {
     void update (juce::AudioProcessor& processor, const Sender& send) override
     {
-        const auto meters = static_cast<oxygen_webclap::Processor&> (processor).takeMeters();
+        auto& oxygen = static_cast<oxygen_webclap::Processor&> (processor);
+        std::array<std::uint8_t, 2 * oxygen_webclap::Processor::spectrumBands> spectrum;
+        oxygen.computeSpectrum (spectrum.data());
+
+        if (spectrum != sentSpectrum)
+        {
+            sentSpectrum = spectrum;
+            send (oxygen_webclap::Frame::spectrum, spectrum.data(), spectrum.size());
+        }
+
+        const auto meters = oxygen.takeMeters();
 
         if (std::memcmp (&meters, &sent, sizeof (meters)) != 0) // silence is one frame, not 30 a second
         {
@@ -30,9 +40,14 @@ struct OxygenPage final : juce::webclap::PageExtension
         }
     }
 
-    void opened() override { sent.input = -1.0f; }
+    void opened() override
+    {
+        sent.input = -1.0f;
+        sentSpectrum.fill (1);
+    }
 
     oxygen_webclap::Meters sent;
+    std::array<std::uint8_t, 2 * oxygen_webclap::Processor::spectrumBands> sentSpectrum {};
 };
 } // namespace
 

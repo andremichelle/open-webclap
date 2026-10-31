@@ -65,6 +65,12 @@ public:
     /** The meters since the last call, then zero. */
     Meters takeMeters();
 
+    /** The input's and the output's spectrum (mono sums) over the last 2048 samples, in spectrumBands bands spaced
+        logarithmically from 20 Hz to 20 kHz: per band the strongest bin, 0 for -90 dBFS or less to 255 for 0 dBFS.
+        Inputs first, then outputs. */
+    static constexpr int spectrumBands = 64;
+    void computeSpectrum (std::uint8_t* destination);
+
     juce::AudioProcessorValueTreeState state;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -96,6 +102,13 @@ private:
 
     std::vector<std::pair<juce::AudioProcessorParameter*, juce::AudioProcessorParameter*>> links; // host, module
     Meters meters;
+
+    static constexpr int fftOrder = 11, fftSize = 1 << fftOrder;
+    juce::dsp::FFT fft { fftOrder };
+    std::array<std::vector<float>, 2> history; // the input and the output, a ring of fftSize samples each
+    std::vector<float> window, transform;
+    int historyPosition = 0;
+    double rate = 48000.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Processor)
 };

@@ -59,6 +59,14 @@ Processor::Processor()
       chain (std::make_unique<Chain>()),
       state (*this, nullptr, "oXygen", createLayout (*chain))
 {
+    for (auto& ring : history)
+        ring.assign ((size_t) fftSize, 0.0f);
+
+    window.resize ((size_t) fftSize);
+    juce::dsp::WindowingFunction<float>::fillWindowingTables (window.data(), (size_t) fftSize,
+                                                              juce::dsp::WindowingFunction<float>::hann, false);
+    transform.resize ((size_t) fftSize * 2);
+
     for (const auto& module : modulesOf (chain->modules()))
         for (auto* parameter : module.processor->getParameters())
             links.emplace_back (state.getParameter (id (module.prefix,
@@ -88,6 +96,7 @@ void Processor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     setLatencySamples (chain->maximizer.getLatencySamples());
     meters = {};
+    rate = sampleRate;
 }
 
 void Processor::releaseResources()
@@ -118,9 +127,29 @@ void Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer
 
     meters.input = juce::jmax (meters.input, peak (buffer));
 
+    // The analyzer's rings: the mono sum before and after the chain, at the same positions
+    const auto record = [this, &buffer] (std::vector<float>& ring)
+    {
+        const auto channels = buffer.getNumChannels();
+
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            auto sum = 0.0f;
+
+            for (int channel = 0; channel < channels; ++channel)
+                sum += buffer.getSample (channel, i);
+
+            ring[(size_t) ((historyPosition + i) % fftSize)] = sum / (float) juce::jmax (1, channels);
+        }
+    };
+
+    record (history[0]);
+
     for (auto* module : chain->modules())
         module->processBlock (buffer, midi);
 
+    record (history[1]);
+    historyPosition = (historyPosition + buffer.getNumSamples()) % fftSize;
     meters.output = juce::jmax (meters.output, peak (buffer));
 
     // A bypassed module keeps its last reduction: the meters show none
@@ -138,6 +167,33 @@ void Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer
 
     if (! bypassed (maximizer, "Bypass"))
         meters.maximizer = juce::jmax (meters.maximizer, -chain->maximizer.getGainReductionDb());
+}
+
+void Processor::computeSpectrum (std::uint8_t* destination)
+{
+    for (const auto& ring : history)
+    {
+        for (int i = 0; i < fftSize; ++i)
+            transform[(size_t) i] = ring[(size_t) ((historyPosition + i) % fftSize)] * window[(size_t) i];
+
+        std::fill (transform.begin() + fftSize, transform.end(), 0.0f);
+        fft.performFrequencyOnlyForwardTransform (transform.data(), true);
+
+        for (int band = 0; band < spectrumBands; ++band)
+        {
+            // A full scale sine's bin is fftSize / 4 under the Hann window
+            const auto binOf = [this] (float hz) { return juce::jlimit (1, fftSize / 2, (int) (hz * (float) fftSize / (float) rate)); };
+            const auto first = binOf (20.0f * std::pow (1000.0f, (float) band / spectrumBands));
+            const auto last = juce::jmax (first, binOf (20.0f * std::pow (1000.0f, (float) (band + 1) / spectrumBands)) - 1);
+            auto magnitude = 0.0f;
+
+            for (int bin = first; bin <= last; ++bin)
+                magnitude = juce::jmax (magnitude, transform[(size_t) bin]);
+
+            const auto db = juce::Decibels::gainToDecibels (magnitude * 4.0f / (float) fftSize, -90.0f);
+            *destination++ = (std::uint8_t) juce::jlimit (0, 255, juce::roundToInt ((db + 90.0f) * 255.0f / 90.0f));
+        }
+    }
 }
 
 Meters Processor::takeMeters()

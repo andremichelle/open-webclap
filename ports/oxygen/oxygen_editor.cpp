@@ -112,6 +112,49 @@ void drawGrid (juce::Graphics& g, juce::Rectangle<float> bounds, const Axis& axi
     }
 }
 
+/** The analyzer's bands in dBFS, as the editor shows them (falling slower than they arrive). */
+struct Spectrum
+{
+    std::array<float, Processor::spectrumBands> input, output;
+
+    Spectrum() { input.fill (-90.0f); output.fill (-90.0f); }
+};
+
+/** The output's spectrum filled, the input's as a line, behind a view's curves. Tilted by 3 dB an octave around
+    1 kHz, so that music reads level. */
+void drawSpectrum (juce::Graphics& g, juce::Rectangle<float> area, const Axis& axis, const Spectrum& spectrum)
+{
+    const auto path = [&] (const std::array<float, Processor::spectrumBands>& bands)
+    {
+        juce::Path line;
+
+        for (int band = 0; band < Processor::spectrumBands; ++band)
+        {
+            const auto hz = 20.0f * std::pow (1000.0f, ((float) band + 0.5f) / Processor::spectrumBands);
+            const auto db = bands[(size_t) band] + 3.0f * std::log2 (hz / 1000.0f);
+            const auto x = juce::jlimit (area.getX(), area.getRight(), axis.xFor (hz));
+            const auto y = area.getBottom() - area.getHeight() * juce::jlimit (0.0f, 1.0f, (db + 78.0f) / 78.0f);
+            band == 0 ? line.startNewSubPath (area.getX(), y) : line.lineTo (x, y);
+        }
+
+        line.lineTo (area.getRight(), line.getCurrentPosition().y);
+        return line;
+    };
+
+    auto output = path (spectrum.output);
+    auto fill = output;
+    fill.lineTo (area.getRight(), area.getBottom());
+    fill.lineTo (area.getX(), area.getBottom());
+    fill.closeSubPath();
+    g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.13f), 0.0f, area.getY(),
+                                             juce::Colours::white.withAlpha (0.03f), 0.0f, area.getBottom(), false));
+    g.fillPath (fill);
+    g.setColour (juce::Colours::white.withAlpha (0.22f));
+    g.strokePath (output, juce::PathStrokeType (1.0f));
+    g.setColour (juce::Colours::white.withAlpha (0.18f));
+    g.strokePath (path (spectrum.input), juce::PathStrokeType (1.0f));
+}
+
 void gesture (juce::RangedAudioParameter& parameter, float normalised)
 {
     parameter.beginChangeGesture();
@@ -297,10 +340,12 @@ void drawMeter (juce::Graphics& g, juce::Rectangle<float> area, float fraction, 
 class Page : public juce::Component
 {
 public:
-    Page (juce::String pageTitle, juce::Colour pageAccent) : title (std::move (pageTitle)), accent (pageAccent) {}
+    Page (juce::String pageTitle, juce::Colour pageAccent, const Spectrum& analyzer)
+        : title (std::move (pageTitle)), accent (pageAccent), spectrum (analyzer) {}
 
-    /** About 30 times a second: the meters (decaying) and anything that follows the parameters. */
-    virtual void refresh (const Meters&) {}
+    /** About 30 times a second: the meters (decaying), whether the spectrum changed, and anything that follows the
+        parameters. */
+    virtual void refresh (const Meters&, bool spectrumChanged) {}
 
     void paint (juce::Graphics& g) override
     {
@@ -311,6 +356,7 @@ public:
 
     const juce::String title;
     const juce::Colour accent;
+    const Spectrum& spectrum;
 
 protected:
     juce::Rectangle<int> content() const { return getLocalBounds().withTrimmedTop (24).reduced (8, 0).withTrimmedBottom (6); }
@@ -321,13 +367,13 @@ protected:
 class EqPage final : public Page
 {
 public:
-    explicit EqPage (juce::AudioProcessorValueTreeState& state) : Page ("Graphic EQ", colours::violet)
+    EqPage (juce::AudioProcessorValueTreeState& state, const Spectrum& analyzer) : Page ("Graphic EQ", colours::violet, analyzer)
     {
         for (int i = 0; i < bands; ++i)
             gains[(size_t) i] = state.getParameter (Processor::id (Processor::eq, "Gain" + juce::String (i)));
     }
 
-    void refresh (const Meters&) override
+    void refresh (const Meters&, bool spectrumChanged) override
     {
         auto changed = false;
 
@@ -339,38 +385,46 @@ public:
             }
 
         if (changed)
+            curve.clear(); // built again when painted
+
+        if (changed || spectrumChanged)
             repaint();
     }
+
+    void resized() override { curve.clear(); }
 
     void paint (juce::Graphics& g) override
     {
         Page::paint (g);
         const auto area = content().toFloat();
         const auto axis = axisFor (area);
+        drawSpectrum (g, area, axis, spectrum);
         drawGrid (g, area, axis);
         g.setColour (colours::track);
         g.drawHorizontalLine (juce::roundToInt (yFor (area, 0.0f)), area.getX(), area.getRight());
 
-        juce::Path curve;
-
-        for (auto x = area.getX(); x <= area.getRight(); x += 1.0f)
+        if (curve.isEmpty()) // the 15 bells per pixel only when a gain or the size changed
         {
-            auto db = 0.0f;
+            for (auto x = area.getX(); x <= area.getRight(); x += 1.0f)
+            {
+                auto db = 0.0f;
 
-            for (int i = 0; i < bands; ++i)
-                db += bellDb (axis.hzFor (x), oxygen::EqualizerModule::Frequencies[i],
-                              oxygen::EqualizerModule::BandQValues[(size_t) i], gainOf (i));
+                for (int i = 0; i < bands; ++i)
+                    db += bellDb (axis.hzFor (x), oxygen::EqualizerModule::Frequencies[i],
+                                  oxygen::EqualizerModule::BandQValues[(size_t) i], gainOf (i));
 
-            const auto y = juce::jlimit (area.getY(), area.getBottom(), yFor (area, db));
-            x == area.getX() ? curve.startNewSubPath (x, y) : curve.lineTo (x, y);
+                const auto y = juce::jlimit (area.getY(), area.getBottom(), yFor (area, db));
+                x == area.getX() ? curve.startNewSubPath (x, y) : curve.lineTo (x, y);
+            }
         }
 
+        // Filled between the curve and 0 dB only, so the spectrum stays visible under a flat EQ
+        const auto zero = yFor (area, 0.0f);
         auto fill = curve;
-        fill.lineTo (area.getRight(), area.getBottom());
-        fill.lineTo (area.getX(), area.getBottom());
+        fill.lineTo (area.getRight(), zero);
+        fill.lineTo (area.getX(), zero);
         fill.closeSubPath();
-        g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.4f), 0.0f, area.getY(),
-                                                 accent.withAlpha (0.03f), 0.0f, area.getBottom(), false));
+        g.setColour (accent.withAlpha (0.25f));
         g.fillPath (fill);
         g.setColour (accent);
         g.strokePath (curve, juce::PathStrokeType (1.5f));
@@ -477,6 +531,7 @@ private:
 
     std::array<juce::RangedAudioParameter*, (size_t) bands> gains {};
     std::array<float, (size_t) bands> shown {};
+    juce::Path curve;
     int hovered = -1, dragged = -1;
     float offset = 0.0f;
 };
@@ -488,7 +543,7 @@ const char* const bandNames[] { "Low", "Low Mid", "High Mid", "High" };
 class DynamicEqPage final : public Page
 {
 public:
-    explicit DynamicEqPage (juce::AudioProcessorValueTreeState& state) : Page ("Dynamic EQ", colours::teal)
+    DynamicEqPage (juce::AudioProcessorValueTreeState& state, const Spectrum& analyzer) : Page ("Dynamic EQ", colours::teal, analyzer)
     {
         for (size_t i = 0; i < 4; ++i)
         {
@@ -503,9 +558,9 @@ public:
         }
     }
 
-    void refresh (const Meters& meters) override
+    void refresh (const Meters& meters, bool spectrumChanged) override
     {
-        auto changed = false;
+        auto changed = spectrumChanged;
 
         for (size_t i = 0; i < 4; ++i)
         {
@@ -544,6 +599,7 @@ public:
     {
         Page::paint (g);
         const Axis axis { view.getX() + 4.0f, view.getWidth() - 8.0f };
+        drawSpectrum (g, view, axis, spectrum);
         drawGrid (g, view, axis);
 
         // Up to 12 dB of cut over the view's height, from the top line down
@@ -613,8 +669,9 @@ private:
 class CrossoverView final : public juce::Component
 {
 public:
-    CrossoverView (juce::AudioProcessorValueTreeState& state, const char* module, juce::Colour colour)
-        : accent (colour)
+    CrossoverView (juce::AudioProcessorValueTreeState& state, const char* module, juce::Colour colour,
+                   const Spectrum& analyzer)
+        : accent (colour), spectrum (analyzer)
     {
         const char* ids[] { "LowMidX", "MidHighX", "HighX" };
 
@@ -659,6 +716,7 @@ public:
     {
         const auto bounds = getLocalBounds().toFloat();
         const auto axis = axisOf();
+        drawSpectrum (g, bounds, axis, spectrum);
         drawGrid (g, bounds, axis);
 
         float edges[] { bounds.getX(), xOf (0), xOf (1), xOf (2), bounds.getRight() };
@@ -675,7 +733,7 @@ public:
 
             const auto height = (bounds.getHeight() - 14.0f) * juce::jlimit (0.0f, 1.0f, bars[(size_t) band]);
             const auto bar = region.reduced (4.0f, 0.0f).withTrimmedBottom (14.0f);
-            g.setColour (accent.withAlpha (band == selected ? 0.75f : 0.45f));
+            g.setColour (accent.withAlpha (band == selected ? 0.6f : 0.35f));
             g.fillRect (barsFromTop ? bar.withHeight (height) : bar.withTrimmedTop (bar.getHeight() - height));
         }
 
@@ -775,6 +833,7 @@ private:
     }
 
     juce::Colour accent;
+    const Spectrum& spectrum;
     std::array<juce::RangedAudioParameter*, 3> crossovers {};
     std::array<float, 3> shown {};
     std::array<float, 4> bars {};
@@ -786,15 +845,15 @@ private:
 class MultibandPage final : public Page
 {
 public:
-    explicit MultibandPage (juce::AudioProcessorValueTreeState& s)
-        : Page ("Multiband", colours::orange), state (s), view (s, Processor::multiband, accent)
+    MultibandPage (juce::AudioProcessorValueTreeState& s, const Spectrum& analyzer)
+        : Page ("Multiband", colours::orange, analyzer), state (s), view (s, Processor::multiband, accent, analyzer)
     {
         view.onSelect = [this] (int band) { select (band); };
         addAndMakeVisible (view);
         select (0);
     }
 
-    void refresh (const Meters& meters) override
+    void refresh (const Meters& meters, bool spectrumChanged) override
     {
         std::array<float, 4> reductions {};
 
@@ -803,7 +862,7 @@ public:
 
         view.setBars (reductions, true);
 
-        if (view.crossoversChanged())
+        if (view.crossoversChanged() || spectrumChanged)
             view.repaint();
     }
 
@@ -857,8 +916,8 @@ private:
 class ImagerPage final : public Page
 {
 public:
-    explicit ImagerPage (juce::AudioProcessorValueTreeState& state)
-        : Page ("Stereo Imager", colours::pink), view (state, Processor::imager, accent)
+    ImagerPage (juce::AudioProcessorValueTreeState& state, const Spectrum& analyzer)
+        : Page ("Stereo Imager", colours::pink, analyzer), view (state, Processor::imager, accent, analyzer)
     {
         addAndMakeVisible (view);
 
@@ -871,7 +930,7 @@ public:
         }
     }
 
-    void refresh (const Meters&) override
+    void refresh (const Meters&, bool spectrumChanged) override
     {
         std::array<float, 4> bars {};
 
@@ -880,7 +939,7 @@ public:
 
         view.setBars (bars, false);
 
-        if (view.crossoversChanged())
+        if (view.crossoversChanged() || spectrumChanged)
             view.repaint();
     }
 
@@ -905,8 +964,8 @@ private:
 class MaximizerPage final : public Page
 {
 public:
-    explicit MaximizerPage (juce::AudioProcessorValueTreeState& state)
-        : Page ("Maximizer", colours::blue),
+    MaximizerPage (juce::AudioProcessorValueTreeState& state, const Spectrum& analyzer)
+        : Page ("Maximizer", colours::blue, analyzer),
           mode (*dynamic_cast<juce::AudioParameterChoice*> (state.getParameter (Processor::id (Processor::maximizer, "Mode")))),
           threshold (state, Processor::id (Processor::maximizer, "Threshold"), "Threshold", accent, decibels(), false, 60),
           ceiling (state, Processor::id (Processor::maximizer, "Ceiling"), "Ceiling", accent, decibels()),
@@ -917,7 +976,7 @@ public:
             addAndMakeVisible (c);
     }
 
-    void refresh (const Meters& meters) override
+    void refresh (const Meters& meters, bool) override
     {
         const auto level = [] (float gain) { return juce::jlimit (0.0f, 1.0f, 1.0f + juce::Decibels::gainToDecibels (gain, -48.0f) / 48.0f); };
         const std::array<float, 3> values { level (meters.input), meters.maximizer / 12.0f, level (meters.output) };
@@ -1067,11 +1126,11 @@ public:
                   { "Imager", colours::pink, bypass (Processor::imager) },
                   { "Maximizer", colours::blue, bypass (Processor::maximizer) } })
     {
-        pages.add (new EqPage (state));
-        pages.add (new DynamicEqPage (state));
-        pages.add (new MultibandPage (state));
-        pages.add (new ImagerPage (state));
-        pages.add (new MaximizerPage (state));
+        pages.add (new EqPage (state, spectrum));
+        pages.add (new DynamicEqPage (state, spectrum));
+        pages.add (new MultibandPage (state, spectrum));
+        pages.add (new ImagerPage (state, spectrum));
+        pages.add (new MaximizerPage (state, spectrum));
 
         for (auto* page : pages)
             addChildComponent (page);
@@ -1103,18 +1162,28 @@ public:
         received = true;
     }
 
+    /** The spectrum rises at once and falls about 36 dB a second. */
+    void setSpectrum (const std::uint8_t* bytes)
+    {
+        for (size_t band = 0; band < (size_t) Processor::spectrumBands; ++band)
+        {
+            const auto decode = [] (std::uint8_t byte) { return (float) byte * 90.0f / 255.0f - 90.0f; };
+            spectrum.input[band] = juce::jmax (decode (bytes[band]), spectrum.input[band] - 1.2f);
+            spectrum.output[band] = juce::jmax (decode (bytes[band + Processor::spectrumBands]), spectrum.output[band] - 1.2f);
+        }
+
+        spectrumReceived = spectrumChanged = true;
+    }
+
     void paint (juce::Graphics& g) override
     {
         g.fillAll (colours::panel);
-        g.setColour (colours::divider);
-        g.fillRect (tabs.getRight(), 0, 1, getHeight());
     }
 
     void resized() override
     {
         auto bounds = getLocalBounds();
         tabs.setBounds (bounds.removeFromLeft (96));
-        bounds.removeFromLeft (1);
 
         for (auto* page : pages)
             page->setBounds (bounds);
@@ -1139,22 +1208,40 @@ private:
             setMeters ({});
 
         received = false;
+
+        const auto above = [] (const auto& bands) { return std::any_of (bands.begin(), bands.end(), [] (float db) { return db > -90.0f; }); };
+
+        if (! spectrumReceived && (above (spectrum.input) || above (spectrum.output))) // no frames in silence: falls
+        {
+            std::array<std::uint8_t, 2 * Processor::spectrumBands> floor {};
+            setSpectrum (floor.data());
+        }
+
+        spectrumReceived = false;
         tabs.refresh();
-        pages[current]->refresh (meters);
+        pages[current]->refresh (meters, spectrumChanged);
+        spectrumChanged = false;
     }
 
     juce::AudioProcessorValueTreeState& state;
     Tabs tabs;
     juce::OwnedArray<Page> pages;
     Meters meters;
+    Spectrum spectrum;
     int current = 0;
-    bool received = false;
+    bool received = false, spectrumReceived = false, spectrumChanged = false;
 };
 } // namespace
 
 juce::AudioProcessorEditor* createEditor (Processor& processor)
 {
     return new Editor (processor);
+}
+
+void showSpectrum (juce::AudioProcessorEditor& editor, const std::uint8_t* bytes)
+{
+    if (auto* own = dynamic_cast<Editor*> (&editor))
+        own->setSpectrum (bytes);
 }
 
 void showMeters (juce::AudioProcessorEditor& editor, const Meters& meters)

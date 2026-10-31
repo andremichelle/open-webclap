@@ -75,7 +75,13 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_init (double pixelRatio)
 
     app->bridge->onPluginFrame = [] (juce::uint8 type, const juce::uint8* payload, size_t size)
     {
-        if (type != oxygen_webclap::Frame::meters || size != sizeof (oxygen_webclap::Meters) || app->editor == nullptr)
+        if (app->editor == nullptr)
+            return;
+
+        if (type == oxygen_webclap::Frame::spectrum && size == 2 * oxygen_webclap::Processor::spectrumBands)
+            oxygen_webclap::showSpectrum (*app->editor, payload);
+
+        if (type != oxygen_webclap::Frame::meters || size != sizeof (oxygen_webclap::Meters))
             return;
 
         oxygen_webclap::Meters meters;
