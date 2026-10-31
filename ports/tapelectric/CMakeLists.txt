@@ -34,7 +34,7 @@ set(JUCE_WEBCLAP_PLUGIN_DEFINITIONS
     JucePlugin_EditorRequiresKeyboardFocus=0)
 include("${KIT_ROOT}/modules/juce_webclap/juce_webclap.cmake")
 
-set(WEB_FONT_FILES "${EXT}/fonts/DejaVuSans.ttf" "${EXT}/fonts/DejaVuSans-Bold.ttf")
+set(WEB_FONT_FILES "${EXT}/fonts/Inter-Regular.ttf" "${EXT}/fonts/Inter-Medium.ttf" "${EXT}/fonts/Inter-MediumItalic.ttf")
 set(GENERATED "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 add_custom_command(
@@ -45,7 +45,7 @@ add_custom_command(
 
 # ---------------------------------------------------------------------------------------------------------------
 # TapElectric, unchanged sources (one patch, see below): the processor in both modules (in ui.wasm as the editor's
-# stand-in), the editor only in ui.wasm
+# stand-in). Both build it without upstream's editor: ui.wasm has the port's own (tape_editor.cpp)
 
 set(TAPELECTRIC_INCLUDE_DIRECTORIES
     "${CMAKE_CURRENT_LIST_DIR}/shim"
@@ -55,16 +55,16 @@ set(TAPELECTRIC_INCLUDE_DIRECTORIES
 set(TAPELECTRIC_DEFINITIONS TAPELECTRIC_VERSION="${TAPELECTRIC_VERSION}")
 
 # ---------------------------------------------------------------------------------------------------------------
-# ui.wasm: editor + stand-in processor
+# ui.wasm: the port's editor + stand-in processor
 
 add_executable(ui
     ui_main.cpp
     "${TAPELECTRIC}/src/PluginProcessor.cpp"
-    "${TAPELECTRIC}/src/PluginEditor.cpp"
+    tape_editor.cpp
     "${GENERATED}/WebFonts.cpp")
 
 target_include_directories(ui PRIVATE ${TAPELECTRIC_INCLUDE_DIRECTORIES})
-target_compile_definitions(ui PRIVATE ${TAPELECTRIC_DEFINITIONS})
+target_compile_definitions(ui PRIVATE ${TAPELECTRIC_DEFINITIONS} TAPELECTRIC_HEADLESS=1)
 target_compile_options(ui PRIVATE -Wno-deprecated-declarations)
 target_link_libraries(ui PRIVATE juce_wasm)
 target_link_options(ui PRIVATE ${JUCE_WEBCLAP_UI_LINK_OPTIONS})

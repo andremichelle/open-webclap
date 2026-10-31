@@ -25,8 +25,8 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         "Tape deck atmosphere: power hum, tape noise, wow and saturation, the editor runs in the page",
         features,
         "/ui/index.html",
-        580, // the editor's fixed size
-        620
+        940, // the editor's fixed size
+        530
     };
 
     return info;

@@ -241,8 +241,18 @@ DEPS += [(directory + "/zldsp_fft", "ZL-Audio/zldsp_fft", "dfc50e6c39680d9ee04fb
           lambda p: p.startswith("src/") or p == "LICENSE.md")
          for directory in ("zl-equalizer", "zl-compressor", "zl-spectrum-equalizer")]
 
-FONT_PACKAGE ="https://registry.npmjs.org/dejavu-fonts-ttf/-/dejavu-fonts-ttf-2.37.3.tgz"
-FONT_FILES = ["package/ttf/DejaVuSans.ttf", "package/ttf/DejaVuSans-Bold.ttf", "package/LICENSE"]
+# (package, {file in the package: name in external/fonts})
+FONT_PACKAGES = [
+    ("https://registry.npmjs.org/dejavu-fonts-ttf/-/dejavu-fonts-ttf-2.37.3.tgz",
+     {"package/ttf/DejaVuSans.ttf": "DejaVuSans.ttf", "package/ttf/DejaVuSans-Bold.ttf": "DejaVuSans-Bold.ttf",
+      "package/LICENSE": "DejaVu-LICENSE"}),
+    # Inter 4 (Rasmus Andersson), OFL-1.1: the font of TapElectric's editor
+    ("https://registry.npmjs.org/@expo-google-fonts/inter/-/inter-0.4.2.tgz",
+     {"package/400Regular/Inter_400Regular.ttf": "Inter-Regular.ttf",
+      "package/500Medium/Inter_500Medium.ttf": "Inter-Medium.ttf",
+      "package/500Medium_Italic/Inter_500Medium_Italic.ttf": "Inter-MediumItalic.ttf",
+      "package/LICENSE_FONT": "Inter-LICENSE"}),
+]
 
 
 def curl(url, out=None, retries=8):
@@ -287,16 +297,16 @@ def fetch_repo(directory, repo, commit, keep, force):
 
 def fetch_fonts():
     dest = os.path.join(EXTERNAL, "fonts")
-    if all(os.path.exists(os.path.join(dest, n)) for n in ("DejaVuSans.ttf", "DejaVuSans-Bold.ttf", "DejaVu-LICENSE")):
-        print("fonts: up to date")
-        return
     os.makedirs(dest, exist_ok=True)
-    data = urllib.request.urlopen(FONT_PACKAGE).read()
-    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
-        for name in FONT_FILES:
-            target = os.path.join(dest, os.path.basename(name) if not name.endswith("LICENSE") else "DejaVu-LICENSE")
-            open(target, "wb").write(tar.extractfile(name).read())
-    print("fonts: DejaVu Sans")
+    for package, files in FONT_PACKAGES:
+        if all(os.path.exists(os.path.join(dest, name)) for name in files.values()):
+            print(f"fonts: {', '.join(files.values())} up to date")
+            continue
+        data = urllib.request.urlopen(package).read()
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            for member, name in files.items():
+                open(os.path.join(dest, name), "wb").write(tar.extractfile(member).read())
+        print(f"fonts: {', '.join(files.values())}")
 
 
 # patches/<prefix>-*.patch apply to external/<directory>

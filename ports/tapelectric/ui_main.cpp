@@ -2,8 +2,8 @@
     TapElectric editor as ui.wasm.
 
     The stand-in processor is TapElectric's own TapElectricAudioProcessor, never processing audio, as in the OB-Xf
-    port. The editor is parameter-driven (APVTS attachments; the EQ pads and the Rand Tone button set parameters)
-    and fixed in size, so the kit's bridge is all it needs.
+    port. The editor is the port's own (tape_editor.cpp), on the same parameters as upstream's, fixed in size, so
+    the kit's bridge is all it needs. Inter is the default font.
 
     Exports (called from webclap-ui.js):
         wclap_ui_init, wclap_ui_frame, wclap_ui_set_desktop, wclap_ui_mouse, wclap_ui_wheel, wclap_ui_key,
@@ -17,6 +17,7 @@
 #include <juce_webclap/juce_webclap_bridge.h>
 
 #include "PluginProcessor.h"
+#include "tape_editor.h"
 #include "WebFonts.h"
 
 EM_JS (void, wclap_js_send, (const void* data, int size), {
@@ -56,8 +57,7 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_init (double pixelRatio)
     app = new App();
     app->pixelRatio = pixelRatio;
 
-    juce::webclap::registerFont (WebFonts::DejaVuSans_ttf, (size_t) WebFonts::DejaVuSans_ttfSize, true);
-    juce::webclap::registerFont (WebFonts::DejaVuSansBold_ttf, (size_t) WebFonts::DejaVuSansBold_ttfSize);
+    juce::webclap::registerFont (WebFonts::InterRegular_ttf, (size_t) WebFonts::InterRegular_ttfSize, true);
     juce::webclap::setDesktop (16, 16, pixelRatio);
 
     app->juce = std::make_unique<juce::ScopedJuceInitialiser_GUI>();
@@ -68,7 +68,7 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_init (double pixelRatio)
 
     app->bridge = std::make_unique<juce::webclap::ProcessorBridge> (*app->processor, sendToHost);
 
-    app->editor.reset (app->processor->createEditorIfNeeded());
+    app->editor.reset (tapelectric_webclap::createEditor (*app->processor));
 
     if (app->editor == nullptr)
         return 0;

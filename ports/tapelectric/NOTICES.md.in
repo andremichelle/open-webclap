@@ -7,8 +7,9 @@ ported to WebCLAP. This is not an official aquanode release.
 - This port, and the complete source of this bundle: @SOURCE_URL@
   Build it with `scripts/build-tapelectric.sh`, which fetches every dependency below at the commit named here.
 
-Changes in this port (`patches/tapelectric-headless.patch`): the processor builds without its editor for the DSP
-module. The editor's text is drawn in DejaVu Sans.
+Changes in this port: the editor is the port's own (`ports/tapelectric/tape_editor.cpp`), on the same parameters
+as upstream's, laid out and drawn anew; the processor builds without upstream's editor
+(`patches/tapelectric-headless.patch`).
 
 ## License
 
@@ -28,7 +29,7 @@ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the license
 | WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/tapelectric`) | both | André Michelle | AGPL-3.0 |
 | [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
 | [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
-| [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |
+| [Inter](https://github.com/rsms/inter) font | ui | 2020 The Inter Project Authors | OFL-1.1 (`licenses/OFL-1.1-Inter.txt`) |
 
 @JUCE_BUNDLED@
 

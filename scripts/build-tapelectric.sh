@@ -26,7 +26,7 @@ cp "$ROOT/modules/juce_webclap/js/"*.js "$ROOT/ports/tapelectric/ui/"* "$BUNDLE/
 source "$ROOT/scripts/bundle-license.sh"
 bundle_license "$BUNDLE" "$ROOT/ports/tapelectric/NOTICES.md.in" \
     "$ROOT/external/tapelectric/LICENSE" AGPL-3.0.txt \
-    "$ROOT/external/fonts/DejaVu-LICENSE" DejaVu.txt \
+    "$ROOT/external/fonts/Inter-LICENSE" OFL-1.1-Inter.txt \
     "${JUCE_CORE_LICENSES[@]}" "${JUCE_GRAPHICS_LICENSES[@]}"
 
 # The archive hosts import (openDAW: Import WebCLAP...)
