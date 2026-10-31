@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Radar</title>
+    <style>
+        html, body { margin: 0; padding: 0; background: #232323; overflow: hidden; }
+        canvas { display: block; outline: none; touch-action: none; }
+        #status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+                  color: #9a9a9a; font: 13px/1.4 system-ui, sans-serif; pointer-events: none; }
+    </style>
+</head>
+<body>
+<canvas id="editor" width="16" height="16"></canvas>
+<div id="status">Loading Radar…</div>
+<script src="webclap-ui.js"></script>
+<script>
+    // The plugin's webview page: the generic kit, the editor's mode (?panel: the device panel's) and the sample. A
+    // dropped or picked file is decoded here (the editor runs in a worker) and goes to the editor as a sample frame
+    // (radar_frames.h), at most 30 seconds, 16 bit.
+    const MAX_SECONDS = 30
+    const RATE = 48000
+    const status = document.getElementById("status")
+    const panel = new URLSearchParams(location.search).has("panel")
+
+    const ui = startWebclapUI({
+        canvas: document.getElementById("editor"),
+        moduleUrl: "ui.js",
+        factory: "createWebclapUI",
+        config: panel ? "panel" : "window",
+        onPageMessage: text => {
+            if (text === "open-sample") picker.click()
+        },
+        onReady: info => {
+            status.remove()
+            window.parent.postMessage({webclapDebug: "ready", initMs: info.initMs, width: info.width, height: info.height}, "*")
+        },
+        onStats: stats => window.parent.postMessage({webclapDebug: "stats", stats}, "*"),
+        onError: message => {
+            if (status.isConnected) status.textContent = "Error: " + message
+            window.parent.postMessage({webclapDebug: "error", message}, "*")
+        }
+    })
+
+    const dragging = over => ui.sendToModule(new Uint8Array([2, over ? 1 : 0]))
+
+    async function load(file) {
+        try {
+            const decoded = await new OfflineAudioContext(1, 1, RATE).decodeAudioData(await file.arrayBuffer())
+            const channels = Math.min(2, decoded.numberOfChannels)
+            const frames = Math.min(decoded.length, Math.floor(MAX_SECONDS * decoded.sampleRate))
+            const name = new TextEncoder().encode(file.name.replace(/\.[^.]+$/, "")).slice(0, 1024)
+            const header = 1 + 12 + name.length
+            const bytes = new Uint8Array(header + frames * channels * 2)
+            const view = new DataView(bytes.buffer)
+            bytes[0] = 1
+            view.setUint32(1, decoded.sampleRate, true)
+            view.setUint32(5, frames, true)
+            view.setUint16(9, channels, true)
+            view.setUint16(11, name.length, true)
+            bytes.set(name, 13)
+            let at = header
+            for (let channel = 0; channel < channels; channel++) {
+                const data = decoded.getChannelData(channel)
+                for (let i = 0; i < frames; i++, at += 2)
+                    view.setInt16(at, Math.max(-32768, Math.min(32767, Math.round(data[i] * 32767))), true)
+            }
+            ui.sendToModule(bytes)
+        } catch (error) {
+            dragging(false)
+            window.parent.postMessage({webclapDebug: "error", message: `Could not load ${file.name}: ${error.message || error}`}, "*")
+        }
+    }
+
+    const picker = Object.assign(document.createElement("input"), {type: "file", accept: "audio/*"})
+    picker.addEventListener("change", () => {
+        if (picker.files.length > 0) load(picker.files[0])
+        picker.value = ""
+    })
+
+    // Files dropped from the desktop, and samples from openDAW's browser (its frame replays them as file drags)
+    const isFileDrag = event => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes("Files")
+    document.addEventListener("dragenter", event => {
+        if (!isFileDrag(event)) return
+        event.preventDefault()
+        dragging(true)
+    })
+    document.addEventListener("dragover", event => {
+        if (!isFileDrag(event)) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = "copy"
+    })
+    document.addEventListener("dragleave", event => {
+        if (event.relatedTarget === null) dragging(false)
+    })
+    document.addEventListener("drop", event => {
+        event.preventDefault()
+        const file = event.dataTransfer && event.dataTransfer.files[0]
+        if (file) load(file)
+        else dragging(false)
+    })
+</script>
+</body>
+</html>

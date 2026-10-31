@@ -29,6 +29,7 @@
 namespace juce
 {
     class AudioProcessor;
+    class MemoryBlock;
 }
 
 namespace juce::webclap
@@ -50,6 +51,12 @@ namespace juce::webclap
         /** openDAW's device panel (opendaw.device-panel/1): the window's page, its width scaled to the panel's
             height from the editor's size. List the feature "opendaw:device-panel" too. */
         bool devicePanel = false;
+
+        /** A device panel of its own: another page (or the window's with a query, "/ui/index.html?panel") and
+            its size, the width scaled to the panel's height. Null and 0 for the window's page and size. */
+        const char* devicePanelUri = nullptr;
+        int devicePanelWidth = 0;
+        int devicePanelHeight = 0;
     };
 
     /** Defined by the port. */
@@ -77,6 +84,10 @@ namespace juce::webclap
 
         /** The page went away (clap.gui destroy): stop what only it needs, such as feeding an analyzer. */
         virtual void closed (AudioProcessor&) {}
+
+        /** The state the page gets in a snapshot, when it differs from getStateInformation (a port whose state
+            holds audio the page never reads sends it in its own frames, or not at all). False for the whole state. */
+        virtual bool pageState (AudioProcessor&, MemoryBlock&) { return false; }
     };
 
     /** Defined by ports that need it. The kit's default returns nullptr. */

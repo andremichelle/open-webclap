@@ -34,7 +34,7 @@ export const PluginPage = (plugin: PluginEntry): PageFactory<null> => ({lifecycl
     const save: HTMLAnchorElement = <a className="hidden" download={bundleFileName(plugin)}>Download</a>
     lifecycle.own({terminate: () => {if (save.href.length > 0) {URL.revokeObjectURL(save.href)}}})
     return (
-        <PluginView lifecycle={lifecycle} name={plugin.name}
+        <PluginView lifecycle={lifecycle} name={plugin.name} panel={plugin.panel === true}
                     links={(
                         <div className="links">
                             <a href={plugin.credit} target="_blank" rel="noopener noreferrer">Original</a>
@@ -80,7 +80,7 @@ export const ImportedPage: PageFactory<null> = ({lifecycle, path}) => {
         )
     }
     return (
-        <PluginView lifecycle={lifecycle} name={imported.fileName}
+        <PluginView lifecycle={lifecycle} name={imported.fileName} panel={false}
                     links={<div className="links"><span>imported from {imported.fileName}</span></div>}
                     open={async (env, loading) => {
                         loading.setValue({text: `Unpacking ${imported.fileName}…`, fraction: null})
@@ -100,9 +100,10 @@ type PluginViewConstruct = {
     open: (env: Env, loading: DefaultObservableValue<LoadingState>) => Promise<PluginSession>
     subtitle: string | null // null: the plugin's clap id
     hint: JsxValue // under the error, when the plugin could not be loaded
+    panel: boolean // shows the device panel above the window
 }
 
-const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint}: PluginViewConstruct) => {
+const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint, panel}: PluginViewConstruct) => {
     let alive = true
     lifecycle.own({terminate: () => alive = false})
     const title: HTMLElement = <h1>{name}</h1>
@@ -131,7 +132,7 @@ const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint}
         document.title = `${identity.name} · open-webclap`
         subtitle.textContent = subtitleText ?? identity.clapId
         loading.setValue({text: `Starting ${identity.name}…`, fraction: null})
-        replaceChildren(body, <Workbench lifecycle={lifecycle} session={session} loading={loading}/>)
+        replaceChildren(body, <Workbench lifecycle={lifecycle} session={session} loading={loading} panel={panel}/>)
     }).catch((reason: unknown) => {
         if (!alive) {return}
         subtitle.textContent = "not loaded"
@@ -183,9 +184,10 @@ type WorkbenchConstruct = {
     lifecycle: Lifecycle
     session: PluginSession
     loading: DefaultObservableValue<LoadingState> // shown in the plugin column until the window is up
+    panel: boolean // shows the device panel above the window (note effects always do)
 }
 
-const Workbench = ({lifecycle, session, loading}: WorkbenchConstruct) => {
+const Workbench = ({lifecycle, session, loading, panel}: WorkbenchConstruct) => {
     const {kind} = session.identity
     const log = new MessageLog(id => `#${id}`)
     const midiStatus: HTMLElement = <span className="muted"/>
@@ -209,6 +211,9 @@ const Workbench = ({lifecycle, session, loading}: WorkbenchConstruct) => {
                 <PluginStatus lifecycle={lifecycle} session={session}/>
                 {kind !== "audio-fx" && midiStatus}
             </Panel>
+            {kind === "instrument" && (
+                <Panel title="Transport"><TransportSwitch lifecycle={lifecycle} session={session}/></Panel>
+            )}
             {kind === "audio-fx" && (
                 <Panel title="Input"><InputSource lifecycle={lifecycle} session={session}/></Panel>
             )}
@@ -239,7 +244,7 @@ const Workbench = ({lifecycle, session, loading}: WorkbenchConstruct) => {
                     <LoadingProgress lifecycle={lifecycle} state={loading}/>
                 </div>
                 <div className="stack pending" onInit={stack => stack_ = stack}>
-                    {kind === "midi-fx" && (
+                    {(kind === "midi-fx" || panel) && (
                         <PluginWindow lifecycle={lifecycle} session={session} log={log} panel onLayout={() => {}}/>
                     )}
                     <PluginWindow lifecycle={lifecycle} session={session} log={log}
@@ -255,6 +260,18 @@ const Workbench = ({lifecycle, session, loading}: WorkbenchConstruct) => {
             <ColumnResizer lifecycle={lifecycle} target={aside} minWidth={240} maxWidth={400}
                            storageKey="open-webclap-aside-width"/>
             {aside}
+        </div>
+    )
+}
+
+// Plays and stops the engine's transport, for instruments that follow it (an audio effect's input runs it already)
+const TransportSwitch = ({lifecycle, session}: { lifecycle: Lifecycle, session: PluginSession }) => {
+    const {engine} = session
+    const label: HTMLElement = <span/>
+    lifecycle.own(engine.isPlaying.catchupAndSubscribe(owner => label.textContent = owner.getValue() ? "Stop" : "Play"))
+    return (
+        <div className="row">
+            <Button lifecycle={lifecycle} onClick={() => engine.isPlaying.getValue() ? engine.stop() : engine.play()}>{label}</Button>
         </div>
     )
 }

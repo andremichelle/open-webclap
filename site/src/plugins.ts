@@ -17,6 +17,7 @@ export type PluginEntry = {
     source: string // this port
     license: string
     bundled?: string // served by the site itself, for a plugin that is not in openDAW's catalogue
+    panel?: boolean // a device panel of its own, shown above the window
 }
 
 // what a downloaded bundle is saved as
@@ -74,6 +75,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         archive: "build/droplets/droplets.wclap.tar.gz", build: "scripts/build-droplets.sh",
         credit: "https://github.com/aquanodemusic/aquanode-plugins/tree/main/synths/droplets", source: port("droplets"),
         license: "AGPL-3.0"
+    },
+    {
+        id: "radar", name: "Radar", kind: "instrument",
+        description: "Loop player: a ray reflecting off segments drawn into a circle picks where in the sample to play",
+        clapId: "com.andremichelle.radar",
+        archive: "build/radar/radar.wclap.tar.gz", build: "scripts/build-radar.sh",
+        credit: "https://github.com/andremichelle/radar", source: port("radar"), license: "MIT (AGPL-3.0 as built)",
+        panel: true
     },
     {
         id: "dexed", name: "Dexed", kind: "instrument",

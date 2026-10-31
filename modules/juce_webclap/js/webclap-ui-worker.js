@@ -200,7 +200,8 @@ async function init(message) {
         setCursor: name => post({type: "cursor", name}),
         requestSize: (width, height) => post({type: "requestSize", width, height}),
         copyText: text => post({type: "copyText", text}),
-        textInput: (active, x, y) => post({type: "textInput", active, x, y})
+        textInput: (active, x, y) => post({type: "textInput", active, x, y}),
+        toPage: text => post({type: "toPage", text})
     }
     const factory = self[message.factory]
     const manifest = message.files ? await fetchManifest(message.files) : null
@@ -218,6 +219,8 @@ async function init(message) {
     ])
     const t0 = performance.now()
     module._wclap_ui_set_screen(message.screenWidth, message.screenHeight)
+    if (typeof message.config === "string" && module._wclap_ui_configure)
+        withString(message.config, ptr => module._wclap_ui_configure(ptr))
     if (!module._wclap_ui_init(pixelRatio)) throw new Error("wclap_ui_init failed")
     const initMs = performance.now() - t0
     const width = Math.round(module._wclap_ui_framebuffer_width() / pixelRatio)
@@ -266,6 +269,15 @@ self.onmessage = event => {
                 module && module._wclap_ui_set_desktop(m.width, m.height, m.pixelRatio)
                 break
             case "receive": module && receive(new Uint8Array(m.bytes)); break
+            case "pageInput":
+                if (module && module._wclap_ui_page_input) {
+                    const bytes = m.bytes instanceof Uint8Array ? m.bytes : new Uint8Array(m.bytes)
+                    const ptr = module._malloc(bytes.byteLength)
+                    module.HEAPU8.set(bytes, ptr)
+                    module._wclap_ui_page_input(ptr, bytes.byteLength)
+                    module._free(ptr)
+                }
+                break
             case "valueText":
                 post({type: "valueText", id: m.id, value: m.value,
                     text: module ? module.UTF8ToString(module._wclap_ui_value_text(m.id, m.value)) : ""})

@@ -658,7 +658,9 @@ private:
         if (std::exchange (pageSnapshot, false))
         {
             MemoryBlock state;
-            processor->getStateInformation (state);
+
+            if (extension == nullptr || ! extension->pageState (*processor, state))
+                processor->getStateInformation (state);
 
             protocol::Writer w (protocol::snapshot);
             w.u32 ((uint32) parameters.size());
@@ -703,9 +705,10 @@ private:
         });
     }
 
-    int32_t getUri (char* uri, uint32_t capacity) const
+    int32_t getUri (char* uri, uint32_t capacity) const { return copyUri (getClapPluginInfo().webviewUri, uri, capacity); }
+
+    static int32_t copyUri (const char* page, char* uri, uint32_t capacity)
     {
-        const auto* page = getClapPluginInfo().webviewUri;
         const auto length = (uint32_t) std::strlen (page) + 1;
 
         if (uri != nullptr && capacity > 0)
@@ -998,11 +1001,19 @@ private:
         };
 
         static const DevicePanel devicePanel {
-            [] (const clap_plugin_t* p, char* uri, uint32_t capacity) { return self (p).getUri (uri, capacity); },
+            [] (const clap_plugin_t* p, char* uri, uint32_t capacity)
+            {
+                if (const auto* own = getClapPluginInfo().devicePanelUri)
+                    return copyUri (own, uri, capacity);
+
+                return self (p).getUri (uri, capacity);
+            },
             [] (const clap_plugin_t*, uint32_t height, uint32_t* width)
             {
                 const auto& info = getClapPluginInfo();
-                *width = (uint32_t) roundToInt ((double) height * info.editorWidth / info.editorHeight);
+                const auto own = info.devicePanelWidth > 0 && info.devicePanelHeight > 0;
+                *width = (uint32_t) roundToInt ((double) height * (own ? info.devicePanelWidth : info.editorWidth)
+                                                / (own ? info.devicePanelHeight : info.editorHeight));
                 return true;
             }
         };

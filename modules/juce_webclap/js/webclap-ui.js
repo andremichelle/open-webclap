@@ -9,6 +9,10 @@
 // ones matching a prefetch pattern (regular expressions), which load with ui.wasm (see the worker);
 // onProgress(m) gets the worker's progress messages: {phase: "module" or "prefetch", loaded, total} while ui.wasm and
 // the prefetched files download, {phase: "file", name, size} while another file loads, then {phase: "fileDone"}.
+// config: a string for the module's optional wclap_ui_configure, before wclap_ui_init (the page's mode, say);
+// onPageMessage(text) gets what the module hands the page (host.toPage, a request only the page can serve, such as
+// opening a file picker). The returned sendToModule(bytes) hands the module's optional wclap_ui_page_input bytes
+// only the page has (a decoded file).
 
 "use strict"
 
@@ -61,7 +65,8 @@ function isBrowserShortcut(e) {
 // Resolved while this script loads; document.currentScript is gone by the time startWebclapUI runs.
 const WEBCLAP_UI_BASE = new URL(".", document.currentScript && document.currentScript.src || location.href)
 
-function startWebclapUI({canvas, moduleUrl, factory, workerUrl, files, onStats, onReady, onError, onProgress}) {
+function startWebclapUI({canvas, moduleUrl, factory, workerUrl, files, config, onStats, onReady, onError, onProgress,
+                            onPageMessage}) {
     const base = WEBCLAP_UI_BASE
     const worker = new Worker(workerUrl || new URL("webclap-ui-worker.js", base))
     const offscreen = canvas.transferControlToOffscreen()
@@ -126,6 +131,7 @@ function startWebclapUI({canvas, moduleUrl, factory, workerUrl, files, onStats, 
             case "textInput": break // desktop keyboards deliver text through key events
             case "progress": onProgress && onProgress(m); break
             case "valueText": window.dispatchEvent(new CustomEvent("webclap-value-text", {detail: m})); break
+            case "toPage": onPageMessage && onPageMessage(m.text); break
             case "error":
                 console.error("[webclap-ui]", m.message)
                 onError && onError(m.message)
@@ -195,13 +201,14 @@ function startWebclapUI({canvas, moduleUrl, factory, workerUrl, files, onStats, 
     }
     watchPixelRatio()
 
-    post({type: "init", canvas: offscreen, moduleUrl: new URL(moduleUrl, location.href).href, factory, pixelRatio,
+    post({type: "init", canvas: offscreen, moduleUrl: new URL(moduleUrl, location.href).href, factory, pixelRatio, config,
         screenWidth: screen.availWidth, screenHeight: screen.availHeight,
         files: files ? {manifest: new URL(files.manifest, location.href).href, mount: files.mount,
             prefetch: files.prefetch || []} : null}, [offscreen])
 
     return {
         worker,
-        requestValueText: (id, value) => post({type: "valueText", id, value})
+        requestValueText: (id, value) => post({type: "valueText", id, value}),
+        sendToModule: bytes => post({type: "pageInput", bytes}, [bytes.buffer])
     }
 }
