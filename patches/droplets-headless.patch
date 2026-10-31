@@ -1,0 +1,37 @@
+Droplets without its editor, for module.wasm: DROPLETS_HEADLESS leaves out PluginEditor.h, and createEditor()
+and hasEditor() say there is none. The editor runs in the page (ui.wasm), built without the define.
+
+--- a/synths/droplets/src/PluginProcessor.cpp
++++ b/synths/droplets/src/PluginProcessor.cpp
+@@ -1,5 +1,7 @@
+ #include "PluginProcessor.h"
++#if ! DROPLETS_HEADLESS
+ #include "PluginEditor.h"
++#endif
+ 
+ //==============================================================================
+ /** Sound definition for the Droplets Synth */
+@@ -481,14 +483,23 @@
+     synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
+ }
+ 
++// DROPLETS_HEADLESS: a DSP-only build (the editor runs elsewhere, e.g. WebCLAP's split UI)
+ juce::AudioProcessorEditor* DropletsAudioProcessor::createEditor()
+ {
++#if DROPLETS_HEADLESS
++    return nullptr;
++#else
+     return new DropletsAudioProcessorEditor(*this);
++#endif
+ }
+ 
+ bool DropletsAudioProcessor::hasEditor() const
+ {
++#if DROPLETS_HEADLESS
++    return false;
++#else
+     return true;
++#endif
+ }
+ 
+ const juce::String DropletsAudioProcessor::getName() const

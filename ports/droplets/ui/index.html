@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Droplets</title>
+    <style>
+        html, body { margin: 0; padding: 0; background: #2a4858; overflow: hidden; }
+        canvas { display: block; outline: none; touch-action: none; }
+        #status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+                  color: #9a9a9a; font: 13px/1.4 system-ui, sans-serif; pointer-events: none; }
+    </style>
+</head>
+<body>
+<canvas id="editor" width="16" height="16"></canvas>
+<div id="status">Loading Droplets…</div>
+<script src="webclap-ui.js"></script>
+<script>
+    // The plugin's webview page. Everything except the debug messages below is the generic kit.
+    const status = document.getElementById("status")
+    startWebclapUI({
+        canvas: document.getElementById("editor"),
+        moduleUrl: "ui.js",
+        factory: "createWebclapUI",
+        onReady: info => {
+            status.remove()
+            // For the test host's stats line. Sent as JSON, which hosts that only relay binary frames ignore.
+            window.parent.postMessage({webclapDebug: "ready", initMs: info.initMs, width: info.width, height: info.height}, "*")
+        },
+        onStats: stats => window.parent.postMessage({webclapDebug: "stats", stats}, "*"),
+        onError: message => {
+            if (status.isConnected) status.textContent = "Error: " + message
+            window.parent.postMessage({webclapDebug: "error", message}, "*")
+        }
+    })
+</script>
+</body>
+</html>

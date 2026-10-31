@@ -68,6 +68,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         credit: "https://github.com/peterc/coopiano", source: port("coopiano"), license: "MIT"
     },
     {
+        id: "droplets", name: "Droplets", kind: "instrument",
+        description: "Stochastic water bubble synth after xoxos' Water: drips, splashes and rivers from a physical droplet model",
+        clapId: "com.aquanodemusic.droplets",
+        archive: "build/droplets/droplets.wclap.tar.gz", build: "scripts/build-droplets.sh",
+        credit: "https://github.com/aquanodemusic/aquanode-plugins/tree/main/synths/droplets", source: port("droplets"),
+        license: "AGPL-3.0"
+    },
+    {
         id: "dexed", name: "Dexed", kind: "instrument",
         description: "DX7 FM synthesizer: six operators, 32 algorithms, cartridge manager",
         clapId: "com.digital-suburban.dexed",
