@@ -100,6 +100,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         license: "GPL-3.0"
     },
     {
+        id: "tapelectric", name: "TapElectric", kind: "audio-fx",
+        description: "Tape deck atmosphere: power hum with six harmonics, EQ'd tape noise, drift, wobble and saturation",
+        clapId: "com.aquanodemusic.tapelectric",
+        archive: "build/tapelectric/tapelectric.wclap.tar.gz", build: "scripts/build-tapelectric.sh",
+        credit: "https://github.com/aquanodemusic/aquanode-plugins/tree/main/effects/tapelectric",
+        source: port("tapelectric"), license: "AGPL-3.0"
+    },
+    {
         id: "wet-chorus", name: "WetChorus", kind: "audio-fx",
         description: "Bucket-brigade stereo chorus after a 1970s guitar combo, a demo of openDAW's device panel",
         clapId: "studio.opendaw.commons.wet-chorus",

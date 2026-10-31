@@ -185,10 +185,12 @@ DEPS += [
      lambda p: p.endswith((".hpp", ".cpp", ".ini")) or p in ("LICENSE", "README.md", "Makefile")),
 ]
 
-# Droplets (aquanode) at main at the time of writing: only the plugin's sources from the collection
+# Droplets and TapElectric (aquanode) at main at the time of writing: only each plugin's sources from the collection
+AQUANODE = "35f0676f1d1ba2ac6841abc7a65bab8587a11ab0"
 DEPS += [
-    ("droplets", "aquanodemusic/aquanode-plugins", "35f0676f1d1ba2ac6841abc7a65bab8587a11ab0",
-     lambda p: p.startswith("synths/droplets/src/") or p in ("LICENSE", "synths/droplets/README.md")),
+    (name, "aquanodemusic/aquanode-plugins", AQUANODE,
+     lambda p, folder=folder: p.startswith(folder + "/src/") or p in ("LICENSE", folder + "/README.md"))
+    for name, folder in (("droplets", "synths/droplets"), ("tapelectric", "effects/tapelectric"))
 ]
 
 # Only the three small HRTF sets are hosted, the KU100 sets are 20 and 37 MB
@@ -300,7 +302,7 @@ def fetch_fonts():
 # patches/<prefix>-*.patch apply to external/<directory>
 PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "ripplerx"), ("odin2-", "odin2"),
                  ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
-                 ("libmysofa-", "libmysofa"), ("droplets-", "droplets")] + [(d + "-", d) for d, _, _ in ZL]
+                 ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():
