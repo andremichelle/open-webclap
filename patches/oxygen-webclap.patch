@@ -4,6 +4,8 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
   (the multiband compressor keeps the most of each block)
 - the maximizer's soft ceiling stage runs once more at the host rate, after downsampling: the downsampling filter
   rebuilds peaks above the ceiling past about 10 dB of limiting
+- every module has a reset() (the host's stop): filters, crossovers, envelopes, the maximizer's lookahead,
+  oversampler and bypass delay are cleared, without allocating
 
 --- a/Source/Modules/DynamicEqModule.cpp
 +++ b/Source/Modules/DynamicEqModule.cpp
@@ -15,7 +17,32 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
  #include <cmath>
  
  namespace oxygen
-@@ -158,6 +160,10 @@
+@@ -77,6 +79,24 @@
+         updateFiltersAndParameters();
+     }
+ 
++#if OXYGEN_WEBCLAP
++    // Called on the audio thread between blocks: prepareToPlay's band reset, allocates nothing
++    void DynamicEqModule::reset()
++    {
++        controlPosition = 0;
++        for (int band = 0; band < NumBands; ++band)
++        {
++            const auto i = (size_t) band;
++            isolationFilters[i].reset();
++            dynamicFilters[i].reset();
++            dynamicFilters[i].setCoefficients({}, 0);
++            runtimeStates[i].envelope = 0.0f;
++            runtimeStates[i].currentGainReductionDb = 0.0f;
++            lastAppliedCuts[i] = 0.0f;
++        }
++    }
++#endif
++
+     void DynamicEqModule::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+     {
+         if (apvts.getRawParameterValue("Bypass")->load() > 0.5f)
+@@ -158,6 +178,10 @@
  
      juce::AudioProcessorEditor* DynamicEqModule::createEditor()
      {
@@ -28,7 +55,17 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
  }
 --- a/Source/Modules/DynamicEqModule.h
 +++ b/Source/Modules/DynamicEqModule.h
-@@ -28,6 +28,9 @@
+@@ -19,6 +19,9 @@
+         ~DynamicEqModule() override;
+ 
+         void prepareToPlay(double sampleRate, int samplesPerBlock) override;
++#if OXYGEN_WEBCLAP
++        void reset() override; // the host stopped: no old audio sounds on
++#endif
+         void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+ 
+         bool hasEditor() const override { return true; }
+@@ -28,6 +31,9 @@
          juce::AudioProcessorValueTreeState apvts;
          juce::RangedAudioParameter* getBypassParameter() const override { return apvts.getParameter("Bypass"); }
  
@@ -48,7 +85,26 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
  #include <cmath>
  #include <limits>
  
-@@ -121,7 +123,11 @@
+@@ -69,6 +71,18 @@
+         updateFilters(samplesPerBlock);
+     }
+ 
++#if OXYGEN_WEBCLAP
++    // Called on the audio thread between blocks: clears the filters, allocates nothing
++    void EqualizerModule::reset()
++    {
++        for (auto& filter : filters)
++            filter->reset();
++
++        for (auto& smoothedGain : smoothedGains)
++            smoothedGain.setCurrentAndTargetValue(smoothedGain.getTargetValue());
++    }
++#endif
++
+     void EqualizerModule::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+     {
+         if (apvts.getRawParameterValue("Bypass")->load() > 0.5f)
+@@ -121,7 +135,11 @@
  
      juce::AudioProcessorEditor* EqualizerModule::createEditor()
      {
@@ -70,7 +126,28 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
  #include <array>
  #include <cmath>
  
-@@ -269,6 +271,12 @@
+@@ -156,7 +158,20 @@
+         bypassDelayBuffer.clear();
+         bypassDelayWritePosition = 0;
+         setLatencySamples(totalLatencySamples);
++    }
++
++#if OXYGEN_WEBCLAP
++    // Called on the audio thread between blocks: clears the lookahead, the oversampler and the bypass delay,
++    // allocates nothing
++    void MaximizerModule::reset()
++    {
++        resetLimiterState();
++        inputDriveSmoothed.setCurrentAndTargetValue(inputDriveSmoothed.getTargetValue());
++        ceilingGainSmoothed.setCurrentAndTargetValue(ceilingGainSmoothed.getTargetValue());
++        bypassDelayBuffer.clear();
++        bypassDelayWritePosition = 0;
+     }
++#endif
+ 
+     void MaximizerModule::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+     {
+@@ -269,6 +284,12 @@
  
          oversampling.processSamplesDown(outputBlock);
  
@@ -83,7 +160,7 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
          for (int ch = 0; ch < numChannels; ++ch)
          {
              auto* data = buffer.getWritePointer(ch);
-@@ -276,6 +284,9 @@
+@@ -276,6 +297,9 @@
              {
                  if (!std::isfinite(data[i]))
                      data[i] = 0.0f;
@@ -93,7 +170,7 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
              }
          }
      }
-@@ -354,7 +365,11 @@
+@@ -354,7 +378,11 @@
  
      juce::AudioProcessorEditor* MaximizerModule::createEditor()
      {
@@ -107,7 +184,17 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
  }
 --- a/Source/Modules/MaximizerModule.h
 +++ b/Source/Modules/MaximizerModule.h
-@@ -33,6 +33,9 @@
+@@ -23,6 +23,9 @@
+         ~MaximizerModule() override;
+ 
+         void prepareToPlay(double sampleRate, int samplesPerBlock) override;
++#if OXYGEN_WEBCLAP
++        void reset() override; // the host stopped: no old audio sounds on
++#endif
+         void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+ 
+         bool hasEditor() const override { return true; }
+@@ -33,6 +36,9 @@
          juce::AudioProcessorValueTreeState apvts;
          juce::RangedAudioParameter* getBypassParameter() const override { return apvts.getParameter("Bypass"); }
  
@@ -127,7 +214,28 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
  #include <cmath>
  #include <limits>
  
-@@ -245,6 +247,8 @@
+@@ -122,6 +124,20 @@
+         updateParameters();
+     }
+ 
++#if OXYGEN_WEBCLAP
++    // Called on the audio thread between blocks: clears the crossover and the envelopes, allocates nothing
++    void MultibandCompressorModule::reset()
++    {
++        crossover.reset();
++
++        for (auto& runtimeState : bandRuntimeStates)
++        {
++            runtimeState.envelope = 0.0f;
++            runtimeState.gainReductionDb = 0.0f;
++        }
++    }
++#endif
++
+     void MultibandCompressorModule::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+     {
+         juce::ignoreUnused(midiMessages);
+@@ -245,6 +261,8 @@
          if (numChannels == 0 || numSamples == 0)
              return;
  
@@ -136,7 +244,7 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
          for (int sample = 0; sample < numSamples; ++sample)
          {
              float peakDetector = 0.0f;
-@@ -285,6 +289,7 @@
+@@ -285,6 +303,7 @@
                  }
  
                  gain = juce::Decibels::decibelsToGain(gainReductionDb);
@@ -144,7 +252,7 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
              }
  
              if (!std::isfinite(gain))
-@@ -300,7 +305,11 @@
+@@ -300,7 +319,11 @@
  
      juce::AudioProcessorEditor* MultibandCompressorModule::createEditor()
      {
@@ -158,7 +266,17 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
  }
 --- a/Source/Modules/MultibandCompressorModule.h
 +++ b/Source/Modules/MultibandCompressorModule.h
-@@ -24,6 +24,9 @@
+@@ -14,6 +14,9 @@
+         ~MultibandCompressorModule() override;
+ 
+         void prepareToPlay(double sampleRate, int samplesPerBlock) override;
++#if OXYGEN_WEBCLAP
++        void reset() override; // the host stopped: no old audio sounds on
++#endif
+         void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+ 
+         bool hasEditor() const override { return true; }
+@@ -24,6 +27,9 @@
          juce::AudioProcessorValueTreeState apvts;
          juce::RangedAudioParameter* getBypassParameter() const override { return apvts.getParameter("Bypass"); }
  
@@ -168,7 +286,7 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
      private:
  
          struct BandParams
-@@ -41,6 +44,7 @@
+@@ -41,6 +47,7 @@
              float attackCoeff = 0.0f;
              float releaseCoeff = 0.0f;
              float envelope = 0.0f;
@@ -186,7 +304,24 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
  #include <cmath>
  
  namespace oxygen
-@@ -215,7 +217,11 @@
+@@ -92,6 +94,16 @@
+         updateParameters();
+     }
+ 
++#if OXYGEN_WEBCLAP
++    // Called on the audio thread between blocks: clears the crossover and the width detectors, allocates nothing
++    void StereoImagerModule::reset()
++    {
++        crossover.reset();
++        for (auto& state : widthStates)
++            state = {};
++    }
++#endif
++
+     void StereoImagerModule::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+     {
+         if (apvts.getRawParameterValue("Bypass")->load() > 0.5f)
+@@ -215,7 +227,11 @@
  
      juce::AudioProcessorEditor* StereoImagerModule::createEditor()
      {
@@ -198,3 +333,39 @@ oXygen for the WebCLAP port, all under OXYGEN_WEBCLAP:
      }
  
  }
+--- a/Source/Modules/EqualizerModule.h
++++ b/Source/Modules/EqualizerModule.h
+@@ -14,6 +14,9 @@
+         ~EqualizerModule() override;
+ 
+         void prepareToPlay(double sampleRate, int samplesPerBlock) override;
++#if OXYGEN_WEBCLAP
++        void reset() override; // the host stopped: no old audio sounds on
++#endif
+         void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+ 
+         bool hasEditor() const override { return true; }
+--- a/Source/Modules/StereoImagerModule.h
++++ b/Source/Modules/StereoImagerModule.h
+@@ -14,6 +14,9 @@
+         ~StereoImagerModule() override;
+ 
+         void prepareToPlay(double sampleRate, int samplesPerBlock) override;
++#if OXYGEN_WEBCLAP
++        void reset() override; // the host stopped: no old audio sounds on
++#endif
+         void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+ 
+         bool hasEditor() const override { return true; }
+--- a/Source/Modules/GainModule.h
++++ b/Source/Modules/GainModule.h
+@@ -27,6 +27,9 @@
+             smoothedGain.reset(sampleRate, 0.02);
+             smoothedGain.setCurrentAndTargetValue(*gainParam);
+         }
++#if OXYGEN_WEBCLAP
++        void reset() override { smoothedGain.setCurrentAndTargetValue(smoothedGain.getTargetValue()); }
++#endif
+         void releaseResources() override {}
+ 
+         void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override

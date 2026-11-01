@@ -1,17 +1,42 @@
 TapElectric without its editor, for module.wasm: TAPELECTRIC_HEADLESS leaves out PluginEditor.h, and createEditor()
 and hasEditor() say there is none. The editor runs in the page (ui.wasm), built without the define.
 
+reset() (the host's stop, in both builds) clears the motor's delay line and the noise EQ, without allocating.
+
 --- a/effects/tapelectric/src/PluginProcessor.cpp
 +++ b/effects/tapelectric/src/PluginProcessor.cpp
 @@ -1,5 +1,7 @@
- #include "PluginProcessor.h"
+   #include "PluginProcessor.h"
 +#if ! TAPELECTRIC_HEADLESS
  #include "PluginEditor.h"
 +#endif
  
  //==============================================================================
  // APVTS Parameter Layout - All parameters defined in one clean place!
-@@ -478,14 +480,23 @@
+@@ -312,6 +314,22 @@
+ {
+ }
+ 
++// Called on the audio thread between blocks: clears the delay and the filters, allocates nothing. Hum and noise
++// keep running, they are the plugin's sound.
++void TapElectricAudioProcessor::reset()
++{
++    std::fill(delayBufferL.begin(), delayBufferL.end(), 0.0f);
++    std::fill(delayBufferR.begin(), delayBufferR.end(), 0.0f);
++    delayWritePos = 0;
++
++    eqFilter1L.reset();
++    eqFilter1R.reset();
++    eqFilter2L.reset();
++    eqFilter2R.reset();
++    eqFilter3L.reset();
++    eqFilter3R.reset();
++}
++
+ #ifndef JucePlugin_PreferredChannelConfigurations
+ bool TapElectricAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+ {
+@@ -476,14 +494,23 @@
      }
  }
  
@@ -35,3 +60,13 @@ and hasEditor() say there is none. The editor runs in the page (ui.wasm), built 
  }
  
  // APVTS handles state saving/loading automatically! Much simpler than before.
+--- a/effects/tapelectric/src/PluginProcessor.h
++++ b/effects/tapelectric/src/PluginProcessor.h
+@@ -19,6 +19,7 @@
+ 
+     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+     void releaseResources() override;
++    void reset() override; // the host stopped: the motor's delay and the EQ forget the old audio
+ 
+    #ifndef JucePlugin_PreferredChannelConfigurations
+     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;

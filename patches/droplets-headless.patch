@@ -1,6 +1,9 @@
 Droplets without its editor, for module.wasm: DROPLETS_HEADLESS leaves out PluginEditor.h, and createEditor()
 and hasEditor() say there is none. The editor runs in the page (ui.wasm), built without the define.
 
+reset() (the host stopped; openDAW resets its devices on stop) stops every voice at once; a hard stop also ends
+the voice's envelopes, which kept dripping in the release.
+
 --- a/synths/droplets/src/PluginProcessor.cpp
 +++ b/synths/droplets/src/PluginProcessor.cpp
 @@ -1,5 +1,7 @@
@@ -11,9 +14,33 @@ and hasEditor() say there is none. The editor runs in the page (ui.wasm), built 
  
  //==============================================================================
  /** Sound definition for the Droplets Synth */
-@@ -481,14 +483,23 @@
+@@ -87,6 +89,13 @@
+         {
+             for (auto& droplet : droplets)
+                 droplet.active = false;
++#if DROPLETS_HEADLESS
++            // a hard stop: the release spawns no more droplets (renderNextBlock drips while the envelope is active)
++            modEnvelope.reset();
++            volumeEnvelope.reset();
++            secondaryEventTimer = 0;
++            dcBlockerX1L = dcBlockerX1R = dcBlockerY1L = dcBlockerY1R = 0.0f;
++#endif
+             clearCurrentNote();
+         }
+     }
+@@ -479,16 +488,33 @@
+         buffer.clear(i, 0, buffer.getNumSamples());
+ 
      synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
++}
++
++#if DROPLETS_HEADLESS
++// Called on the audio thread between blocks: every voice stops at once (sustain pedal too), allocates nothing
++void DropletsAudioProcessor::reset()
++{
++    synth.allNotesOff(0, false);
  }
++#endif
  
 +// DROPLETS_HEADLESS: a DSP-only build (the editor runs elsewhere, e.g. WebCLAP's split UI)
  juce::AudioProcessorEditor* DropletsAudioProcessor::createEditor()
@@ -35,3 +62,16 @@ and hasEditor() say there is none. The editor runs in the page (ui.wasm), built 
  }
  
  const juce::String DropletsAudioProcessor::getName() const
+--- a/synths/droplets/src/PluginProcessor.h
++++ b/synths/droplets/src/PluginProcessor.h
+@@ -14,6 +14,10 @@
+     void releaseResources() override;
+     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
+     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
++#if DROPLETS_HEADLESS
++    // the host stopped (openDAW resets its devices on stop): the voices and their release die
++    void reset() override;
++#endif
+ 
+     // --- 3. Editor & UI ---
+     juce::AudioProcessorEditor* createEditor() override;

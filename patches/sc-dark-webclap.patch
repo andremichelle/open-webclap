@@ -2,6 +2,7 @@ SC Dark WebCLAP support at upstream cc990a190545c515b590b05d5e0f4cdcae175b5b.
 Add WASM-only NIH-plug webview hooks and single-threaded startup/state guards.
 Make desktop dependencies optional and connect the separate browser editor.
 Add Match level cancellation for preset loading. Original FFT/compression DSP is unchanged.
+Reset also clears the STFT ring buffers (openDAW resets its devices on stop).
 
 diff --git a/framework/nih_plug/src/plugin/clap.rs b/framework/nih_plug/src/plugin/clap.rs
 index e490fdd..b7adf16 100644
@@ -155,7 +156,7 @@ index 3d9ceca..4586848 100644
 -hot-reload = []
 +hot-reload = ["desktop"]
 diff --git a/plugin/src/lib.rs b/plugin/src/lib.rs
-index 2ca3d6c..aa8853c 100644
+index 2ca3d6c..56c3b29 100644
 --- a/plugin/src/lib.rs
 +++ b/plugin/src/lib.rs
 @@ -19,6 +19,7 @@ use atomic_float::AtomicF32;
@@ -224,7 +225,17 @@ index 2ca3d6c..aa8853c 100644
      fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
          editor::create(
              self.params.editor_state.clone(),
-@@ -757,6 +771,17 @@ fn process_stft_sidechain(
+@@ -403,6 +417,9 @@ impl Plugin for SpectralCompressor {
+     }
+
+     fn reset(&mut self) {
++        // The host stopped (openDAW resets its devices on stop): the STFT's ring buffers would play up to a
++        // window of the old audio at the next start. Zero-filled within their capacity, nothing allocates.
++        self.stft.set_block_size(self.window_size());
+         self.dry_wet_mixer.reset();
+         self.compressor_bank.reset();
+     }
+@@ -757,6 +774,17 @@ fn process_stft_sidechain(
  }
 
  impl ClapPlugin for SpectralCompressor {
@@ -242,7 +253,7 @@ index 2ca3d6c..aa8853c 100644
      const CLAP_ID: &'static str = "de.polarity-music.polarity-sc-dark";
      const CLAP_DESCRIPTION: Option<&'static str> =
          Some("Turn things into pink noise on demand and more.");
-@@ -773,6 +798,7 @@ impl ClapPlugin for SpectralCompressor {
+@@ -773,6 +801,7 @@ impl ClapPlugin for SpectralCompressor {
      ];
  }
 
@@ -250,7 +261,7 @@ index 2ca3d6c..aa8853c 100644
  impl Vst3Plugin for SpectralCompressor {
      const VST3_CLASS_ID: [u8; 16] = VST3_CLASS_ID_BYTES;
      const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[
-@@ -783,4 +809,5 @@ impl Vst3Plugin for SpectralCompressor {
+@@ -783,4 +812,5 @@ impl Vst3Plugin for SpectralCompressor {
  }
 
  nih_export_clap!(SpectralCompressor);

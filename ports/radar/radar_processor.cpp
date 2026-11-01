@@ -70,6 +70,16 @@ void Processor::prepareToPlay (double sampleRate_, int)
     tail = {};
 }
 
+void Processor::reset()
+{
+    held.clear();
+    envelope = 0.0f;
+    tail = {};
+    retrigger = false;
+    restart = true;
+    freePhase = 0.0;
+}
+
 bool Processor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();

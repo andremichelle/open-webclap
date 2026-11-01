@@ -6,6 +6,8 @@ Odin 2: the hooks the WebCLAP port needs (ODIN_WEBCLAP, ODIN_HEADLESS).
   the editor closed kept the previous order)
 - the browser starts at 100 % zoom (the config file does not persist there)
 - Aldrich sized like on Windows: the browser measures fonts by hhea like CoreText (see getAldrichFont)
+- reset(): the host stopped (openDAW resets its devices on stop); resetAudioEngine plus the reverb, the arp and
+  the mono note list, allocating nothing (the arp ends its notes in place)
 
 diff -ruN a/Source/ConfigFileManager.h b/Source/ConfigFileManager.h
 --- a/Source/ConfigFileManager.h
@@ -41,7 +43,7 @@ diff -ruN a/Source/GlobalIncludes.h b/Source/GlobalIncludes.h
 diff -ruN a/Source/PluginProcessor.h b/Source/PluginProcessor.h
 --- a/Source/PluginProcessor.h
 +++ b/Source/PluginProcessor.h
-@@ -96,6 +96,16 @@
+@@ -96,6 +96,18 @@
  	std::function<void(float)> updatePitchWheelGUI = [](float p_value) {};
  	std::function<void(float)> updateModWheelGUI   = [](float p_value) {};
  
@@ -53,12 +55,14 @@ diff -ruN a/Source/PluginProcessor.h b/Source/PluginProcessor.h
 +	AudioProcessorValueTreeState &getValueTreeState() {
 +		return m_value_tree;
 +	}
++	// the host stopped (openDAW resets its devices on stop): voices, sustain, arp and FX tails die
++	void reset() override;
 +#endif
 +
  	// this is used to retrigger a held down note if the note after it was released. It stores note and velocity
  	std::list<std::pair<int, int>> m_playmode_mono_note_list;
  	Atomic<int> m_step_led_active = -1;
-@@ -308,6 +318,9 @@
+@@ -308,6 +320,9 @@
  
  	bool m_force_values_onto_gui = false; // used for loading state and then remembering to force values once
  	                                      // the editor was created
@@ -124,6 +128,24 @@ diff -ruN a/Source/PluginProcessorMisc.cpp b/Source/PluginProcessorMisc.cpp
  		}
  	}
  }
+@@ -287,6 +299,17 @@
+ 	m_voice_manager.reset();
+ }
+ 
++#if ODIN_WEBCLAP
++// Called on the audio thread between blocks: resetAudioEngine misses the reverb, the arp and the mono note list
++void OdinAudioProcessor::reset() {
++	resetAudioEngine(); // voices, filters, FX, global LFO/env, voice manager (its sustain and kill list too)
++	m_reverb_zita.reset();
++	m_arpeggiator.reset();
++	m_arpeggiator.setSustainActive(false);
++	m_playmode_mono_note_list.clear();
++}
++#endif
++
+ void OdinAudioProcessor::setBPM(float p_BPM) {
+ 	for (int voice = 0; voice < VOICES; ++voice) {
+ 		m_voice[voice].setBPM(p_BPM, m_lfo1_sync, m_lfo2_sync, m_lfo3_sync);
 diff -ruN a/Source/PluginProcessorReadPatch.cpp b/Source/PluginProcessorReadPatch.cpp
 --- a/Source/PluginProcessorReadPatch.cpp
 +++ b/Source/PluginProcessorReadPatch.cpp
@@ -157,3 +179,25 @@ diff -ruN a/Source/PluginProcessorReadPatch.cpp b/Source/PluginProcessorReadPatc
  }
  
  bool OdinAudioProcessor::checkLoadParameter(const String &p_name) {
+diff -ruN a/Source/gui/OdinArpeggiator.cpp b/Source/gui/OdinArpeggiator.cpp
+--- a/Source/gui/OdinArpeggiator.cpp
++++ b/Source/gui/OdinArpeggiator.cpp
+@@ -221,11 +221,18 @@
+ 
+ void OdinArpeggiator::endPlayingNotes() {
+ 	//set timer to max, so it ends on next sample
++#if ODIN_WEBCLAP
++	// in place: the processor's reset() calls this on the audio thread
++	for (auto &note : m_playing_notes) {
++		note.second = std::numeric_limits<float>::max();
++	}
++#else
+ 	std::vector<std::pair<int, float>> ret;
+ 	for (auto note : m_playing_notes) {
+ 		ret.push_back(std::make_pair(note.first, std::numeric_limits<float>::max()));
+ 	}
+ 	m_playing_notes = ret;
++#endif
+ }
+ 
+ void OdinArpeggiator::allMidiNotesOff() {

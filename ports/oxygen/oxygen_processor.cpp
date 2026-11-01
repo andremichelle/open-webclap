@@ -105,6 +105,19 @@ void Processor::releaseResources()
         module->releaseResources();
 }
 
+// The host stopped (openDAW resets its devices on stop): every module's lookahead, filters and envelopes are cleared,
+// so nothing sounds on or comes back at the next start. Called on the audio thread between blocks, allocates nothing.
+void Processor::reset()
+{
+    for (auto* module : chain->modules())
+        module->reset();
+
+    for (auto& ring : history)
+        std::fill (ring.begin(), ring.end(), 0.0f);
+
+    meters = {};
+}
+
 bool Processor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     return layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo()

@@ -1,8 +1,21 @@
 --- a/src/PluginProcessor.cpp
 +++ b/src/PluginProcessor.cpp
-@@ -856,14 +856,23 @@
+@@ -855,15 +855,36 @@
+     }
  }
  
++#if RIPPLERX_HEADLESS
++// Called on the audio thread between blocks: clears what sounds on, allocates nothing
++void RipplerXAudioProcessor::reset()
++{
++    clearVoices();
++    sustainPedal = false;
++    sustainPedalNotes.clear();
++    comb.clear();
++    limiter.clear();
++}
++#endif
++
  //==============================================================================
 +// RIPPLERX_HEADLESS: a DSP-only build (the editor runs elsewhere, e.g. WebCLAP's split UI)
  bool RipplerXAudioProcessor::hasEditor() const
@@ -24,3 +37,52 @@
  }
  
  //==============================================================================
+--- a/src/PluginProcessor.h
++++ b/src/PluginProcessor.h
+@@ -90,6 +90,10 @@
+     template <typename FloatType>
+     void processBlockByType(AudioBuffer<FloatType>& buffer, MidiBuffer& midiMessages);
+     void clearVoices();
++#if RIPPLERX_HEADLESS
++    // the host stopped (openDAW resets its devices on stop): resonators, sustain and the stereoizer die
++    void reset() override;
++#endif
+     void toggleTheme();
+     //==============================================================================
+     juce::AudioProcessorEditor* createEditor() override;
+--- a/src/dsp/Comb.h
++++ b/src/dsp/Comb.h
+@@ -17,6 +17,15 @@
+     std::fill(buf.begin(), buf.end(), 0.0);
+   }
+ 
++#if RIPPLERX_HEADLESS
++  // silence without resizing (the processor's reset() runs on the audio thread)
++  void clear()
++  {
++    pos = 0;
++    std::fill(buf.begin(), buf.end(), 0.0);
++  }
++#endif
++
+   std::tuple<double, double> process(double input) {
+     buf[pos] = input;
+     pos = (pos + 1) % buf.size();
+--- a/src/dsp/Limiter.h
++++ b/src/dsp/Limiter.h
+@@ -53,6 +53,15 @@
+ 		runave = 0.0;
+ 	}
+ 
++#if RIPPLERX_HEADLESS
++	// forget the gain reduction (the processor's reset() runs on the audio thread)
++	void clear()
++	{
++		rundb = 0.0;
++		runave = 0.0;
++	}
++#endif
++
+ 	std::tuple<double, double> process(double spl0, double spl1)
+ 	{
+ 		auto maxspl = fmax(fabs(spl0), fabs(spl1));

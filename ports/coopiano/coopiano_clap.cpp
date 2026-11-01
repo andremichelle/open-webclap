@@ -207,6 +207,7 @@ struct Coopiano
         waiting.clear();
         waitingHead = 0;
         std::fill (std::begin (midiPedal), std::end (midiPedal), 0.0);
+        pedalDirty = true; // the engine's reset lifted the pedal, the Sustain value goes in again
         applyValues();
     }
 
