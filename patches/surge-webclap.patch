@@ -13,6 +13,11 @@ Surge XT: the hooks the WebCLAP port needs (SURGE_WEBCLAP, SURGE_HEADLESS).
   thread, there is no audio thread to hand it to, and the page's snapshot right after a host load must show it.
 - SURGE_WEBCLAP: patch loads without audio raise patchChanged, as loads in the audio thread do. The editor's engine
   in WebCLAP never plays, and this is how its patch loads reach the DSP side.
+- SURGE_WEBCLAP: the host's reset (openDAW resets its devices on stop) calls stopSound: the voices, held notes
+  and FX tails die. Reverb 2 clears its delay lines on suspend, Nimbus starts its resamplers and granular
+  processor over in place (no allocation on the audio thread), Convolution gets a suspend (its convolvers, delay
+  and filters clear; pffft's convolvers get clearState, which keeps the impulse response) and Resonator clears its
+  filter registers.
 - Builds without MTS-ESP (SURGE_SKIP_ODDSOUND_MTS) and for 32-bit size_t: the editor no longer sets
   uiThreadChecksTunings, which only exists with MTS-ESP, and the patch backup hash's 64-bit FNV basis is truncated
   explicitly. Both are upstream build fixes, not WebCLAP specific.
@@ -144,6 +149,23 @@ Surge XT: the hooks the WebCLAP port needs (SURGE_WEBCLAP, SURGE_HEADLESS).
      if (surge->audio_processing_active)
      {
          oscCheckStartup = true;
+@@ -1649,7 +1673,15 @@
+     return bypassParameter;
+ }
+ 
+-void SurgeSynthProcessor::reset() { blockPos = 0; }
++void SurgeSynthProcessor::reset()
++{
++    blockPos = 0;
++#if SURGE_WEBCLAP
++    // the host stopped (openDAW resets its devices on stop): the voices, held notes and FX tails die, as the
++    // bypass does in processBlock (stopSound frees the voices and suspends every FX)
++    surge->stopSound();
++#endif
++}
+ 
+ void SurgeSynthProcessor::tryLazyOscStartupFromStreamedState()
+ {
 --- a/src/surge-xt/osc/OpenSoundControl.h
 +++ b/src/surge-xt/osc/OpenSoundControl.h
 @@ -36,7 +36,9 @@
@@ -373,3 +395,216 @@ Surge XT: the hooks the WebCLAP port needs (SURGE_WEBCLAP, SURGE_HEADLESS).
  
      lua_State *L{nullptr}; // This is assigned by prepareForEvaluation to be one per thread
  };
+--- a/libs/sst/sst-effects/include/sst/effects/NimbusImpl.h
++++ b/libs/sst/sst-effects/include/sst/effects/NimbusImpl.h
+@@ -79,8 +79,30 @@
+     mix.set_target(1.f);
+     mix.instantize();
+ 
+-    surgeSR_to_euroSR = std::make_unique<resamp_t>(this->sampleRate(), processor_sr);
+-    euroSR_to_surgeSR = std::make_unique<resamp_t>(processor_sr, this->sampleRate());
++#if SURGE_WEBCLAP
++    // a suspend (the host's reset) runs on the audio thread: the resamplers and the granular processor (its
++    // buffer, grains, feedback and reverb) start over in place, allocating nothing
++    if (surgeSR_to_euroSR && euroSR_to_surgeSR)
++    {
++        new (surgeSR_to_euroSR.get()) resamp_t(this->sampleRate(), processor_sr);
++        new (euroSR_to_surgeSR.get()) resamp_t(processor_sr, this->sampleRate());
++
++        const int memLen = 118784; // as the constructor
++        const int ccmLen = 65536 - 128;
++        std::memset(block_mem, 0, memLen);
++        std::memset(block_ccm, 0, ccmLen);
++        processor->~GranularProcessor();
++        std::memset((void *)processor, 0, sizeof(clouds::GranularProcessor));
++        processor = new (processor) clouds::GranularProcessor();
++        processor->Init(block_mem, memLen, block_ccm, ccmLen);
++        numStubs = 0;
++    }
++    else
++#endif
++    {
++        surgeSR_to_euroSR = std::make_unique<resamp_t>(this->sampleRate(), processor_sr);
++        euroSR_to_surgeSR = std::make_unique<resamp_t>(processor_sr, this->sampleRate());
++    }
+ 
+     memset(resampled_output, 0, raw_out_sz * 2 * sizeof(float));
+ 
+--- a/libs/sst/sst-effects/include/sst/effects/Reverb2.h
++++ b/libs/sst/sst-effects/include/sst/effects/Reverb2.h
+@@ -79,6 +79,9 @@
+         allpass();
+         float process(float x, float coeff);
+         void setLen(int len);
++#if SURGE_WEBCLAP
++        void clear() { memset(_data, 0, MAX_ALLPASS_LEN * sizeof(float)); }
++#endif
+ 
+       private:
+         int _len;
+@@ -93,6 +96,9 @@
+         float process(float x, int tap1, float &tap_out1, int tap2, float &tap_out2,
+                       int modulation);
+         void setLen(int len);
++#if SURGE_WEBCLAP
++        void clear() { memset(_data, 0, MAX_DELAY_LEN * sizeof(float)); }
++#endif
+ 
+       private:
+         int _len;
+@@ -104,6 +110,9 @@
+     {
+       public:
+         predelay() { memset(_data, 0, PREDELAY_BUFFER_SIZE * sizeof(float)); }
++#if SURGE_WEBCLAP
++        void clear() { memset(_data, 0, PREDELAY_BUFFER_SIZE * sizeof(float)); }
++#endif
+         float process(float in, int tap)
+         {
+             k = (k + 1);
+@@ -128,6 +137,9 @@
+         onepole_filter();
+         float process_lowpass(float x, float c0);
+         float process_highpass(float x, float c0);
++#if SURGE_WEBCLAP
++        void clear() { a0 = 0.f; }
++#endif
+ 
+       private:
+         float a0;
+@@ -139,7 +151,28 @@
+     void initialize() { setvars(true); }
+     void processBlock(float *__restrict L, float *__restrict R);
+ 
++#if SURGE_WEBCLAP
++    // initialize keeps the delay lines: a suspend (the host's reset) clears what rings on
++    void suspendProcessing()
++    {
++        for (auto &a : _input_allpass)
++            a.clear();
++        for (auto &block : _allpass)
++            for (auto &a : block)
++                a.clear();
++        for (int b = 0; b < NUM_BLOCKS; b++)
++        {
++            _delay[b].clear();
++            _hf_damper[b].clear();
++            _lf_damper[b].clear();
++        }
++        _predelay.clear();
++        _state = 0.f;
++        initialize();
++    }
++#else
+     void suspendProcessing() { initialize(); }
++#endif
+     int getRingoutDecay() const { return ringout_time; }
+     size_t silentSamplesLength() const { return 10; }
+     void onSampleRateChanged() { initialize(); }
+--- a/src/common/dsp/effects/ConvolutionEffect.h
++++ b/src/common/dsp/effects/ConvolutionEffect.h
+@@ -60,6 +60,10 @@
+     void init_default_values() override;
+     int get_ringout_decay() override;
+     void process(float *dataL, float *dataR) override;
++#if SURGE_WEBCLAP
++    // upstream has no suspend: the convolution tail sounded on after stopSound (the host's reset)
++    void suspend() override;
++#endif
+ 
+   private:
+     void prep_ir();
+--- a/src/common/dsp/effects/ConvolutionEffect.cpp
++++ b/src/common/dsp/effects/ConvolutionEffect.cpp
+@@ -147,6 +147,21 @@
+     delay_latched_ = false;
+ }
+ 
++#if SURGE_WEBCLAP
++void ConvolutionEffect::suspend()
++{
++    convolverL_.clearState();
++    convolverR_.clearState();
++    delayL_.clear();
++    delayR_.clear();
++    delayedL_.fill(0.f);
++    delayedR_.fill(0.f);
++    lc_.suspend();
++    hc_.suspend();
++    tilt_.init(); // clears the filter state only
++}
++#endif
++
+ void ConvolutionEffect::init_ctrltypes()
+ {
+     static struct ConvolutionDeactivator : public ParameterDynamicDeactivationFunction
+--- a/libs/pffft/fft_convolve.hpp
++++ b/libs/pffft/fft_convolve.hpp
+@@ -23,6 +23,9 @@
+ 
+ #include <span>
+ #include <vector>
++#if SURGE_WEBCLAP
++#include <algorithm>
++#endif
+ 
+ #include "pffft.hpp"
+ 
+@@ -69,6 +72,22 @@
+     // Resets the convolver and discards the set inpulse response.
+     void reset();
+ 
++#if SURGE_WEBCLAP
++    // Silences the convolver and keeps the impulse response, allocating nothing
++    void clearState()
++    {
++        std::ranges::fill(fftBuffer_, 0);
++        for (auto &segment : segments_)
++            std::ranges::fill(segment, 0);
++        std::ranges::fill(preMultiplied_, 0);
++        std::ranges::fill(conv_, 0);
++        std::ranges::fill(inputBuffer_, 0);
++        std::ranges::fill(overlap_, 0);
++        currentSegment_ = 0;
++        inputBufferFill_ = 0;
++    }
++#endif
++
+   private:
+     friend class TwoStageConvolver;
+     using RTFFT = FFT<float, std::dynamic_extent>;
+@@ -114,6 +133,21 @@
+     void process(std::span<float> input, std::span<float> output);
+     void reset();
+ 
++#if SURGE_WEBCLAP
++    // Silences the convolver and keeps the impulse response, allocating nothing
++    void clearState()
++    {
++        headConvolver_.clearState();
++        tailConvolver0_.clearState();
++        tailConvolver_.clearState();
++        for (auto *v : {&tailOutput0_, &tailPrecalculated0_, &tailOutput_, &tailPrecalculated_, &tailInput_,
++                        &backgroundProcessingInput_})
++            std::ranges::fill(*v, 0);
++        tailInputFill_ = 0;
++        precalculatedPos_ = 0;
++    }
++#endif
++
+   private:
+     using FloatVec = Convolver::RTFFT::UnorderedTimeVector;
+     std::size_t headBlockSize_{0};
+--- a/src/common/dsp/effects/ResonatorEffect.cpp
++++ b/src/common/dsp/effects/ResonatorEffect.cpp
+@@ -51,6 +51,10 @@
+     sampleRateReset();
+     setvars(true);
+     bi = 0;
++#if SURGE_WEBCLAP
++    // the filter states ring on otherwise: suspend (the host's reset) calls init
++    memset(Reg, 0, sizeof(Reg));
++#endif
+ }
+ 
+ void ResonatorEffect::setvars(bool init)

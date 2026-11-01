@@ -1,0 +1,43 @@
+OB-Xf: the hooks the WebCLAP port needs (OBXF_WEBCLAP).
+
+- The host's reset (openDAW resets its devices on stop) ends every voice: the sustain pedal lifts, all notes
+  release and the envelopes go silent. allNotesOff releases channel 0 only, so each voice is released too, or MPE
+  voices on other channels would stay gated.
+
+--- a/src/ObxfProcessor.h
++++ b/src/ObxfProcessor.h
+@@ -50,6 +50,11 @@
+ 
+     void releaseResources() override;
+ 
++#if OBXF_WEBCLAP
++    // the host stopped (openDAW resets its devices on stop): voices, release tails and held notes die
++    void reset() override { synth.resetVoices(); }
++#endif
++
+     void processBlock(juce::AudioBuffer<float> &, juce::MidiBuffer &) override;
+ 
+     juce::AudioProcessorEditor *createEditor() override;
+--- a/src/engine/SynthEngine.h
++++ b/src/engine/SynthEngine.h
+@@ -153,8 +153,20 @@
+     {
+         allNotesOff();
+ 
++        ForEachVoice(ResetEnvelope());
++    }
++
++#if OBXF_WEBCLAP
++    // the host's reset: no voice sounds on, none stays gated or held (allNotesOff releases channel 0 only, MPE
++    // voices on other channels would stay gated)
++    void resetVoices()
++    {
++        sustainOff();
++        allSoundOff();
++        ForEachVoice(NoteOff(0.f));
+         ForEachVoice(ResetEnvelope());
+     }
++#endif
+ 
+     void sustainOn() { synth.sustainOn(); }
+ 

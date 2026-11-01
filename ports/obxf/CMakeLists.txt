@@ -116,6 +116,7 @@ set(OBXF_DEFINITIONS
     FMT_HEADER_ONLY=1
     SST_PLUGININFRA_HAS_VERSION_INFORMATION=1
     OBXF_VERSION_STR="1.1.0"
+    OBXF_WEBCLAP=1
     SIMDE_ENABLE_NATIVE_ALIASES=1)
 
 # ---------------------------------------------------------------------------------------------------------------

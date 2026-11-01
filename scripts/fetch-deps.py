@@ -320,7 +320,8 @@ def fetch_fonts():
 # patches/<prefix>-*.patch apply to external/<directory>
 PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "ripplerx"), ("odin2-", "odin2"),
                  ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
-                 ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric"), ("oxygen-", "oxygen")] + [(d + "-", d) for d, _, _ in ZL]
+                 ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric"), ("oxygen-", "oxygen"),
+                 ("obxf-", "OB-Xf")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():
