@@ -66,7 +66,44 @@
                                  ? juce::AudioChannelSet::stereo()
                                  : juce::AudioChannelSet::discreteChannels (50),
                              true)),
-@@ -6424,7 +6435,11 @@
+@@ -3009,7 +3020,36 @@
+     monoInputBuffer.clear();
+     inputBufferL.clear();
+     inputBufferR.clear();
++}
++
++#if OSD_WEBCLAP
++// Called on the audio thread between blocks: clears what sounds on, allocates nothing
++void OpenSpatialDelayProcessor::reset()
++{
++    std::fill (delayBufferL.begin(), delayBufferL.end(), 0.0f);
++    std::fill (delayBufferR.begin(), delayBufferR.end(), 0.0f);
++    feedbackSample = 0.0f;
++    std::fill (dryDelayLineL.begin(), dryDelayLineL.end(), 0.0f);
++    std::fill (dryDelayLineR.begin(), dryDelayLineR.end(), 0.0f);
++
++    for (int i = 0; i < MAX_OBJECTS; ++i)
++    {
++        pvPitchShifters[i].reset();
++        dopplerDelayAccum[i] = 0.0f;
++    }
++
++    doppler.resetAll();
++    filters.resetAll();
++    lfeFilter.reset();
++
++    for (auto& objectFilters : nfcFilters)
++        for (auto& filter : objectFilters)
++            filter.reset();
++
++    binauralRenderers[0].reset();
++    binauralRenderers[1].reset();
+ }
++#endif
+ 
+ // #############################################################################
+ // DELAY-SPECIFIC — Delay line, pitch shifter, tempo sync
+@@ -6424,7 +6464,11 @@
  //==============================================================================
  juce::AudioProcessorEditor* OpenSpatialDelayProcessor::createEditor()
  {
@@ -90,7 +127,17 @@
  public:
      static constexpr int MAX_OBJECTS = 12;
      static constexpr int MAX_DELAY_SECONDS = 24;  // 12 objects × 2s max base delay
-@@ -705,7 +708,8 @@
+@@ -699,13 +702,18 @@
+     //--------------------------------------------------------------------------
+     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+     void releaseResources() override;
++#if OSD_WEBCLAP
++    // the host stopped (openDAW resets its devices on stop): the echoes and tails die
++    void reset() override;
++#endif
+     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+ 
+     //--------------------------------------------------------------------------
      bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
  
      juce::AudioProcessorEditor* createEditor() override;
