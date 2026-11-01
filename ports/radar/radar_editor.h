@@ -41,7 +41,7 @@ struct Session
     bool loading = false;  // a sample is on its way to the DSP side
     bool dragging = false; // a file is dragged over the page
 
-    std::function<void (int index)> sendPattern;
+    std::function<void (int index, bool live)> sendPattern; // live: a drag's frame, the edit is not finished
     std::function<void()> openSampleFile;
     std::function<void()> openWindow; // the device panel asks the host for the window
 };

@@ -553,7 +553,7 @@ public:
 
     std::function<int()> shownPattern;                // the one drawn and edited
     std::function<void (const Pattern& before)> onCommit; // an edit finished: the pattern before it, for undo
-    std::function<void()> onEdited;                   // the pattern changed (also during a drag)
+    std::function<void (bool live)> onEdited;         // the pattern changed; live: during a drag, not finished
     std::function<void()> onSelectionChanged;
     std::function<void (Tool)> onToolKey;
 
@@ -954,7 +954,7 @@ private:
         repaint();
 
         if (onEdited)
-            onEdited();
+            onEdited (drag.mode != Drag::Mode::none);
     }
 
     void commit (const Pattern& previous)
@@ -962,7 +962,11 @@ private:
         if (previous == pattern())
             return;
 
-        edited();
+        // the drag's frames were live: this one finishes the edit (one undo step in the host)
+        repaint();
+
+        if (onEdited)
+            onEdited (false);
 
         if (onCommit)
             onCommit (previous);
@@ -1684,7 +1688,7 @@ public:
           rings ("Rings", { 1, 2, 3, 4, 6, 8, 12, 16, 24 }, 8)
     {
         view.shownPattern = [this] { return patternIndexOf (processor); };
-        view.onEdited = [this] { patternEdited(); };
+        view.onEdited = [this] (bool live) { patternEdited (live); };
         view.onCommit = [this] (const Pattern& previous) { pushUndo (previous); };
         view.onSelectionChanged = [this] { updateActions(); };
         view.onToolKey = [this] (RadarView::Tool tool) { chooseTool (tool); };
@@ -1964,10 +1968,10 @@ private:
         redoPill.setEnabledLook (! redo.empty());
     }
 
-    void patternEdited()
+    void patternEdited (bool live = false)
     {
         if (session.sendPattern)
-            session.sendPattern (patternIndexOf (processor));
+            session.sendPattern (patternIndexOf (processor), live);
 
         cells[(size_t) patternIndexOf (processor)]->refresh();
         updateActions();
@@ -2003,7 +2007,7 @@ private:
         pattern = std::move (step.pattern);
 
         if (session.sendPattern)
-            session.sendPattern (step.index);
+            session.sendPattern (step.index, false);
 
         // The step may be in another pattern: show that one
         if (step.index != patternIndexOf (processor))

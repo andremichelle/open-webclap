@@ -58,11 +58,11 @@ void sendToHost (const void* data, size_t size) { wclap_js_send (data, (int) siz
 
 void toPage (const juce::String& text) { wclap_js_to_page (text.toRawUTF8(), (int) text.getNumBytesAsUTF8()); }
 
-void sendPattern (int index)
+void sendPattern (int index, bool live)
 {
     juce::MemoryOutputStream out;
     out.writeInt ((int) app->pageId);
-    out.writeByte ((char) index);
+    out.writeByte ((char) (index | (live ? radar::Frame::live : 0)));
     app->processor->patterns[(size_t) index].write (out);
     app->bridge->sendPluginFrame (radar::Frame::pattern, out.getData(), out.getDataSize());
 }
@@ -156,7 +156,7 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_init (double pixelRatio)
 
     app->bridge = std::make_unique<juce::webclap::ProcessorBridge> (*app->processor, sendToHost);
 
-    app->session.sendPattern = [] (int index) { sendPattern (index); };
+    app->session.sendPattern = [] (int index, bool live) { sendPattern (index, live); };
     app->session.openSampleFile = [] { toPage ("open-sample"); };
     app->session.openWindow = [] { app->bridge->requestWindow(); };
     app->editor.reset (app->panel ? radar::createPanelEditor (*app->processor, app->session)

@@ -3,7 +3,9 @@
     endian.
 
     pattern   both ways   u32 source page, u8 index, the pattern (Pattern::write). A page sends what it edited, the
-                          DSP side takes it and passes it on to every page; a page skips what it sent itself.
+                          DSP side takes it and passes it on to every page; a page skips what it sent itself. From
+                          a page, the index's top bit (live) marks a drag's frame: the edit is not finished, the DSP
+                          side plays it but tells the host of the change only with the frame without it.
     sample    page to DSP u32 rate, u32 frames, u16 channels (1 or 2), u16 name bytes, the name (UTF-8), the frames
                           as 16 bit, a channel after the other. No frames clear the sample. The page's script decodes
                           the file and builds it (ui/index.html).
@@ -25,6 +27,8 @@ constexpr std::uint8_t sample = pattern + 1;
 constexpr std::uint8_t waveform = pattern + 2;
 constexpr std::uint8_t playback = pattern + 3;
 constexpr std::uint8_t sampleName = pattern + 4;
+
+constexpr std::uint8_t live = 0x80; // in a page's pattern frame index
 
 constexpr int waveformBins = 2048;
 } // namespace radar::Frame

@@ -31,14 +31,18 @@ struct RadarPage final : juce::webclap::PageExtension
         {
             juce::MemoryInputStream in (payload, size, false);
             const auto source = (std::uint32_t) in.readInt();
-            const auto index = (int) (std::uint8_t) in.readByte();
+            const auto byte = (std::uint8_t) in.readByte();
+            const auto index = (int) (byte & ~radar::Frame::live);
             radar::Pattern pattern;
 
             if (index < radar::numPatterns && pattern.read (in))
             {
                 radar.patterns[(size_t) index] = std::move (pattern);
                 due[(size_t) index] = source;
-                changed (processor);
+
+                // a drag's frames play at once; the host hears of the edit once it is finished (one undo step)
+                if ((byte & radar::Frame::live) == 0)
+                    changed (processor);
             }
         }
         else if (type == radar::Frame::sampleName)
