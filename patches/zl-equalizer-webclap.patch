@@ -17,6 +17,9 @@ ZLEqualizer for WebCLAP (ports/zl-equalizer), all under ZL_WEBCLAP:
   was saved
 - PluginEditor.cpp: not resizable, no resize corner (the page shows the editor at its size)
 - ui_setting_panel.cpp: no folder button in the settings footer (there is no settings file to reveal)
+- PluginProcessor, controller, dynamic_side_handler.hpp: reset() (the host's CLAP reset, on stop) clears the
+  dynamic, side-chain and solo filters, the side handlers' followers and RMS windows, the three correction FIRs
+  and the lookahead delay
 
 --- a/source/PluginEditor.cpp
 +++ b/source/PluginEditor.cpp
@@ -86,7 +89,21 @@ ZLEqualizer for WebCLAP (ports/zl-equalizer), all under ZL_WEBCLAP:
  
  namespace {
      juce::ValueTree copyWithType(const juce::ValueTree& source, const juce::Identifier& type) {
-@@ -354,7 +356,11 @@
+@@ -125,7 +127,13 @@
+ }
+ 
+ void PluginProcessor::releaseResources() {
++}
++
++#if ZL_WEBCLAP
++void PluginProcessor::reset() {
++    controller_.reset();
+ }
++#endif
+ 
+ bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+     if (layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo() &&
+@@ -354,7 +362,11 @@
  }
  
  juce::AudioProcessorEditor* PluginProcessor::createEditor() {
@@ -897,7 +914,19 @@ ZLEqualizer for WebCLAP (ports/zl-equalizer), all under ZL_WEBCLAP:
          curve_db_scales_[0].store(loadPara(zlstate::PCurveDBScale0::kID));
 --- a/source/zlp/controller.hpp
 +++ b/source/zlp/controller.hpp
-@@ -280,6 +280,7 @@
+@@ -56,6 +56,11 @@
+         explicit Controller(juce::AudioProcessor& processor);
+ 
+         void prepare(double sample_rate, size_t max_num_samples);
++
++#if ZL_WEBCLAP
++        // the host stopped (openDAW resets its devices on stop): clears what sounds on, allocates nothing
++        void reset();
++#endif
+ 
+         template <bool bypass = false>
+         void process(std::array<double*, 2> main_pointers,
+@@ -280,6 +285,7 @@
          }
  
      private:
@@ -905,3 +934,56 @@ ZLEqualizer for WebCLAP (ports/zl-equalizer), all under ZL_WEBCLAP:
          juce::AudioProcessor& p_ref_;
          zlchore::thread::Notifier to_update_{false};
          // filter structure
+--- a/source/PluginProcessor.hpp
++++ b/source/PluginProcessor.hpp
+@@ -28,6 +28,11 @@
+ 
+     void releaseResources() override;
+ 
++#if ZL_WEBCLAP
++    // the host stopped (openDAW resets its devices on stop): filters, followers, FIRs and the lookahead clear
++    void reset() override;
++#endif
++
+     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
+ 
+     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override;
+--- a/source/zlp/controller.cpp
++++ b/source/zlp/controller.cpp
+@@ -129,6 +129,23 @@
+         to_update_.signal();
+     }
+ 
++#if ZL_WEBCLAP
++    void Controller::reset() {
++        for (size_t i = 0; i < kBandNum; ++i) {
++            dynamic_side_handlers_[i].reset();
++            tdf_filters_[i].reset();
++            svf_filters_[i].reset();
++            parallel_filters_[i].reset();
++            side_filters_[i].reset();
++        }
++        match_stereo_fir_.reset();
++        mixed_stereo_fir_.reset();
++        zero_stereo_fir_.reset();
++        solo_filter_.reset();
++        delay_.reset();
++    }
++#endif
++
+     void Controller::prepareBuffer() {
+         if (!to_update_.check()) {
+             return;
+--- a/source/dsp/filter/dynamic_filter/dynamic_side_handler.hpp
++++ b/source/dsp/filter/dynamic_filter/dynamic_side_handler.hpp
+@@ -27,6 +27,10 @@
+ 
+         void reset() {
+             follower_.reset(static_cast<FloatType>(0));
++#if ZL_WEBCLAP
++            rms_buffer_.clear(); // the RMS window, too
++            square_sum_ = 0.0;
++#endif
+         }
+ 
+         void prepare(const double sample_rate, const double rms_max_length_seconds) {

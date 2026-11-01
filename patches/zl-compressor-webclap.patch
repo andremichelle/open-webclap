@@ -16,6 +16,9 @@ ZLCompressor for WebCLAP (ports/zl-compressor), all under ZL_WEBCLAP:
   was saved
 - PluginEditor.cpp: not resizable, no resize corner (the page shows the editor at its size)
 - ui_setting_panel.cpp: no folder button in the settings footer (there is no settings file to reveal)
+- PluginProcessor, compress_controller, equalize_controller: reset() (the host's CLAP reset, on stop) clears the
+  oversamplers, the oversampling and lookahead delays, the RMS trackers, the hold buffers, the followers (as the
+  style resets them) and the side-chain EQ's filters
 
 --- a/source/PluginEditor.cpp
 +++ b/source/PluginEditor.cpp
@@ -49,7 +52,21 @@ ZLCompressor for WebCLAP (ports/zl-compressor), all under ZL_WEBCLAP:
  
  namespace {
      juce::ValueTree copyWithType(const juce::ValueTree& source, const juce::Identifier& type) {
-@@ -504,7 +506,11 @@
+@@ -153,6 +155,13 @@
+ void PluginProcessor::releaseResources() {
+ }
+ 
++#if ZL_WEBCLAP
++void PluginProcessor::reset() {
++    compress_controller_.reset();
++    equalize_controller_.reset();
++}
++#endif
++
+ bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+     if (layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo() &&
+         layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo() &&
+@@ -504,7 +513,11 @@
  }
  
  juce::AudioProcessorEditor* PluginProcessor::createEditor() {
@@ -731,7 +748,19 @@ ZLCompressor for WebCLAP (ports/zl-compressor), all under ZL_WEBCLAP:
          enter_solo_mouse_ = static_cast<MouseActionType>(std::round(loadPara(zlstate::PEnterSoloMouse::kID)));
 --- a/source/zlp/compress_controller.hpp
 +++ b/source/zlp/compress_controller.hpp
-@@ -205,6 +205,9 @@
+@@ -37,6 +37,11 @@
+         explicit CompressController(juce::AudioProcessor& processor);
+ 
+         void prepare(double sample_rate, size_t max_num_samples);
++
++#if ZL_WEBCLAP
++        // the host stopped (openDAW resets its devices on stop): clears what sounds on, allocates nothing
++        void reset();
++#endif
+ 
+         void process(std::array<float*, 2> main_pointers, std::array<float*, 2> side_pointers,
+                      size_t num_samples, bool bypass);
+@@ -205,6 +210,9 @@
          }
  
      private:
@@ -743,7 +772,19 @@ ZLCompressor for WebCLAP (ports/zl-compressor), all under ZL_WEBCLAP:
          std::array<zldsp::vector::aligned_vector<float>, 2> pre_buffer_, post_buffer_, analyzer_side_buffer_;
 --- a/source/zlp/equalize_controller.hpp
 +++ b/source/zlp/equalize_controller.hpp
-@@ -137,6 +137,9 @@
+@@ -31,6 +31,11 @@
+ 
+         void prepare(double sample_rate, size_t max_num_samples);
+ 
++#if ZL_WEBCLAP
++        // the host stopped: the filter states die, allocates nothing
++        void reset();
++#endif
++
+         void process(std::array<double*, 2> pointers, size_t num_samples);
+ 
+         void setFilterStatus(const size_t filter_idx, const FilterStatus filter_status) {
+@@ -137,6 +142,9 @@
          }
  
      private:
@@ -753,3 +794,81 @@ ZLCompressor for WebCLAP (ports/zl-compressor), all under ZL_WEBCLAP:
          zlchore::thread::Notifier to_update_{true};
          zlchore::thread::Notifier to_update_gain_{true};
          std::atomic<double> gain_db_{0.f};
+--- a/source/PluginProcessor.hpp
++++ b/source/PluginProcessor.hpp
+@@ -34,6 +34,11 @@
+ 
+     void releaseResources() override;
+ 
++#if ZL_WEBCLAP
++    // the host stopped (openDAW resets its devices on stop): delays, oversamplers, filters and followers clear
++    void reset() override;
++#endif
++
+     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
+ 
+     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override;
+--- a/source/zlp/compress_controller.cpp
++++ b/source/zlp/compress_controller.cpp
+@@ -104,9 +104,43 @@
+         // init hold buffers
+         for (auto& h : hold_buffer_) {
+             h.setCapacity(static_cast<size_t>(8.0 * sample_rate));
++        }
++        to_update_.signal();
++    }
++
++#if ZL_WEBCLAP
++    void CompressController::reset() {
++#if ZL_MAX_OVERSAMPLE_RATE >= 1
++        over_sampler2_.reset();
++#endif
++#if ZL_MAX_OVERSAMPLE_RATE >= 2
++        over_sampler4_.reset();
++#endif
++#if ZL_MAX_OVERSAMPLE_RATE >= 3
++        over_sampler8_.reset();
++#endif
++#if ZL_MAX_OVERSAMPLE_RATE >= 4
++        over_sampler16_.reset();
++#endif
++#if ZL_MAX_OVERSAMPLE_RATE >= 5
++        over_sampler32_.reset();
++#endif
++#if ZL_MAX_OVERSAMPLE_RATE >= 6
++        over_sampler64_.reset();
++#endif
++        oversample_delay_.reset();
++        lookahead_delay_.reset();
++        for (auto& t : rms_tracker_) {
++            t.reset();
+         }
++        for (auto& h : hold_buffer_) {
++            h.clear();
++        }
++        // the followers reset as the style wants (prepareBuffer)
++        to_update_style_.signal();
+         to_update_.signal();
+     }
++#endif
+ 
+     void CompressController::prepareBuffer() {
+         if (!to_update_.check()) {
+--- a/source/zlp/equalize_controller.cpp
++++ b/source/zlp/equalize_controller.cpp
+@@ -33,6 +33,15 @@
+         solo_gain_.prepare(sample_rate, max_num_samples, 0.5);
+     }
+ 
++#if ZL_WEBCLAP
++    void EqualizeController::reset() {
++        for (auto& f : filters_) {
++            f.reset();
++        }
++        solo_filter_.reset();
++    }
++#endif
++
+     void EqualizeController::prepareBuffer() {
+         if (!to_update_.check()) {
+             return;

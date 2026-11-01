@@ -4,6 +4,8 @@ ZLWarm for WebCLAP (ports/zl-warm):
 - panel/logo_panel.cpp, PluginEditor.h, under ZL_WEBCLAP: one style, the default (dark), whatever ui_style holds; a
   double click on the logo no longer switches it, and the editor no longer listens to ui_style
 - PluginEditor.cpp: not resizable, no resize corner (the page shows the editor at its size)
+- dsp/controller.cpp, under ZL_WEBCLAP: reset() (the host's CLAP reset, on stop) clears the splitter's filters and
+  the oversamplers
 
 --- a/source/PluginEditor.cpp
 +++ b/source/PluginEditor.cpp
@@ -89,3 +91,23 @@ ZLWarm for WebCLAP (ports/zl-warm):
      }
  
      void LogoPanel::setJustification(int justificationFlags) {
+--- a/source/dsp/controller.cpp
++++ b/source/dsp/controller.cpp
+@@ -35,7 +35,16 @@
+ 
+     template<typename FloatType>
+     void Controller<FloatType>::reset() {
+-
++#if ZL_WEBCLAP
++        // the host stopped (openDAW resets its devices on stop): the filter and oversampler states die
++        splitter.reset();
++        juce::ScopedLock lock(oversampleLock);
++        for (auto &overSampler: overSamplers) {
++            if (overSampler != nullptr) {
++                overSampler->reset();
++            }
++        }
++#endif
+     }
+ 
+     template<typename FloatType>

@@ -12,6 +12,9 @@ ZLSplitter for WebCLAP (ports/zl-splitter), all under ZL_WEBCLAP:
 - other_ui_setting_panel, interface_definitons.cpp, PluginEditor.cpp: no tooltip language setting, tooltips in
   English whatever the state says
 - PluginEditor.cpp: not resizable, no resize corner (the page shows the editor at its size)
+- PluginProcessor, controller and the LH, LH FIR, TS and PS splitters: reset() (the host's CLAP reset, on stop)
+  clears the TPT and (reverse) IIR filters, the FIR FIFOs, spectral history and medians, the level windows, the
+  splitters' delays and the bypass delay
 
 --- a/source/PluginEditor.cpp
 +++ b/source/PluginEditor.cpp
@@ -58,7 +61,20 @@ ZLSplitter for WebCLAP (ports/zl-splitter), all under ZL_WEBCLAP:
  
  //==============================================================================
  PluginProcessor::PluginProcessor() :
-@@ -217,7 +219,11 @@
+@@ -107,6 +109,12 @@
+ void PluginProcessor::releaseResources() {
+ }
+ 
++#if ZL_WEBCLAP
++void PluginProcessor::reset() {
++    double_controller_.reset();
++}
++#endif
++
+ bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+     if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo()) {
+         return false;
+@@ -217,7 +225,11 @@
  }
  
  juce::AudioProcessorEditor* PluginProcessor::createEditor() {
@@ -557,7 +573,19 @@ ZLSplitter for WebCLAP (ports/zl-splitter), all under ZL_WEBCLAP:
  
 --- a/source/zlp/controller.hpp
 +++ b/source/zlp/controller.hpp
-@@ -83,6 +83,7 @@
+@@ -28,6 +28,11 @@
+ 
+         void prepare(double sample_rate, size_t max_num_samples);
+ 
++#if ZL_WEBCLAP
++        // the host stopped (openDAW resets its devices on stop): clears what sounds on, allocates nothing
++        void reset();
++#endif
++
+         void prepareBuffer();
+ 
+         void process(std::array<FloatType*, 2>& in_buffer,
+@@ -83,6 +88,7 @@
          }
  
      private:
@@ -565,3 +593,139 @@ ZLSplitter for WebCLAP (ports/zl-splitter), all under ZL_WEBCLAP:
          juce::AudioProcessor& p_ref_;
          std::array<FloatType*, 2> out_buffer1_, out_buffer2_;
          zldsp::splitter::LRSplitter<FloatType> lr_splitter_;
+--- a/source/PluginProcessor.hpp
++++ b/source/PluginProcessor.hpp
+@@ -28,6 +28,11 @@
+ 
+     void releaseResources() override;
+ 
++#if ZL_WEBCLAP
++    // the host stopped (openDAW resets its devices on stop): the splitters' filters, FIRs and delays clear
++    void reset() override;
++#endif
++
+     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
+ 
+     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+--- a/source/zlp/controller.cpp
++++ b/source/zlp/controller.cpp
+@@ -37,7 +37,22 @@
+                               static_cast<FloatType>(max_latency + 1) / static_cast<FloatType>(sample_rate));
+     }
+ 
++#if ZL_WEBCLAP
+     template <typename FloatType>
++    void Controller<FloatType>::reset() {
++        lh_splitter_.reset();
++        lh_fir_splitter_.reset();
++        for (auto& s : ts_splitter_) {
++            s.reset();
++        }
++        for (auto& s : ps_splitter_) {
++            s.reset();
++        }
++        bypass_delay_.reset();
++    }
++#endif
++
++    template <typename FloatType>
+     void Controller<FloatType>::prepareBuffer() {
+         if (to_update_.exchange(false, std::memory_order::acquire)) {
+             if (to_update_split_type_.exchange(false, std::memory_order::acquire)) {
+--- a/source/dsp/splitter/lh_splitter/lh_splitter.hpp
++++ b/source/dsp/splitter/lh_splitter/lh_splitter.hpp
+@@ -58,8 +58,26 @@
+             for (auto &f: high2) {
+                 f.prepare(sample_rate, num_channels);
+                 f.setFreq(c_freq_.getCurrent());
++            }
++        }
++
++#if ZL_WEBCLAP
++        // the filter states (the host stopped), allocates nothing
++        void reset() {
++            for (auto &f: low1) {
++                f.reset();
++            }
++            for (auto &f: high1) {
++                f.reset();
+             }
++            for (auto &f: low2) {
++                f.reset();
++            }
++            for (auto &f: high2) {
++                f.reset();
++            }
+         }
++#endif
+ 
+         void prepareBuffer() {
+             if (to_update_freq_.exchange(false, std::memory_order::acquire)) {
+--- a/source/dsp/splitter/lh_splitter/lh_fir_splitter.hpp
++++ b/source/dsp/splitter/lh_splitter/lh_fir_splitter.hpp
+@@ -68,7 +68,19 @@
+             delay_.prepare(sample_rate, max_num_samples, num_channels, max_delay / static_cast<FloatType>(sample_rate));
+ 
+             to_update_.store(true, std::memory_order::release);
++        }
++
++#if ZL_WEBCLAP
++        // the filter states and the high band's delay (the host stopped), allocates nothing
++        void reset() {
++            first_order_filter_.reset();
++            filter_[0].reset();
++            filter_[1].reset();
++            forward_filter_[0].reset();
++            forward_filter_[1].reset();
++            delay_.reset();
+         }
++#endif
+ 
+         void prepareBuffer() {
+             if (to_update_.exchange(false, std::memory_order::acquire)) {
+--- a/source/dsp/splitter/ts_splitter/ts_splitter.hpp
++++ b/source/dsp/splitter/ts_splitter/ts_splitter.hpp
+@@ -31,6 +31,23 @@
+             delay_.setDelayInSamples(delay_num);
+         }
+ 
++#if ZL_WEBCLAP
++        // the FIR's FIFOs, the steady delay, the spectral history and the medians (the host stopped)
++        void reset() {
++            zldsp::filter::FIRBase<FloatType, 10>::reset();
++            delay_.reset();
++            fft_line_pos_ = 0;
++            for (auto &line: fft_lines_) {
++                std::fill(line.begin(), line.end(), 0.f);
++            }
++            for (auto &median: time_median_) {
++                median.clear();
++            }
++            freq_median_.clear();
++            std::fill(mask_.begin(), mask_.end(), 0.f);
++        }
++#endif
++
+         void process(FloatType *in_buffer,
+                      FloatType *transient_buffer,
+                      FloatType *steady_buffer,
+--- a/source/dsp/splitter/ps_splitter/ps_splitter.hpp
++++ b/source/dsp/splitter/ps_splitter/ps_splitter.hpp
+@@ -33,6 +33,17 @@
+             to_update_.store(true, std::memory_order::release);
+         }
+ 
++#if ZL_WEBCLAP
++        // the level windows and the mask (the host stopped)
++        void reset() {
++            peak_sm_buffer_.clear();
++            steady_sm_buffer_.clear();
++            peak_sm_ = FloatType(0);
++            steady_sm_ = FloatType(0);
++            mask_ = FloatType(0);
++        }
++#endif
++
+         void prepareBuffer() {
+             if (to_update_.exchange(false, std::memory_order::acquire)) {
+                 updatePara();

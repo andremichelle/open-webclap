@@ -16,6 +16,8 @@ ZLSpectrumEqualizer for WebCLAP (ports/zl-spectrum-equalizer), all under ZL_WEBC
   was saved
 - PluginEditor.cpp: not resizable, no resize corner (the page shows the editor at its size)
 - ui_setting_panel.cpp: no folder button in the settings footer (there is no settings file to reveal)
+- PluginProcessor, controller, spec_dynamic.hpp: reset() (the host's CLAP reset, on stop) clears the FFT input,
+  output and working FIFOs (from the frame's start), the spectral dynamics' follower states and the solo filter
 
 --- a/source/PluginEditor.cpp
 +++ b/source/PluginEditor.cpp
@@ -62,7 +64,21 @@ ZLSpectrumEqualizer for WebCLAP (ports/zl-spectrum-equalizer), all under ZL_WEBC
  
  namespace {
      juce::ValueTree copyWithType(const juce::ValueTree& source, const juce::Identifier& type) {
-@@ -146,7 +148,11 @@
+@@ -109,7 +111,13 @@
+ }
+ 
+ void PluginProcessor::releaseResources() {
++}
++
++#if ZL_WEBCLAP
++void PluginProcessor::reset() {
++    controller_.reset();
+ }
++#endif
+ 
+ bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+     if (layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo() &&
+@@ -146,7 +154,11 @@
  }
  
  juce::AudioProcessorEditor* PluginProcessor::createEditor() {
@@ -724,7 +740,19 @@ ZLSpectrumEqualizer for WebCLAP (ports/zl-spectrum-equalizer), all under ZL_WEBC
          enter_solo_mouse_ = static_cast<MouseActionType>(std::round(loadPara(zlstate::PEnterSoloMouse::kID)));
 --- a/source/zlp/controller.hpp
 +++ b/source/zlp/controller.hpp
-@@ -309,6 +309,7 @@
+@@ -52,6 +52,11 @@
+         explicit Controller(juce::AudioProcessor& p);
+ 
+         void prepare(double sample_rate, size_t max_num_samples);
++
++#if ZL_WEBCLAP
++        // the host stopped (openDAW resets its devices on stop): clears what sounds on, allocates nothing
++        void reset();
++#endif
+ 
+         void prepareBuffer();
+ 
+@@ -309,6 +314,7 @@
              size_t dyn_start{0}, dyn_end{0};
          };
  
@@ -732,3 +760,64 @@ ZLSpectrumEqualizer for WebCLAP (ports/zl-spectrum-equalizer), all under ZL_WEBC
          juce::AudioProcessor& p_ref_;
          zlchore::thread::Notifier to_update_{false};
          // fft resolution
+--- a/source/PluginProcessor.hpp
++++ b/source/PluginProcessor.hpp
+@@ -28,6 +28,11 @@
+ 
+     void releaseResources() override;
+ 
++#if ZL_WEBCLAP
++    // the host stopped (openDAW resets its devices on stop): the FFT FIFOs, dynamics and solo filter clear
++    void reset() override;
++#endif
++
+     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
+ 
+     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+--- a/source/zlp/controller.cpp
++++ b/source/zlp/controller.cpp
+@@ -1058,8 +1058,28 @@
+             const auto v_in2 = hn::Load(d, in2_ptr + i);
+             hn::Store(hn::Mul(v_window, v_in1), d, in1_ptr + i);
+             hn::Store(hn::Mul(v_window, v_in2), d, in2_ptr + i);
++        }
++    }
++
++#if ZL_WEBCLAP
++    void Controller::reset() {
++        for (auto& fifo : input_fifos_) {
++            std::ranges::fill(fifo, 0.f);
++        }
++        for (auto& fifo : output_fifos_) {
++            std::ranges::fill(fifo, 0.f);
++        }
++        for (auto& fifo : fft_ins_) {
++            std::ranges::fill(fifo, 0.f);
+         }
++        fft_pos_ = 0;
++        fft_count_ = 0;
++        for (auto& dynamic : spec_dynamic_) {
++            dynamic.reset();
++        }
++        solo_filter_.reset();
+     }
++#endif
+ 
+     void Controller::prepareFFTPlans() {
+         const auto fft_medium_order = getMediumFFTOrder(sample_rate_);
+--- a/source/dsp/filter/spec_dynamic/spec_dynamic.hpp
++++ b/source/dsp/filter/spec_dynamic/spec_dynamic.hpp
+@@ -25,6 +25,13 @@
+             std::ranges::fill(states_, static_cast<FloatType>(0));
+         }
+ 
++#if ZL_WEBCLAP
++        // the followers' states, at the size prepare gave them
++        void reset() {
++            std::ranges::fill(states_, static_cast<FloatType>(0));
++        }
++#endif
++
+         template <bool to_add = true, bool bypass = false>
+         void process(FloatType* HWY_RESTRICT side_log_sqr,
+                      FloatType* HWY_RESTRICT dynamic_db,
