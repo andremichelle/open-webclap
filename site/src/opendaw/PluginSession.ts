@@ -137,6 +137,7 @@ export class PluginSession implements Terminable {
         first.waveform.setValue(ClassicWaveform.sine)
         first.volume.setValue(-6.0)
         second.volume.setValue(Number.NEGATIVE_INFINITY)
+        box.release.setValue(0.05) // short, so a sequence's notes stay apart
     }
 
     readonly #terminator = new Terminator()

@@ -211,7 +211,7 @@ const Workbench = ({lifecycle, session, loading, panel}: WorkbenchConstruct) => 
                 <PluginStatus lifecycle={lifecycle} session={session}/>
                 {kind !== "audio-fx" && midiStatus}
             </Panel>
-            {kind === "instrument" && (
+            {(kind === "instrument" || kind === "midi-fx") && (
                 <Panel title="Transport"><TransportSwitch lifecycle={lifecycle} session={session}/></Panel>
             )}
             {kind === "audio-fx" && (
@@ -264,7 +264,7 @@ const Workbench = ({lifecycle, session, loading, panel}: WorkbenchConstruct) => 
     )
 }
 
-// Plays and stops the engine's transport, for instruments that follow it (an audio effect's input runs it already)
+// Plays and stops the engine's transport, for instruments and note effects that follow it (an audio effect's input runs it already)
 const TransportSwitch = ({lifecycle, session}: { lifecycle: Lifecycle, session: PluginSession }) => {
     const {engine} = session
     const label: HTMLElement = <span/>
