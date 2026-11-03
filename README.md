@@ -49,7 +49,7 @@ plugin gets there depends on what it is written with, so the ports here come fro
 | [ZL Loudness Match](https://github.com/ZL-Audio/ZLLMatch) | Learns the loudness difference to a target and applies it as gain | JUCE kit: an `AudioProcessor`, the gain as a frame. It learns against a target value or the sidechain, the second input (`ports/zl-lmatch`) | GPL-3.0 |
 
 The license column is the plugin's and its port's (`ports/<port>/`). JUCE-built bundles link JUCE, so they ship as
-AGPL-3.0. SC Dark and coopiano do not link JUCE: SC Dark uses GPL-3.0-or-later, coopiano MIT. See
+AGPL-3.0. SC Dark, coopiano and Helm do not link JUCE: SC Dark and Helm use GPL-3.0-or-later, coopiano MIT. See
 [Licenses](#licenses).
 
 ## The site
@@ -176,13 +176,14 @@ its plugin's license (see the table above, and `ports/<port>/LICENSE` for the GP
 `patches/juce-8-wasm.patch` modifies JUCE and falls under JUCE's license, the other patches under their plugin's
 license.
 
-Each JUCE bundle ships its license (`LICENSE`, AGPL-3.0; coopiano's is MIT), `NOTICES.md` (components, copyrights, the repository commit
-it was built from) and the longer texts in `licenses/`, see `ports/<port>/NOTICES.md.in` and
+Each JUCE bundle ships its license (`LICENSE`, AGPL-3.0; coopiano's is MIT, Helm's GPL-3.0), `NOTICES.md` (components,
+copyrights, the repository commit it was built from) and the longer texts in `licenses/`, see `ports/<port>/NOTICES.md.in` and
 `scripts/bundle-license.sh`. Build hosted bundles from a clean, pushed commit, so the source link matches.
 
 JUCE-built bundles link JUCE, so they are AGPLv3 (or covered by a commercial JUCE license) and also under the port's
 license. JUCE is AGPLv3/commercial, OB-Xf is GPL-3.0-or-later, RipplerX GPL-3.0, Odin 2 GPL-3.0-or-later (its Aldrich
-font OFL-1.1), Surge XT GPL-3.0-or-later, Six Sines MIT (GPL-3.0 as built), coopiano MIT, OpenSpatialDelay GPL-3.0
+font OFL-1.1), Surge XT GPL-3.0-or-later, Six Sines MIT (GPL-3.0 as built), coopiano MIT, Helm GPL-3.0-or-later (by
+Matt Tytel, https://github.com/mtytel/helm; its factory patches CC BY 4.0, each by its author), OpenSpatialDelay GPL-3.0
 (its fonts OFL-1.1, libmysofa BSD-3-Clause, the MIT KEMAR, CIPIC and HUTUBS HRTF sets under their own terms, see
 `ports/open-spatial-delay/NOTICES.md.in`), the CLAP headers MIT, the DejaVu fonts
 under the Bitstream Vera license; none of them is checked in, `scripts/fetch-deps.py` downloads them.
