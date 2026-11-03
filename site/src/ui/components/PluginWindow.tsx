@@ -111,11 +111,13 @@ export const PluginWindow = ({lifecycle, session, log, onLayout, panel = false}:
                         engine.wclapReceive(deviceUuid, data.bytes)
                         scheduleSave()
                     } else if (data?.type === "wclap-wheel") {
-                        // a wheel event the page did not use: the column around the editor scrolls (deltaMode 1 lines, 2 pages)
+                        // a wheel event the page did not use: a plugin wider than the column scrolls sideways in
+                        // its viewport, the column around the editor scrolls (deltaMode 1 lines, 2 pages)
                         const parent = scrollParent(element)
-                        if (parent === null) {return}
-                        const unit = data.deltaMode === 1 ? 16 : data.deltaMode === 2 ? parent.clientHeight : 1
-                        parent.scrollBy(data.deltaX * unit, data.deltaY * unit)
+                        const unit = data.deltaMode === 1 ? 16 : data.deltaMode === 2 ? (parent?.clientHeight ?? 0) : 1
+                        const sideways = viewport.scrollWidth > viewport.clientWidth
+                        if (sideways) {viewport.scrollBy(data.deltaX * unit, 0)}
+                        parent?.scrollBy(sideways ? 0 : data.deltaX * unit, data.deltaY * unit)
                     } else if (data?.type === "wclap-key") {
                         // plain keys reach the page and the site (the computer keyboard plays notes in both)
                         window.dispatchEvent(new KeyboardEvent(data.kind, data.init))
