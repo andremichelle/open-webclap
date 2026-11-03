@@ -291,6 +291,25 @@ assert.equal(hello.sent[1][0], PLUGIN.SNAPSHOT)
 assert.equal(hello.sent[1].length, STATE_SIZE)
 console.log(`hello: description ${hello.sent[0].length} bytes, snapshot ${hello.sent[1].length} bytes`)
 
+// the window resizes at its aspect ratio, from half to twice the size (openDAW's zoom levels need can_resize)
+{
+    const size = host.malloc(20)
+    const gui = (offset, ...args) => host.fn(host.gui + offset)(host.plugin, ...args)
+    assert.ok(gui(24), "can_resize")
+    assert.ok(gui(28, size))
+    assert.deepEqual([host.view.getUint8(size + 2), host.u32(size + 4), host.u32(size + 8)], [1, 1128, 700], "aspect ratio")
+    host.view.setUint32(size, 1692, true)
+    host.view.setUint32(size + 4, 2000, true)
+    gui(32, size, size + 4)
+    assert.deepEqual([host.u32(size), host.u32(size + 4)], [1692, 1050], "adjusted to 150 %")
+    assert.ok(gui(36, 1692, 1050), "set_size")
+    assert.ok(!gui(36, 1692, 900), "another aspect ratio is refused")
+    gui(20, size, size + 4)
+    assert.deepEqual([host.u32(size), host.u32(size + 4)], [1692, 1050], "get_size")
+    assert.ok(gui(36, 1128, 700))
+    console.log("window resizes at 1128:700")
+}
+
 // notes start at their sample
 let result = host.run([on(77, 60)], 4 * BLOCK)
 assert.ok(firstSound(result.left) >= 77 && firstSound(result.left) < 77 + 8, `note at 77 sounds from ${firstSound(result.left)}`)
@@ -392,7 +411,7 @@ assert.equal(poll.sent.length, 0, "nothing while nothing sounds")
 start = host.position
 host.run([on(start, 60)], start + 10 * BLOCK)
 poll = host.page(PAGE.POLL, () => {}, 4)
-assert.ok(poll.sent.every(message => message[0] === PLUGIN.ACTIVITY && message.length === 4 + 22), "activity is 26 bytes")
+assert.ok(poll.sent.every(message => message[0] === PLUGIN.ACTIVITY && message.length === 4 + 28), "activity is 32 bytes")
 host.run([off(host.position, 60)], host.position + SAMPLE_RATE)
 console.log("state and page traffic ok")
 

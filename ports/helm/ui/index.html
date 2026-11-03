@@ -138,9 +138,22 @@
             font-variant-numeric: tabular-nums;
         }
 
-        .bar canvas.level {
-            width: 8em;
-            height: 0.5em;
+        /* openDAW Studio's HorizontalPeakMeter (HorizontalMeter.sass), one channel */
+        .bar .meter {
+            position: relative;
+            width: 8rem;
+            height: 0.625rem;
+            border-radius: 0.625rem;
+            background-color: rgba(0, 0, 0, 0.18);
+            box-shadow: 0 0.5px 0.5px 0 rgba(255, 255, 255, 0.04), 0 0.5px 0.5px 0 rgba(0, 0, 0, 0.03) inset;
+        }
+
+        .bar .meter > canvas {
+            position: absolute;
+            top: 0.125rem;
+            left: 0.25rem;
+            width: calc(100% - 0.5rem);
+            height: 0.375rem;
         }
 
         .bar .master {
@@ -150,9 +163,36 @@
             height: 100%;
         }
 
-        .bar .master svg.knob {
-            width: 1.75em;
-            height: 1.75em;
+        /* the volume as a row in the bar: its name, the knob at the size of the others, the value */
+        .bar .master .column {
+            font-size: calc(1em / 0.75);
+            display: flex;
+            align-items: center;
+            column-gap: 0.25em;
+            height: 100%;
+            margin: 0;
+        }
+
+        .bar .master .column > h5, .bar .master .column > label {
+            width: auto;
+            height: auto;
+            line-height: normal;
+            font-size: 0.625em;
+        }
+
+        /* the number right-aligned in a fixed width, the unit after it in its own: nothing moves as it changes */
+        .bar .master .column > label {
+            width: 4.5em;
+            justify-content: flex-end;
+        }
+
+        .bar .master .column > label::after {
+            flex: 0 0 1.25em;
+            text-align: left;
+        }
+
+        .bar .master {
+            margin-left: 1em;
         }
 
         /* modulation sources */
@@ -165,6 +205,9 @@
 
         .source {
             position: relative;
+            flex: 1 1 0;
+            min-width: 0;
+            justify-content: center;
             display: flex;
             align-items: center;
             column-gap: 0.5em;
@@ -194,7 +237,18 @@
             background: var(--color-background);
         }
 
+        /* two digits wide, empty or not, so the buttons keep their width */
+        /* a source the host does not send (aftertouch, mod wheel, pitch wheel in openDAW so far) */
+        .source.unavailable {
+            opacity: 0.35;
+            cursor: default;
+        }
+
         .source .count {
+            display: inline-block;
+            width: 2ch;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
             color: var(--color-shadow);
         }
 
@@ -482,7 +536,7 @@
         <button class="patch"><span class="folder"></span><span class="name">Init</span></button>
         <span class="author"></span>
         <span class="voices"><span>0</span> voices</span>
-        <canvas class="level"></canvas>
+        <div class="meter" title="Output"><canvas></canvas></div>
         <span class="master"></span>
     </div>
     <div class="sources"></div>
@@ -511,7 +565,8 @@
         values: new Float32Array(PARAM_COUNT),
         slots: Array.from({length: SLOT_COUNT}, () => ({source: EMPTY, destination: 0, amount: 0})),
         name: "Init", author: "",
-        activity: {sources: new Float32Array(16), step: 0, voices: 0, peak: 0, stages: [0, 0, 0], phases: [0, 0, 0]},
+        activity: {sources: new Float32Array(16), step: 0, voices: 0, peaks: [-Infinity, -Infinity], stages: [0, 0, 0], phases: [0, 0, 0],
+            randoms: [{from: 0, to: 0}, {from: 0, to: 0}], expressive: 0},
         modSource: -1, patches: [], patchIndex: -1, hovered: NO_PARAM, dragging: 0
     }
     const views = [] // {update()} for everything that shows values
@@ -616,10 +671,21 @@
                 model.sources.forEach((_, index) => activity.sources[index] = view.getInt8(4 + index) / 127)
                 activity.step = bytes[4 + model.sources.length]
                 activity.voices = bytes[5 + model.sources.length]
-                activity.peak = bytes[6 + model.sources.length] / 127.5
+                // the highest peak of each channel since the last answer, in dB (0: -72 and below, half dB steps)
+                const decibels = byte => byte === 0 ? -Infinity : byte / 2 - 72
+                activity.peaks = [decibels(bytes[6 + model.sources.length]), decibels(bytes[18 + model.sources.length])]
+                meter.take(activity.peaks)
                 for (let i = 0; i < 3; i++) {
                     activity.stages[i] = bytes[7 + model.sources.length + i]
                     activity.phases[i] = bytes[10 + model.sources.length + i] / 255
+                }
+                for (let i = 0; i < 2; i++) {
+                    activity.randoms[i].from = view.getInt8(13 + model.sources.length + 2 * i) / 127
+                    activity.randoms[i].to = view.getInt8(14 + model.sources.length + 2 * i) / 127
+                }
+                if (activity.expressive !== bytes[17 + model.sources.length]) {
+                    activity.expressive = bytes[17 + model.sources.length]
+                    refresh()
                 }
                 animate()
                 break
@@ -657,6 +723,8 @@
     // [number, unit]
     const format = (p, v) => {
         if (p.choices) {return [p.choices[clamp(Math.round(v - p.min), 0, p.choices.length - 1)], ""]}
+        // the volume is a quadratic gain
+        if (p.name === "volume") {return v <= 0 ? ["-∞", "dB"] : [(40 * Math.log10(v)).toFixed(1), "dB"]}
         if (p.name === "cutoff") {
             const hz = 440 * Math.pow(2, (v - 69) / 12)
             return hz >= 1000 ? [number(hz / 1000), "kHz"] : [number(hz), "Hz"]
@@ -795,7 +863,9 @@
     }
 
     // RelativeUnitValueDragging: vertical, 128 px for the whole range at ratio 1.5, alt or shift for fine (0.25),
-    // escape restores the start; ctrl+click is macOS's right click and opens the host's menu
+    // escape restores the start; ctrl+click is macOS's right click and opens the host's menu. The press keeps its
+    // default, so the page takes the focus (the host's menus close when they lose it). No pointer lock: it takes
+    // the focus from the host's value entry (openDAW opens it on a double-click) and breaks the host's hover.
     const installDragging = (element, {start, move, finish}) => {
         let drag = null
         const end = cancelled => {
@@ -803,14 +873,11 @@
             finish(cancelled, drag)
             element.classList.remove("modifying")
             model.dragging--
-            if (document.pointerLockElement === element) {document.exitPointerLock()}
             drag = null
         }
         element.addEventListener("pointerdown", event => {
             if (event.button !== 0 || event.ctrlKey || drag !== null) {return}
-            event.preventDefault()
             element.setPointerCapture(event.pointerId)
-            try {element.requestPointerLock()?.catch?.(() => {})} catch {}
             drag = {pointerId: event.pointerId, ...start()}
             drag.x = drag.unit
             element.classList.add("modifying")
@@ -828,10 +895,22 @@
         window.addEventListener("keydown", event => {if (event.key === "Escape") {end(true)}})
     }
 
+    // The parameter under the pointer, for the host (openDAW: right-click menu, double-click value entry), again on
+    // every move and press. None while modulating: a double-click there removes the routing.
     const reportHover = (element, getId) => {
-        element.addEventListener("pointerenter", () => sendHover(getId()))
-        element.addEventListener("pointerleave", () => {if (model.dragging === 0) {sendHover(NO_PARAM)}})
+        const report = () => sendHover(model.modSource >= 0 ? NO_PARAM : getId())
+        element.addEventListener("pointerenter", report)
+        element.addEventListener("pointermove", report)
+        element.addEventListener("pointerdown", report, {capture: true})
+        element.addEventListener("pointerleave", event => {
+            if (model.dragging > 0) {return}
+            const rect = element.getBoundingClientRect()
+            const inside = event.clientX >= rect.left && event.clientX < rect.right
+                && event.clientY >= rect.top && event.clientY < rect.bottom
+            if (!inside) {sendHover(NO_PARAM)}
+        })
     }
+
 
     const column = title => {
         const element = document.createElement("div")
@@ -905,16 +984,13 @@
                 sendEnd(drag.id)
             }
         })
+        // a double-click is the host's (openDAW enters a value), only while modulating it removes the routing
         element.addEventListener("dblclick", () => {
             const id = idOf(), p = model.params[id]
-            if (model.modSource >= 0) {
-                if (!p.mod) {return}
-                setSlot(model.modSource, id, 0)
-                sendModulate(model.modSource, id, 0, false)
-                refresh()
-                return
-            }
-            edit(id, p.default)
+            if (model.modSource < 0 || !p.mod) {return}
+            setSlot(model.modSource, id, 0)
+            sendModulate(model.modSource, id, 0, false)
+            refresh()
         })
         reportHover(element, idOf)
         views.push({
@@ -984,7 +1060,7 @@
             const id = idOf(), p = model.params[id]
             popup(button, "", (menu, close) => p.choices.forEach((text, index) => {
                 const item = document.createElement("div")
-                item.textContent = text
+                item.textContent = capital(text)
                 item.classList.toggle("current", Math.round(model.values[id] - p.min) === index)
                 item.addEventListener("click", () => {
                     edit(id, p.min + index)
@@ -1000,11 +1076,15 @@
             if (next !== model.values[id]) {edit(id, next)}
         }, {passive: false})
         reportHover(element, idOf)
-        views.push({update: () => button.textContent = format(model.params[idOf()], model.values[idOf()])[0]})
+        // off, auto and on (the glide) in capitals, as the toggles; the retrigger's "Sync to Playhead" as "Sync",
+        // the syncs' "Tempo" (and "Tempo Dotted", "Tempo Triplets") as "BPM"
+        const capital = text => ["off", "auto", "on"].includes(text) ? text.toUpperCase()
+            : text === "Sync to Playhead" ? "Sync" : text.replace(/^Tempo\b/, "BPM")
+        views.push({update: () => button.textContent = capital(format(model.params[idOf()], model.values[idOf()])[0])})
         return element
     }
 
-    const toggle = (title, name, text = ["off", "on"]) => {
+    const toggle = (title, name, text = ["OFF", "ON"]) => {
         const element = column(title)
         const button = document.createElement("button")
         button.className = "toggle"
@@ -1056,6 +1136,14 @@
     }
 
     const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    // DisplayPaint.baselineGradient: the stroke colour at 20 % at the top of the area under a curve, fading out
+    // towards its baseline at the bottom
+    const fade = (context, top, bottom, hue = "189, 100%, 65%") => {
+        const gradient = context.createLinearGradient(0, top, 0, bottom)
+        gradient.addColorStop(0.0, `hsla(${hue}, 0.2)`)
+        gradient.addColorStop(1.0, `hsla(${hue}, 0.0)`)
+        return gradient
+    }
     const dot = (context, x, y, ratio) => {
         context.fillStyle = css("--color-blue")
         context.beginPath()
@@ -1104,13 +1192,36 @@
         }
     }
 
-    // an LFO's (phase: its index in activity.phases) shows where it is as a dot: its phase, its value
+    // an LFO's (phase: its index in activity.phases) shows where it is as a dot: its phase, its value. The random
+    // waves draw the cycle the LFO is in: sample and hold holds one value, sample and glide goes from the last to
+    // the next along a half cosine (HelmLfo). The mono LFOs' values come from the plugin; the poly LFO runs per
+    // voice, its glide is fitted: the start is its first reading in the cycle, the end follows from the latest.
+    const glide = phase => (1 - Math.cos(Math.PI * phase)) / 2
     const waveDisplay = (waveName, {amplitude, color = "--color-blue", source = -1, phase = -1, poly = false} = {}) => {
         const {cell, canvas} = displayCell(2, 1)
+        const fit = {phase: -1, from: 0, to: 0}
+        // the random cycle as [from, to], scaled; null for the other waves
+        const randomCycle = (index, scale) => {
+            if (index < 11 || phase < 0) {return null}
+            if (!poly) {
+                const {from, to} = model.activity.randoms[phase]
+                return index === 11 ? [to * scale, to * scale] : [from * scale, to * scale]
+            }
+            const at = model.activity.phases[phase], level = model.activity.sources[source]
+            if (at < fit.phase || fit.phase < 0) {fit.from = level}
+            fit.phase = at
+            if (index === 11) {return [level, level]}
+            fit.to = glide(at) > 0.2 ? fit.from + (level - fit.from) / glide(at) : fit.from
+            return [fit.from, clamp(fit.to, -1, 1)]
+        }
         const draw = () => {
             const {context, width, height, ratio} = prepare(canvas)
             const index = Math.round(value(waveName))
             const scale = amplitude === undefined ? 1 : value(amplitude)
+            const running = poly ? model.activity.voices > 0 : model.activity.sources[source] !== 0 || model.activity.phases[phase] !== 0
+            const cycle = randomCycle(index, scale)
+            const curve = x => cycle === null ? wave(index, x) * scale
+                : index === 11 ? cycle[1] : cycle[0] + (cycle[1] - cycle[0]) * glide(x)
             context.strokeStyle = css("--color-edge")
             context.beginPath()
             context.moveTo(0, height / 2)
@@ -1120,15 +1231,14 @@
             context.lineWidth = 1.5 * ratio
             context.beginPath()
             for (let x = 0; x <= width; x++) {
-                const y = height / 2 - wave(index, x / width) * scale * (height / 2 - 3 * ratio)
+                const y = height / 2 - curve(x / width) * (height / 2 - 3 * ratio)
                 x === 0 ? context.moveTo(x, y) : context.lineTo(x, y)
             }
             context.stroke()
-            const running = poly ? model.activity.voices > 0 : model.activity.sources[source] !== 0 || model.activity.phases[phase] !== 0
             if (source >= 0 && phase >= 0 && running) {
                 // on the curve; the random waves (sample and hold, sample and glide) where they are
                 const at = model.activity.phases[phase]
-                const level = index >= 11 ? model.activity.sources[source] : wave(index, at) * scale
+                const level = curve(at)
                 dot(context, at * width, height / 2 - level * (height / 2 - 3 * ratio), ratio)
             }
         }
@@ -1159,7 +1269,7 @@
             const x0 = pad, x1 = x0 + (span - hold) * a / total, x2 = x1 + (span - hold) * d / total
             const x3 = x2 + hold, x4 = Math.min(width - pad, x3 + (span - hold) * r / total)
             const y = level => bottom - level * (bottom - top)
-            context.fillStyle = "rgba(102, 230, 255, 0.08)"
+            context.fillStyle = fade(context, top, bottom)
             context.strokeStyle = css("--color-blue")
             context.lineWidth = 1.5 * ratio
             context.beginPath()
@@ -1219,7 +1329,7 @@
             }
             context.stroke()
             context.strokeStyle = on ? css("--color-blue") : css("--color-shadow")
-            context.fillStyle = on ? "rgba(102, 230, 255, 0.08)" : "rgba(255, 255, 255, 0.03)"
+            context.fillStyle = fade(context, 0, height, on ? undefined : "197, 10%, 60%")
             context.lineWidth = 1.5 * ratio
             context.beginPath()
             for (let x = 0; x <= width; x++) {
@@ -1349,6 +1459,7 @@
             context.font = `${9 * ratio}px Rubik, sans-serif`
             context.fillStyle = css("--color-shadow")
             context.textBaseline = "top"
+            context.textAlign = "left"
             context.fillText("A", 3 * ratio, 3 * ratio)
             context.fillText("I", 3 * ratio, height - 12 * ratio)
             context.textAlign = "right"
@@ -1519,7 +1630,61 @@
         document.fonts?.ready.then(measure)
     }
 
+    // The output meter as openDAW Studio's HorizontalPeakMeter, mono, the bar's ends rounded (3 px): -48..+9 dB, green to -12 dB, yellow to 0 dB,
+    // red above, the scale faint behind, a peak hold that stays 2 s, then falls 0.75 dB a frame. The plugin sends
+    // the highest peaks since its last answer; between answers the level falls by FALL dB a frame.
+    const meter = (() => {
+        const MIN_DB = -48, MAX_DB = 9, FALL = 0.75
+        const x = db => clamp((db - MIN_DB) / (MAX_DB - MIN_DB), 0, 1)
+        const level = {db: -Infinity}, hold = {db: -Infinity, time: 0}
+        let canvas = null
+        const take = peaks => {
+            const db = Math.max(...peaks)
+            level.db = Math.max(db, level.db)
+        }
+        const frame = () => {
+            canvas ??= document.querySelector(".bar .meter > canvas")
+            const {context, width, height, ratio} = prepare(canvas)
+            const now = Date.now()
+            const bar = barWidth => {
+                context.beginPath()
+                context.roundRect(0, 0, barWidth, height, 3 * ratio)
+                context.fill()
+            }
+            const gradient = context.createLinearGradient(0, 0, width, 0)
+            gradient.addColorStop(x(-12), "hsl(150, 77%, 69%)")
+            gradient.addColorStop(x(-12), "hsl(60, 100%, 84%)")
+            gradient.addColorStop(x(0), "hsl(60, 100%, 84%)")
+            gradient.addColorStop(x(0), "hsl(354, 100%, 65%)")
+            context.fillStyle = gradient
+            context.globalAlpha = 0.08
+            bar(width)
+            context.globalAlpha = 1.0
+            const db = Number.isFinite(level.db) ? level.db : MIN_DB
+            if (x(db) > 0) {bar(width * x(db))}
+            if (hold.db <= db) {
+                hold.db = db
+                hold.time = now
+            } else if (now - hold.time >= 2000) {
+                hold.db -= 0.75
+            }
+            const at = Math.ceil(width * x(hold.db))
+            if (at > 0) {context.fillRect(at, 0, 1, height)}
+            level.db -= FALL
+            requestAnimationFrame(frame)
+        }
+        requestAnimationFrame(frame)
+        return {take}
+    })()
+
     // --- the bar --------------------------------------------------------------------------------------------
+
+    // aftertouch, mod wheel and pitch wheel only move when the host sends them (the plugin tells, bits 1, 2, 4)
+    const EXPRESSIVE = {aftertouch: 1, mod_wheel: 2, pitch_wheel: 4}
+    const available = index => {
+        const bit = EXPRESSIVE[model.sources[index]]
+        return bit === undefined || (model.activity.expressive & bit) !== 0
+    }
 
     const buildSources = () => {
         const bar = document.querySelector(".sources")
@@ -1533,8 +1698,9 @@
             count.className = "count"
             button.append(text, count)
             button.addEventListener("pointerdown", event => {
-                if (event.button !== 0 || event.ctrlKey) {return}
+                if (event.button !== 0 || event.ctrlKey || !available(index)) {return}
                 model.modSource = model.modSource === index ? -1 : index
+                sendHover(NO_PARAM)
                 refresh()
             })
             bar.append(button)
@@ -1548,8 +1714,11 @@
         })
         views.push({
             update: () => {
+                if (model.modSource >= 0 && !available(model.modSource)) {model.modSource = -1}
                 buttons.forEach(({button, count}, index) => {
                     button.classList.toggle("selected", model.modSource === index)
+                    button.classList.toggle("unavailable", !available(index))
+                    button.title = available(index) ? "" : 'Not sent by this host'
                     const n = model.slots.filter(slot => slot.source === index).length
                     count.textContent = n > 0 ? String(n) : ""
                 })
@@ -1626,18 +1795,7 @@
                 menu.append(...columns)
             })
         })
-        const level = bar.querySelector(".level")
-        animated.push({
-            animate: () => {
-                const {context, width, height} = prepare(level)
-                context.fillStyle = css("--color-edge")
-                context.fillRect(0, 0, width, height)
-                const peak = model.activity.peak
-                context.fillStyle = peak > 1 ? "hsl(0, 80%, 60%)" : css("--color-blue")
-                context.fillRect(0, 0, width * clamp(peak / 1.5, 0, 1), height)
-                bar.querySelector(".voices > span").textContent = String(model.activity.voices)
-            }
-        })
+        animated.push({animate: () => bar.querySelector(".voices > span").textContent = String(model.activity.voices)})
         views.push({
             update: () => {
                 const index = model.patches.findIndex(patch => patch.name === model.name)

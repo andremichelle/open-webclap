@@ -14,6 +14,11 @@ voice kill, for WebCLAP.
 - HelmEngine::followArpeggiatorSwitch: when the arpeggiator switches, its notes end; this ran only at the start
   of process(), so a note in the block that switched it (a patch loaded, then a key) was dropped with them. It
   runs before every note on and off too.
+- VoiceHandler frees a released voice once its amplitude is below -100 dB instead of mopo's 1e-16 (an
+  exponential release gets there only after about seven release times: a voice of a long release kept playing,
+  inaudible, for 25 s).
+- HelmLfo::randomFrom, randomTo and HelmEngine::getMonoLfo: what the random waves do in the current cycle (sample
+  and hold holds the second value, sample and glide goes from the first to it), for the editor to draw.
 - VoiceHandler::killAllVoices and HelmEngine::killAllVoices: the arpeggiator lets go, the sustain lifts and every
   voice gets kVoiceKill (a VOICE_KILL_TIME fade); process until no voice is active.
 
@@ -155,10 +160,42 @@ voice kill, for WebCLAP.
        void startResampling(mopo_float sample_period) {
 --- a/mopo/src/voice_handler.cpp
 +++ b/mopo/src/voice_handler.cpp
-@@ -186,6 +186,21 @@
-       all_voices_[i]->processor()->setBufferSize(buffer_size);
+@@ -129,6 +129,16 @@
+     return !output->owner->isControlRate();
    }
  
++  namespace {
++    bool isInaudible(const mopo_float* buffer, int length) {
++      for (int i = 0; i < length; ++i) {
++        if (buffer[i] > 1e-5 || buffer[i] < -1e-5)
++          return false;
++      }
++      return true;
++    }
++  } // namespace
++
+   void VoiceHandler::process() {
+     global_router_.process();
+ 
+@@ -154,9 +164,10 @@
+       processVoice(voice);
+       accumulateOutputs();
+ 
+-      // Remove voice if the right processor has a full silent buffer.
++      // Remove voice if the right processor has a full silent buffer: below -100 dB (an exponential release
++      // reaches mopo's 1e-16 only after about seven release times, 25 s for a long one)
+       if (voice_killer_ && voice->state().event != kVoiceOn &&
+-          utils::isSilent(voice_killer_->buffer, buffer_size_)) {
++          isInaudible(voice_killer_->buffer, buffer_size_)) {
+         free_voices_.push_back(voice);
+         iter = active_voices_.erase(iter);
+       }
+@@ -184,6 +195,21 @@
+     global_router_.setBufferSize(buffer_size);
+     for (int i = 0; i < all_voices_.size(); ++i)
+       all_voices_[i]->processor()->setBufferSize(buffer_size);
++  }
++
 +  void VoiceHandler::clearMemory() {
 +    ProcessorRouter::clearMemory();
 +    global_router_.clearMemory();
@@ -172,11 +209,9 @@ voice kill, for WebCLAP.
 +    sustain_ = false;
 +    for (Voice* voice : active_voices_)
 +      voice->kill();
-+  }
-+
-   int VoiceHandler::getNumActiveVoices() {
-     return active_voices_.size();
    }
+ 
+   int VoiceHandler::getNumActiveVoices() {
 --- a/mopo/src/voice_handler.h
 +++ b/mopo/src/voice_handler.h
 @@ -137,6 +137,8 @@
@@ -307,7 +342,7 @@ voice kill, for WebCLAP.
    void HelmEngine::sustainOff() {
 --- a/src/synthesis/helm_engine.h
 +++ b/src/synthesis/helm_engine.h
-@@ -66,6 +66,13 @@
+@@ -66,6 +66,16 @@
        void sustainOn();
        void sustainOff();
  
@@ -318,9 +353,25 @@ voice kill, for WebCLAP.
 +      // WebCLAP reset: the arpeggiator lets go, every voice is killed (process until none is active)
 +      void killAllVoices();
 +
++      // The mono LFOs (0, 1), for an editor drawing the random waves' current cycle
++      const HelmLfo* getMonoLfo(int index) const { return index == 0 ? lfo_1_ : lfo_2_; }
++
      private:
        HelmVoiceHandler* voice_handler_;
        Arpeggiator* arpeggiator_;
+--- a/src/synthesis/helm_lfo.h
++++ b/src/synthesis/helm_lfo.h
+@@ -48,6 +48,10 @@
+       void process() override;
+       void correctToTime(mopo_float samples);
+ 
++      // The random waves' cycle: sample and hold holds the second, sample and glide goes from the first to it
++      mopo_float randomFrom() const { return last_random_value_; }
++      mopo_float randomTo() const { return current_random_value_; }
++
+     protected:
+       mopo_float offset_;
+       mopo_float last_random_value_;
 --- a/src/synthesis/helm_oscillators.cpp
 +++ b/src/synthesis/helm_oscillators.cpp
 @@ -110,7 +110,7 @@

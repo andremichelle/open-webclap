@@ -32,6 +32,7 @@
 
 #include "helm_common.h"
 #include "helm_engine.h"
+#include "helm_lfo.h"
 #include "smooth_value.h"
 #include "utils.h"
 
@@ -95,6 +96,11 @@ constexpr Source sources[] = {
 };
 constexpr uint8_t sourceCount = sizeof sources / sizeof sources[0];
 
+// The editor's size at 100 %; the page scales to its window, hosts resize it at this aspect ratio (openDAW's zoom
+// levels), from half to twice the size
+constexpr uint32_t editorWidth = 1128, editorHeight = 700;
+constexpr double minEditorScale = 0.5, maxEditorScale = 2.0;
+
 constexpr size_t maxSlots = 32;
 constexpr uint8_t emptySlot = 0xff;
 constexpr int maxChunk = mopo::MAX_BUFFER_SIZE;
@@ -139,9 +145,13 @@ enum Plugin : uint8_t
     pluginDescribe = 0x81, // JSON from 4 on: the parameter table, the sources
     pluginSnapshot = 0x82, // a State from 8 on
     pluginValues = 0x83,   // u16 count at 2, then count x (u16 id, u16 0, f32 value)
-    pluginActivity = 0x84, // i8 per source at 4, then u8 step, u8 voices, u8 peak (0..255 for 0..2), the stages of
+    pluginActivity = 0x84, // i8 per source at 4, then u8 step, u8 voices, u8 left peak, the stages of
                            // the amp, filter and mod envelopes (Envelope::State), the phases of the mono LFOs 1, 2
-                           // and the poly LFO (0..255 for 0..1)
+                           // and the poly LFO (0..255 for 0..1), the mono LFOs' random cycles (i8 from, to each,
+                           // before the amplitude: what sample and hold and sample and glide do in this cycle), the
+                           // expressive sources the host sends (bits: 1 aftertouch, 2 mod wheel, 4 pitch wheel), u8
+                           // right peak. The peaks are the highest since the last answer, 0 for -72 dB and below,
+                           // half dB steps above
 };
 
 double clampValue (const mopo::ValueDetails& details, double value)
@@ -210,13 +220,17 @@ struct Helm
     bool modulatable[paramCount] {};
     const mopo::Output* readouts[sourceCount] {};
     const mopo::Output* stepReadout = nullptr;
-    const mopo::Output* peakReadout = nullptr;
     const mopo::Output* stageReadouts[3] {};
     const mopo::Output* phaseReadouts[3] {};
 
     State state {};
     mopo::ModulationConnection connections[maxSlots];
     bool connected[maxSlots] {};
+
+    // The sources only MIDI (or note expressions) move: the host says it sends MIDI (clap.note-ports' dialects), or
+    // one of their events arrived. openDAW sends neither yet, the editor disables them until it does.
+    enum Expressive : uint8_t { aftertouchBit = 1, modWheelBit = 2, pitchWheelBit = 4 };
+    uint8_t expressive = 0;
 
     double sampleRate = 44100.0;
     bool active = false;
@@ -232,9 +246,11 @@ struct Helm
     };
     std::vector<OutEvent> outEvents;
     bool guiCreated = false;
+    uint32_t guiWidth = editorWidth, guiHeight = editorHeight;
     bool pageValues[paramCount] {};
     bool pageSnapshot = false;
-    uint8_t lastActivity[sourceCount + 9] {};
+    uint8_t lastActivity[sourceCount + 15] {};
+    double meterPeaks[2] {}; // per channel, the highest since the last activity
     std::vector<uint8_t> message;
 
     // --- setup ----------------------------------------------------------------------------------------------
@@ -263,7 +279,6 @@ struct Helm
             for (uint8_t s = 0; s < sourceCount; ++s)
                 readouts[s] = sources[s].readout != nullptr ? engine->getModulationSource (sources[s].readout) : nullptr;
             stepReadout = engine->getModulationSource ("step_sequencer_step");
-            peakReadout = engine->getModulationSource ("peak_meter");
             const char* stages[] = { "amp_envelope_phase", "fil_envelope_phase", "mod_envelope_phase" };
             const char* phases[] = { "mono_lfo_1_phase", "mono_lfo_2_phase", "poly_lfo_phase" };
             for (int i = 0; i < 3; ++i)
@@ -286,6 +301,10 @@ struct Helm
             hostState = static_cast<const clap_host_state*> (host->get_extension (host, CLAP_EXT_STATE));
             hostWebview = static_cast<const clap_host_webview*> (host->get_extension (host, CLAP_EXT_WEBVIEW));
             hostHovered = static_cast<const clap_host_param_hovered*> (host->get_extension (host, CLAP_EXT_PARAM_HOVERED));
+            const auto* hostNotePorts = static_cast<const clap_host_note_ports*> (host->get_extension (host, CLAP_EXT_NOTE_PORTS));
+            if (hostNotePorts != nullptr && hostNotePorts->supported_dialects != nullptr
+                && (hostNotePorts->supported_dialects (host) & CLAP_NOTE_DIALECT_MIDI) != 0)
+                expressive = aftertouchBit | modWheelBit | pitchWheelBit;
             return true;
         }
         catch (const std::exception& e)
@@ -488,13 +507,25 @@ struct Helm
             engine->noteOff (data1, 0);
         }
         else if (status == 0xa0)
+        {
+            expressive |= aftertouchBit;
             engine->setAftertouch (data1, data2 / 127.0);
+        }
         else if (status == 0xd0)
+        {
+            expressive |= aftertouchBit;
             engine->setChannelAftertouch (channel, data1 / 127.0);
+        }
         else if (status == 0xe0)
+        {
+            expressive |= pitchWheelBit;
             engine->setPitchWheel (((data2 << 7) | data1) / 8191.5 - 1.0, channel);
+        }
         else if (status == 0xb0 && data1 == 1)
+        {
+            expressive |= modWheelBit;
             engine->setModWheel (data2 / 127.0, channel);
+        }
         else if (status == 0xb0 && data1 == 64)
         {
             if (data2 >= 64)
@@ -529,13 +560,17 @@ struct Helm
                 engine->process();
                 const mopo::mopo_float* l = engine->output (0)->buffer;
                 const mopo::mopo_float* r = engine->output (1)->buffer;
-                double peak = 0.0;
+                double peakLeft = 0.0, peakRight = 0.0;
                 for (int i = 0; i < count; ++i)
                 {
                     left[from + i] = (float) l[i];
                     right[from + i] = (float) r[i];
-                    peak = std::max (peak, std::max (std::abs (l[i]), std::abs (r[i])));
+                    peakLeft = std::max (peakLeft, std::abs (l[i]));
+                    peakRight = std::max (peakRight, std::abs (r[i]));
                 }
+                const double peak = std::max (peakLeft, peakRight);
+                meterPeaks[0] = std::max (meterPeaks[0], peakLeft);
+                meterPeaks[1] = std::max (meterPeaks[1], peakRight);
                 // asleep after half a second without a voice and below -120 dB
                 if (engine->getNumActiveVoices() == 0 && peak < 1.0e-6 && engine->getPressedNotes().size() == 0)
                     sleeping = (quietSamples += (size_t) count) > (size_t) (sampleRate / 2);
@@ -605,6 +640,8 @@ struct Helm
                 case CLAP_EVENT_NOTE_EXPRESSION:
                 {
                     const auto* e = reinterpret_cast<const clap_event_note_expression*> (header);
+                    if (e->expression_id == CLAP_NOTE_EXPRESSION_PRESSURE)
+                        expressive |= aftertouchBit;
                     if (e->expression_id == CLAP_NOTE_EXPRESSION_PRESSURE && e->key >= 0 && e->key <= 127)
                         engine->setAftertouch (e->key, std::clamp (e->value, 0.0, 1.0));
                     break;
@@ -828,7 +865,9 @@ struct Helm
 
     void sendActivity()
     {
-        uint8_t activity[sourceCount + 9] {};
+        uint8_t activity[sourceCount + 15] {};
+        const auto decibels = [] (double peak)
+        { return peak <= 0.0 ? 0 : (uint8_t) std::clamp<long> (std::lround ((20.0 * std::log10 (peak) + 72.0) * 2.0), 0, 255); };
         const auto read = [] (const mopo::Output* output) { return output != nullptr ? output->buffer[0] : 0.0; };
         // asleep, the free-running LFOs are not shown: nothing to send while nothing sounds
         for (uint8_t s = 0; s < sourceCount && ! sleeping; ++s)
@@ -836,12 +875,22 @@ struct Helm
         const bool silent = sleeping || engine->getNumActiveVoices() == 0;
         activity[sourceCount] = (uint8_t) std::clamp<long> (std::lround (read (stepReadout)), 0, 31);
         activity[sourceCount + 1] = silent ? 0 : (uint8_t) std::min (engine->getNumActiveVoices(), 255);
-        activity[sourceCount + 2] = sleeping ? 0 : (uint8_t) std::lround (std::clamp (read (peakReadout), 0.0, 2.0) * 127.5);
+        activity[sourceCount + 2] = decibels (meterPeaks[0]);
         for (int i = 0; i < 3 && ! sleeping; ++i)
         {
             activity[sourceCount + 3 + i] = (uint8_t) std::clamp<long> (std::lround (read (stageReadouts[i])), 0, 3);
             activity[sourceCount + 6 + i] = (uint8_t) std::lround (std::clamp (read (phaseReadouts[i]), 0.0, 1.0) * 255.0);
         }
+        const auto signed8 = [] (double value) { return (uint8_t) (int8_t) std::lround (std::clamp (value, -1.0, 1.0) * 127.0); };
+        for (int i = 0; i < 2 && ! sleeping; ++i)
+        {
+            const mopo::HelmLfo* lfo = engine->getMonoLfo (i);
+            activity[sourceCount + 9 + 2 * i] = signed8 (lfo->randomFrom());
+            activity[sourceCount + 10 + 2 * i] = signed8 (lfo->randomTo());
+        }
+        activity[sourceCount + 13] = expressive;
+        activity[sourceCount + 14] = decibels (meterPeaks[1]);
+        meterPeaks[0] = meterPeaks[1] = 0.0;
         if (std::memcmp (activity, lastActivity, sizeof activity) == 0)
             return;
         std::memcpy (lastActivity, activity, sizeof activity);
@@ -992,6 +1041,15 @@ bool paramsValueToText (const clap_plugin* plugin, clap_id id, double value, cha
         std::snprintf (text, size, "%s", names[(int) d.min + index].c_str());
         return true;
     }
+    if (std::strcmp (paramNames[id], "volume") == 0)
+    {
+        // a quadratic gain, as the editor shows it
+        if (value <= 0.0)
+            std::snprintf (text, size, "-inf dB");
+        else
+            std::snprintf (text, size, "%.1f dB", 40.0 * std::log10 (value));
+        return true;
+    }
     formatValue (d, value, text, size);
     return true;
 }
@@ -1012,6 +1070,11 @@ bool paramsTextToValue (const clap_plugin* plugin, clap_id id, const char* text,
     const double number = std::strtod (text, &end);
     if (end == text)
         return false;
+    if (std::strcmp (paramNames[id], "volume") == 0)
+    {
+        *value = clampValue (d, std::pow (10.0, number / 40.0));
+        return true;
+    }
     // the display value back to the control's: undo the multiplier, the inversion, the offset and the skew
     double display = number / d.display_multiply;
     if (d.display_invert)
@@ -1053,8 +1116,7 @@ bool stateLoad (const clap_plugin* plugin, const clap_istream* stream) { return 
 
 const clap_plugin_state state { stateSave, stateLoad };
 
-// The editor: ui/index.html in the bundle, a fixed size
-constexpr uint32_t editorWidth = 1128, editorHeight = 700;
+// The editor: ui/index.html in the bundle, resizable at its aspect ratio
 
 bool guiApiSupported (const clap_plugin*, const char* api, bool isFloating)
 {
@@ -1078,10 +1140,41 @@ bool guiCreate (const clap_plugin* plugin, const char* api, bool isFloating)
 
 void guiDestroy (const clap_plugin* plugin) { self (plugin).guiCreated = false; }
 
-bool guiSize (const clap_plugin*, uint32_t* width, uint32_t* height)
+bool guiSize (const clap_plugin* plugin, uint32_t* width, uint32_t* height)
 {
-    *width = editorWidth;
-    *height = editorHeight;
+    *width = self (plugin).guiWidth;
+    *height = self (plugin).guiHeight;
+    return true;
+}
+
+bool guiResizeHints (const clap_plugin*, clap_gui_resize_hints* hints)
+{
+    hints->can_resize_horizontally = true;
+    hints->can_resize_vertically = true;
+    hints->preserve_aspect_ratio = true;
+    hints->aspect_ratio_width = editorWidth;
+    hints->aspect_ratio_height = editorHeight;
+    return true;
+}
+
+// The size of the editor's aspect ratio closest to the request (the smaller of its two scales), within the limits
+bool guiAdjustSize (const clap_plugin*, uint32_t* width, uint32_t* height)
+{
+    const double scale = std::clamp (std::min ((double) *width / editorWidth, (double) *height / editorHeight),
+                                      minEditorScale, maxEditorScale);
+    *width = (uint32_t) std::lround (editorWidth * scale);
+    *height = (uint32_t) std::lround (editorHeight * scale);
+    return true;
+}
+
+bool guiSetSize (const clap_plugin* plugin, uint32_t width, uint32_t height)
+{
+    uint32_t w = width, h = height;
+    guiAdjustSize (plugin, &w, &h);
+    if (w != width || h != height)
+        return false;
+    self (plugin).guiWidth = width;
+    self (plugin).guiHeight = height;
     return true;
 }
 
@@ -1092,10 +1185,10 @@ const clap_plugin_gui gui {
     guiDestroy,
     [] (const clap_plugin*, double) { return false; },
     guiSize,
-    [] (const clap_plugin*) { return false; },
-    [] (const clap_plugin*, clap_gui_resize_hints*) { return false; },
-    guiSize,
-    [] (const clap_plugin*, uint32_t width, uint32_t height) { return width == editorWidth && height == editorHeight; },
+    [] (const clap_plugin*) { return true; },
+    guiResizeHints,
+    guiAdjustSize,
+    guiSetSize,
     [] (const clap_plugin*, const clap_window*) { return true; },
     [] (const clap_plugin*, const clap_window*) { return false; },
     [] (const clap_plugin*, const char*) {},
