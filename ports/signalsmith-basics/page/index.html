@@ -1,0 +1,1237 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Signalsmith Basics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Share+Tech+Mono&display=swap">
+    <!--
+        The editor of the Signalsmith Basics effects. One card per effect: the name, a display and the
+        knobs, laid out at 176 px high (openDAW's device panel) and zoomed to the window.
+
+        #<effect> shows that effect's card (the plugin's page); without one (or with ?preview) all seven with simulated
+        signals.
+    -->
+    <style>
+        :root {
+            /* openDAW Studio's panel-background (classic scheme, hue 197): the device panel behind the card */
+            --page: hsl(197, 14%, 12%);
+            /* the studio's background, around the devices in the preview */
+            --studio: hsl(197, 8%, 9%);
+            --title: #e9ecf1;
+            --caption: #7a808b;
+            --label: #6c727d;
+            --label-bright: #9aa1ac;
+            --frame: #15161a;
+            --lcd-text: #d8ecff;
+        }
+        * {box-sizing: border-box}
+        html, body {margin: 0; height: 100%}
+        body {
+            background: var(--page);
+            font-family: Lato, sans-serif;
+            color: var(--title);
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+        }
+        body.preview {overflow: auto; background: var(--studio)}
+        body.preview .card {background: var(--page)}
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+        body.preview #stage {position: static; padding: 28px 24px 40px; transform: none}
+        .section {margin: 0 auto 34px; max-width: 1500px}
+        .section > h3 {
+            margin: 0 0 14px;
+            font-size: 11px;
+            font-weight: 900;
+            letter-spacing: 0.12em;
+            color: var(--caption);
+        }
+        .shelf {display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px}
+        .device > .caption {font-size: 9px; color: var(--caption); margin: 0 0 6px 1px; letter-spacing: 0.06em}
+
+        .card {
+            position: relative;
+            height: 176px;
+            padding: 14px 14px 12px;
+        }
+        .header {display: flex; align-items: flex-start; height: 34px; margin-bottom: 8px}
+        .titles {flex: 1; min-width: 0; padding-top: 1px}
+        .titles h1 {margin: 0; font-size: 15px; font-weight: 900; letter-spacing: 0.02em; line-height: 17px; white-space: nowrap}
+        .titles h2 {
+            margin: 2px 0 0;
+            font-size: 8.5px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: var(--caption);
+            white-space: nowrap;
+        }
+        .header-controls {display: flex; gap: 6px; margin-top: -4px}
+        .header-controls .control {width: 38px}
+        /* the display centred on a 24 px knob, the label on the knobs' label line */
+        .header-controls .selector {margin-top: 1px; gap: 8px}
+
+        .body {display: flex; gap: 14px; height: 108px}
+        .screen {
+            flex: none;
+            height: 108px;
+            padding: 3px;
+            border-radius: 4px;
+            background: var(--frame);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.8) inset, 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+        .screen canvas {display: block; width: 100%; height: 100%; border-radius: 2px}
+        .grid {flex: 1; display: flex; flex-direction: column; justify-content: space-around}
+        .row {display: flex; justify-content: space-between; gap: 2px}
+        .row.center {justify-content: center; gap: 14px}
+
+        .control {
+            position: relative;
+            width: 44px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            cursor: ns-resize;
+            touch-action: none;
+        }
+        .control svg.knob {display: block; overflow: visible}
+        .control .label {
+            font-size: 8px;
+            font-weight: 900;
+            letter-spacing: 0.04em;
+            color: var(--label);
+            white-space: nowrap;
+            line-height: 9px;
+        }
+        /* the value over the label while hovered or dragged, inside the card wherever the knob sits */
+        .control .readout {
+            position: absolute;
+            bottom: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 1px 4px;
+            border-radius: 2px;
+            font: 9px "Share Tech Mono", monospace;
+            color: var(--lcd-text);
+            background: #1b3f86;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 6px rgba(70, 150, 255, 0.4);
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+        }
+        .control.active .readout {opacity: 1}
+        .control.active .label {visibility: hidden}
+        .knob .value-arc {filter: drop-shadow(0 0 1.5px var(--accent))}
+
+        .selector {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+        }
+        .selector .arrows span {cursor: pointer}
+        .selector .lcd {
+            display: flex;
+            align-items: center;
+            height: 18px;
+            padding: 0 3px 0 6px;
+            border-radius: 3px;
+            background: linear-gradient(#3f86e8, #2258b8);
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.35) inset, 0 0 8px rgba(60, 140, 255, 0.25);
+        }
+        /* every choice in one cell, all but the current hidden: as wide as the widest */
+        .selector .text {
+            flex: 1;
+            display: grid;
+            font: 10px "Share Tech Mono", monospace;
+            color: var(--lcd-text);
+            text-shadow: 0 0 4px rgba(200, 230, 255, 0.7);
+            white-space: nowrap;
+            padding-right: 6px;
+        }
+        .selector .text > span {grid-area: 1 / 1}
+        .selector .text > span.hidden {visibility: hidden}
+        .selector .arrows {display: flex; gap: 1px}
+        .selector .arrows span {
+            width: 10px;
+            height: 11px;
+            display: grid;
+            place-items: center;
+            border-radius: 1px;
+            background: rgba(255, 255, 255, 0.25);
+            color: #10306e;
+            font-size: 6px;
+        }
+        .selector .label {font-size: 8px; font-weight: 900; letter-spacing: 0.04em; color: var(--label); line-height: 9px}
+    </style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+    // --- parameters ---------------------------------------------------------------------------------------------
+    // As plugin/basics.cpp: a range parameter's host value is its knob position (0..1), mapped to the effect's value
+    // through STFX's three points (low at 0, mid at 0.5, high at 1); the shift has the frequency shifter's control
+    // curve; a stepped parameter's host value is the step. card.value(key) is the effect's value, in its own units
+    // (linear gains, ratios, ms, Hz), the displays compute with those. Ids are Signalsmith's, Dynamics' are FNV-1a
+    // hashes of the state paths.
+
+    const fnv1a = text => {
+        let hash = 0x811c9dc5
+        for (const letter of new TextEncoder().encode(text)) {hash = Math.imul(hash ^ letter, 16777619) >>> 0}
+        return hash
+    }
+    const range = (id, key, label, low, mid, high, value, text, extra = {}) =>
+        ({id: id ?? fnv1a(key), key, label, kind: "range", low, mid, high, value, text, ...extra})
+    const stepped = (id, key, label, low, high, value, labels) =>
+        ({id: id ?? fnv1a(key), key, label, kind: "steps", low, high, value, labels, text: "steps"})
+    const dB = db => Math.pow(10, db / 20)
+
+    const EFFECTS = {
+        analyser: {
+            title: "Analyser", subtitle: "BARK SPECTRUM", accent: "#38b6ff", screen: 330,
+            params: [range(2639851652, "barkResolution", "RES", 2, 10, 25, 10, "plain0")],
+            header: [], rows: [["barkResolution"]]
+        },
+        chorus: {
+            title: "Chorus", subtitle: "SIX VOICES", accent: "#3d9dff", screen: 150,
+            params: [
+                range(1223226259, "mix", "MIX", 0, 0.5, 1, 0.6, "percent"),
+                range(1841279726, "depthMs", "DEPTH", 2, 15, 50, 15, "ms"),
+                range(2967225864, "detune", "DETUNE", 1, 8, 50, 5, "cents"),
+                range(3972183190, "stereo", "STEREO", 0, 0.5, 1.5, 1, "percent")
+            ],
+            header: ["mix"], rows: [["depthMs", "detune", "stereo"]]
+        },
+        crunch: {
+            title: "Crunch", subtitle: "SATURATION", accent: "#ff9824", screen: 140,
+            params: [
+                range(2943184073, "drive", "DRIVE", dB(-12), 4, dB(40), 4, "gain"),
+                range(481700, "fuzz", "FUZZ", 0, 0.5, 1, 0, "percent"),
+                range(4249490896, "toneHz", "TONE", 100, 4000, 20000, 2000, "hz"),
+                range(1100269863, "cutHz", "CUT", 20, 100, 500, 50, "hz"),
+                range(2537258908, "outGain", "OUT", dB(-12), 1, dB(24), 1, "gain")
+            ],
+            header: ["outGain"], rows: [["drive", "fuzz"], ["toneHz", "cutHz"]]
+        },
+        dynamics: {
+            title: "Dynamics", subtitle: "COMPRESSOR · EXPANDER · GATE", accent: "#36d45a", screen: 150,
+            params: [
+                range(null, "compressor/limitDb", "THRESH", -60, -30, 0, -20, "db"),
+                range(null, "compressor/invRatio", "RATIO", 1, 0.5, 0, 0.5, "invratio"),
+                stepped(null, "compressor/autoGain", "AUTO GAIN", 0, 1, 1, ["OFF", "ON"]),
+                range(null, "compressor/makeupDb", "MAKEUP", 0, 6, 20, 0, "dboff"),
+                range(null, "expander/limitDb", "EXPAND", -60, -30, 0, -40, "db"),
+                range(null, "expander/ratio", "RATIO", 1, 2, 10, 1, "ratio"),
+                range(null, "gate/limitDb", "GATE", -80, -40, 0, -80, "db"),
+                range(null, "gate/hysteresis", "HYST", 0, 3, 12, 3, "db"),
+                range(null, "kneeDb", "KNEE", 0, 3, 12, 3, "db"),
+                range(null, "timing/lookaheadMs", "LOOK", 0, 5, 20, 0, "ms"),
+                range(null, "timing/attackMs", "ATTACK", 1, 20, 50, 20, "ms"),
+                range(null, "timing/releaseMs", "RELEASE", 20, 100, 250, 150, "ms"),
+                range(1223226259, "mix", "MIX", 0, 0.5, 1, 1, "percent")
+            ],
+            header: ["compressor/autoGain", "mix"],
+            rows: [["compressor/limitDb", "compressor/invRatio", "kneeDb", "compressor/makeupDb", "timing/lookaheadMs"],
+                ["expander/limitDb", "expander/ratio", "gate/limitDb", "gate/hysteresis", "timing/attackMs", "timing/releaseMs"]]
+        },
+        "freq-shifter": {
+            title: "Freq Shifter", subtitle: "SINGLE SIDEBAND", accent: "#a874ff", screen: 170,
+            params: [
+                range(1223226259, "mix", "MIX", 0, 0.5, 1, 1, "percent"),
+                range(2301226280, "shiftHz", "SHIFT", -1000, 0, 1000, 50, "shift", {kind: "shift", bipolar: true}),
+                stepped(3716977271, "reflect", "0 HZ", 0, 3, 0, ["PASS", "REFLECT", "DUPLICATE", "BOTH"])
+            ],
+            header: ["mix"], rows: [["shiftHz", "reflect"]]
+        },
+        limiter: {
+            title: "Limiter", subtitle: "LOOKAHEAD", accent: "#ff4d4d", screen: 160,
+            params: [
+                range(224108168, "inputGain", "PRE-GAIN", dB(-12), 1, dB(24), 1, "gain"),
+                range(1951529716, "outputLimit", "LIMIT", dB(-24), dB(-12), 1, dB(-3), "gain"),
+                range(274825181, "attackMs", "ATTACK", 1, 10, 50, 20, "ms"),
+                range(1212264141, "holdMs", "HOLD", 0, 10, 50, 0, "ms"),
+                range(1417304825, "releaseMs", "RELEASE", 0, 10, 250, 0, "ms"),
+                stepped(870994041, "smoothingStages", "SMOOTHING", 1, 2, 1, ["RECT", "DOUBLE"]),
+                range(2439531228, "linkChannels", "LINK", 0, 0.5, 1, 0.5, "percent")
+            ],
+            header: ["smoothingStages"], rows: [["inputGain", "outputLimit", "linkChannels"], ["attackMs", "holdMs", "releaseMs"]]
+        },
+        reverb: {
+            title: "Reverb", subtitle: "FEEDBACK DELAY NETWORK", accent: "#25cdb9", screen: 170,
+            params: [
+                range(1015595465, "dry", "DRY", 0, 1, 4, 1, "gain"),
+                range(3538153984, "wet", "WET", 0, 1, 4, 0.5, "gain"),
+                range(2974242839, "roomMs", "ROOM", 10, 100, 200, 80, "ms"),
+                range(1506047092, "rt20", "DECAY", 0.01, 2, 30, 1, "sec"),
+                range(867170651, "early", "EARLY", 0, 1, 2.5, 1.5, "percent"),
+                range(2967225864, "detune", "DETUNE", 0, 5, 50, 2, "plain1"),
+                range(2342541086, "lowCutHz", "LOW CUT", 10, 80, 500, 80, "hz"),
+                range(1970510480, "lowDampRate", "LOW DAMP", 1, 2, 10, 1.5, "times"),
+                range(1157094815, "highCutHz", "HIGH CUT", 1000, 5000, 20000, 12000, "hz"),
+                range(2716295038, "highDampRate", "HI DAMP", 1, 2, 10, 2.5, "times")
+            ],
+            header: ["dry", "wet"], rows: [["roomMs", "rt20", "early", "detune"], ["lowCutHz", "lowDampRate", "highCutHz", "highDampRate"]]
+        }
+    }
+    const ORDER = ["chorus", "crunch", "dynamics", "freq-shifter", "limiter", "reverb", "analyser"]
+
+    const clamp = (value, low, high) => Math.min(high, Math.max(low, value))
+
+    // host value <-> the effect's value
+    const toEffect = (p, host) => {
+        switch (p.kind) {
+            case "steps": return Math.round(clamp(host, p.low, p.high))
+            case "shift": {
+                const x = clamp(host, 0, 1) * 2 - 1
+                return 100 * x / (1.1 - x * x)
+            }
+            default: {
+                const u = clamp(host, 0, 1), s = (p.mid - p.low) / (p.high - p.mid)
+                return p.low + (p.high - p.low) * u * s / (1 - u + u * s)
+            }
+        }
+    }
+    const toHost = (p, value) => {
+        switch (p.kind) {
+            case "steps": return Math.round(clamp(value, p.low, p.high))
+            case "shift": {
+                if (Math.abs(value) < 1e-9) {return 0.5}
+                const x = (Math.sqrt(2500 + 1.1 * value * value) - 50) / value
+                return clamp((x + 1) / 2, 0, 1)
+            }
+            default: {
+                const s = (p.mid - p.low) / (p.high - p.mid), f = (value - p.low) / (p.high - p.low)
+                const u = f / (s - f * s + f)
+                return Number.isFinite(u) ? clamp(u, 0, 1) : 0
+            }
+        }
+    }
+
+    const digits = value => Math.abs(value) < 10 ? 1 : 0
+    const hz = value => Math.abs(value) >= 1000
+        ? `${(value / 1000).toFixed(Math.abs(value) >= 10000 ? 1 : 2)} kHz` : `${value.toFixed(digits(value))} Hz`
+    // the effect's value as the readout shows it
+    const format = (p, value) => {
+        switch (p.text) {
+            case "steps": return p.labels[Math.round(value - p.low)]
+            case "percent": return `${(value * 100).toFixed(0)}%`
+            case "gain": {
+                if (value <= 0) {return "off"}
+                const db = 20 * Math.log10(value)
+                return `${db > 0.05 ? "+" : ""}${db.toFixed(1)} dB`
+            }
+            case "db": return `${value > 0.05 ? "+" : ""}${value.toFixed(1)} dB`
+            case "dboff": return value <= 0 ? "off" : `+${value.toFixed(1)} dB`
+            case "hz": return hz(value)
+            case "shift": return `${value > 0 ? "+" : ""}${hz(value)}`
+            case "ms": return value >= 999.5 ? `${(value / 1000).toFixed(2)} s` : `${value.toFixed(digits(value))} ms`
+            case "sec": return value < 0.9995 ? `${(value * 1000).toFixed(0)} ms` : `${value.toFixed(digits(value))} s`
+            case "cents": return `${value.toFixed(digits(value))} ct`
+            case "ratio": return `${value.toFixed(1)} : 1`
+            case "invratio": return value <= 1e-6 ? "∞ : 1" : `${(1 / value).toFixed(1)} : 1`
+            case "times": return `${value.toFixed(1)}x`
+            case "plain0": return value.toFixed(0)
+            default: return value.toFixed(1)
+        }
+    }
+
+    // --- knob ---------------------------------------------------------------------------------------------------
+
+    const SVG = "http://www.w3.org/2000/svg"
+    const svg = (name, attributes = {}, parent) => {
+        const element = document.createElementNS(SVG, name)
+        for (const [key, value] of Object.entries(attributes)) {element.setAttribute(key, value)}
+        parent?.append(element)
+        return element
+    }
+    const START = -135, SWEEP = 270
+    const polar = (cx, cy, radius, degrees) => {
+        const radians = degrees * Math.PI / 180
+        return [cx + radius * Math.sin(radians), cy - radius * Math.cos(radians)]
+    }
+    const arc = (cx, cy, radius, from, to) => {
+        if (Math.abs(to - from) < 0.01) {return ""}
+        const [x0, y0] = polar(cx, cy, radius, Math.min(from, to))
+        const [x1, y1] = polar(cx, cy, radius, Math.max(from, to))
+        const large = Math.abs(to - from) > 180 ? 1 : 0
+        return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${radius} ${radius} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`
+    }
+    let gradientCount = 0
+    const knobView = (size, bipolar) => {
+        const c = size / 2, ring = c - 1.5, cap = c - 5
+        const root = svg("svg", {class: "knob", width: size, height: size, viewBox: `0 0 ${size} ${size}`})
+        const id = `cap${gradientCount++}`
+        const defs = svg("defs", {}, root)
+        const gradient = svg("radialGradient", {id, cx: "40%", cy: "30%", r: "75%"}, defs)
+        svg("stop", {offset: "0%", "stop-color": "#4a4e57"}, gradient)
+        svg("stop", {offset: "60%", "stop-color": "#2c2f35"}, gradient)
+        svg("stop", {offset: "100%", "stop-color": "#1d1f23"}, gradient)
+        svg("path", {d: arc(c, c, ring, START, START + SWEEP), fill: "none", stroke: "#16181b", "stroke-width": 2.6, "stroke-linecap": "round"}, root)
+        const value = svg("path", {class: "value-arc", fill: "none", stroke: "var(--accent)", "stroke-width": 2.2, "stroke-linecap": "round"}, root)
+        // the cap: a knurled edge, its shadow and the face
+        svg("circle", {cx: c, cy: c + 1, r: cap + 0.6, fill: "rgba(0,0,0,0.5)"}, root)
+        const knurl = svg("g", {}, root)
+        for (let index = 0; index < 20; index++) {
+            const [x0, y0] = polar(c, c, cap - 0.2, index * 18)
+            const [x1, y1] = polar(c, c, cap - 1.8, index * 18)
+            svg("line", {x1: x0, y1: y0, x2: x1, y2: y1, stroke: "#141518", "stroke-width": 1.2}, knurl)
+        }
+        svg("circle", {cx: c, cy: c, r: cap, fill: `url(#${id})`, stroke: "#17181c", "stroke-width": 0.8}, root)
+        svg("circle", {cx: c, cy: c, r: cap - 2.2, fill: "none", stroke: "rgba(255,255,255,0.07)", "stroke-width": 0.8}, root)
+        const pointer = svg("line", {x1: c, y1: c - cap * 0.25, x2: c, y2: c - cap + 1.6, stroke: "#f2f4f7",
+            "stroke-width": 1.8, "stroke-linecap": "round"}, root)
+        const tick = svg("circle", {cx: c, cy: -1.5, r: 0.9, fill: "#5b616b"}, root)
+        tick.setAttribute("cy", 0.4)
+        return {
+            element: root,
+            update: unit => {
+                const angle = START + unit * SWEEP
+                value.setAttribute("d", bipolar ? arc(c, c, ring, 0, angle) : arc(c, c, ring, START, angle))
+                pointer.setAttribute("transform", `rotate(${angle} ${c} ${c})`)
+            }
+        }
+    }
+
+    // --- displays -----------------------------------------------------------------------------------------------
+    // drawn into a blue LCD: a gradient with faint columns, a grid, white traces with a glow
+
+    const lcd = (context, width, height) => {
+        const background = context.createLinearGradient(0, 0, 0, height)
+        background.addColorStop(0, "#3d86ea")
+        background.addColorStop(0.55, "#2a64c8")
+        background.addColorStop(1, "#1f4da6")
+        context.fillStyle = background
+        context.fillRect(0, 0, width, height)
+        context.fillStyle = "rgba(255, 255, 255, 0.035)"
+        const column = width / 9
+        for (let index = 0; index < 9; index += 2) {context.fillRect(index * column, 0, column, height)}
+        const gloss = context.createLinearGradient(0, 0, 0, height * 0.5)
+        gloss.addColorStop(0, "rgba(255, 255, 255, 0.16)")
+        gloss.addColorStop(1, "rgba(255, 255, 255, 0)")
+        context.fillStyle = gloss
+        context.fillRect(0, 0, width, height * 0.5)
+    }
+    const gridLine = (context, x0, y0, x1, y1, dashed) => {
+        context.save()
+        context.strokeStyle = dashed ? "rgba(255, 255, 255, 0.35)" : "rgba(255, 255, 255, 0.14)"
+        context.lineWidth = 0.6
+        if (dashed) {context.setLineDash([2, 2])}
+        context.beginPath()
+        context.moveTo(x0, y0)
+        context.lineTo(x1, y1)
+        context.stroke()
+        context.restore()
+    }
+    const caption = (context, text, x, y, align = "left", alpha = 0.85) => {
+        context.save()
+        context.font = "700 6.5px Lato, sans-serif"
+        context.textAlign = align
+        context.fillStyle = `rgba(255, 255, 255, ${alpha})`
+        context.fillText(text, x, y)
+        context.restore()
+    }
+    const trace = (context, points, {fill = null, width = 1.4, color = "#ffffff", alpha = 1} = {}) => {
+        if (points.length < 2) {return}
+        context.save()
+        context.globalAlpha = alpha
+        context.lineJoin = "round"
+        context.lineCap = "round"
+        if (fill !== null) {
+            context.beginPath()
+            context.moveTo(points[0][0], fill)
+            for (const [x, y] of points) {context.lineTo(x, y)}
+            context.lineTo(points[points.length - 1][0], fill)
+            context.closePath()
+            const gradient = context.createLinearGradient(0, 0, 0, fill)
+            gradient.addColorStop(0, "rgba(255, 255, 255, 0.28)")
+            gradient.addColorStop(1, "rgba(255, 255, 255, 0.04)")
+            context.fillStyle = gradient
+            context.fill()
+        }
+        context.beginPath()
+        points.forEach(([x, y], index) => index === 0 ? context.moveTo(x, y) : context.lineTo(x, y))
+        context.shadowColor = "rgba(210, 235, 255, 0.9)"
+        context.shadowBlur = 4
+        context.strokeStyle = color
+        context.lineWidth = width
+        context.stroke()
+        context.restore()
+    }
+    const dot = (context, x, y, radius = 2.2) => {
+        context.save()
+        context.shadowColor = "rgba(255, 255, 255, 1)"
+        context.shadowBlur = 6
+        context.fillStyle = "#ffffff"
+        context.beginPath()
+        context.arc(x, y, radius, 0, Math.PI * 2)
+        context.fill()
+        context.restore()
+    }
+    const gainToDb = gain => 20 * Math.log10(Math.max(gain, 1e-12))
+    const dbToGain = db => Math.pow(10, db / 20)
+
+    const PAD = 7
+    const DISPLAYS = {
+        // the six delay taps sweeping across the depth, one lane each, wet voices fanning out with stereo
+        chorus: (context, width, height, card) => {
+            lcd(context, width, height)
+            const depth = card.value("depthMs")
+            // the whole depth range, so the taps move and the axis stays
+            const max = 50, tick = 10
+            const left = PAD, right = width - PAD, top = PAD + 2, bottom = height - 14
+            const x = ms => left + (right - left) * ms / max
+            for (let ms = 0; ms <= max; ms += tick) {
+                gridLine(context, x(ms), top, x(ms), bottom)
+                caption(context, `${ms}`, x(ms), height - 5, "center", 0.7)
+            }
+            gridLine(context, x(depth), top, x(depth), bottom, true)
+            caption(context, "MS", right, top + 5, "right", 0.6)
+            const offsets = [[-0.267409, 0.195109], [-0.680406, -0.363478], [0.802226, 0.551654],
+                [0.188176, -0.980498], [0.973565, -0.204023], [-0.742801, 0.669512]]
+            const lane = (bottom - top) / 6
+            offsets.forEach(([re, im], index) => {
+                const y = top + lane * (index + 0.5)
+                const at = phase => {
+                    const osc = Math.cos(phase * 2 * Math.PI) * re - Math.sin(phase * 2 * Math.PI) * im
+                    return x(depth * 0.5 * (1 + osc))
+                }
+                // the lane's sweep (0 to the depth), then a fading tail behind the tap
+                context.fillStyle = "rgba(10, 30, 80, 0.35)"
+                context.fillRect(x(0), y - 1.5, x(depth) - x(0), 3)
+                context.save()
+                context.shadowColor = "white"
+                context.shadowBlur = 3
+                for (let step = 18; step >= 1; step--) {
+                    context.globalAlpha = 0.5 * (1 - step / 19)
+                    context.fillStyle = "white"
+                    context.beginPath()
+                    context.arc(at(card.meters.phase - step * 0.004), y, 1.3, 0, Math.PI * 2)
+                    context.fill()
+                }
+                context.restore()
+                dot(context, at(card.meters.phase), y, 2.2)
+            })
+        },
+        // the shaper's transfer curve at this drive and fuzz, the input's peak riding on it
+        crunch: (context, width, height, card) => {
+            lcd(context, width, height)
+            const drive = card.value("drive"), fuzz = card.value("fuzz")
+            const cut = card.value("cutHz"), out = card.value("outGain")
+            const positive = 1 + fuzz - fuzz * fuzz, negative = 1 - fuzz - fuzz * fuzz
+            const average = range => Math.log(Math.sqrt(1 + range * range) + range) / range
+            const norm = drive * average(0.1 * (1 - cut / (cut + 200)) * drive)
+            const shape = input => {
+                const x = input * drive
+                return out * x * (x >= 0 ? positive : negative) / Math.sqrt(1 + x * x) / norm
+            }
+            const cx = width / 2, cy = height / 2, sx = (width - 2 * PAD) / 2, sy = (height - 2 * PAD) / 2
+            for (let index = -2; index <= 2; index++) {
+                gridLine(context, cx + index * sx / 2, PAD, cx + index * sx / 2, height - PAD, index === 0)
+                gridLine(context, PAD, cy + index * sy / 2, width - PAD, cy + index * sy / 2, index === 0)
+            }
+            const peak = Math.max(Math.abs(shape(1.25)), Math.abs(shape(-1.25)), 0.02) * 1.15
+            const y = value => cy - clamp(value / peak, -1.08, 1.08) * sy
+            const points = []
+            for (let index = 0; index <= 120; index++) {
+                const input = index / 60 - 1
+                points.push([cx + input * sx, y(shape(input * 1.25))])
+            }
+            trace(context, points)
+            const level = clamp(card.meters.input, 0, 1)
+            dot(context, cx + level * sx, y(shape(level * 1.25)))
+            caption(context, "IN", width - PAD - 1, cy - 2, "right", 0.6)
+            caption(context, "OUT", cx + 3, PAD + 6, "left", 0.6)
+        },
+        // input level to output level in dB: threshold, ratio, knee, expander and gate; the detector's level as a dot,
+        // the gain reduction as a bar at the right
+        dynamics: (context, width, height, card) => {
+            lcd(context, width, height)
+            const v = key => card.value(key)
+            const invRatio = v("compressor/invRatio"), ratio = v("expander/ratio")
+            const knee = v("kneeDb"), comp = v("compressor/limitDb"), expand = v("expander/limitDb"), gate = v("gate/limitDb")
+            const mapDb = (inDb, gateOpen = true) => {
+                let outDb = inDb + v("compressor/makeupDb")
+                if (inDb > comp) {outDb += (inDb - comp) * (invRatio - 1)}
+                if (inDb < expand) {outDb += (inDb - expand) * (ratio - 1)}
+                let distance = Math.abs(inDb - comp)
+                if (distance < knee) {outDb += (invRatio - 1) * Math.pow(knee - distance, 3) / (6 * knee * knee)}
+                distance = Math.abs(inDb - expand)
+                if (distance < knee) {outDb += (1 - ratio) * Math.pow(knee - distance, 3) / (6 * knee * knee)}
+                if (inDb < gate + (gateOpen ? 0 : v("gate/hysteresis"))) {outDb -= 1000}
+                return outDb
+            }
+            const reference = Math.max(-20, expand, gate)
+            const extra = v("compressor/autoGain") >= 0.5 ? reference - mapDb(reference) : 0
+            const meterWidth = 7
+            const left = PAD, right = width - PAD - meterWidth - 5, top = PAD, bottom = height - PAD
+            const low = -72, high = 6
+            const x = db => left + (right - left) * (db - low) / (high - low)
+            const y = db => bottom - (bottom - top) * (clamp(db, low - 4, high + 2) - low) / (high - low)
+            for (let db = -60; db <= 0; db += 12) {
+                gridLine(context, x(db), top, x(db), bottom)
+                gridLine(context, left, y(db), right, y(db))
+            }
+            gridLine(context, x(low), y(low), x(high), y(high), true)
+            const points = []
+            for (let index = 0; index <= 156; index++) {
+                const inDb = low + index * (high - low) / 156
+                points.push([x(inDb), y(mapDb(inDb) + extra)])
+            }
+            trace(context, points, {fill: bottom})
+            const inDb = card.meters.levelDb
+            if (inDb > low) {dot(context, x(inDb), y(inDb + gainToDb(card.meters.gain)))}
+            caption(context, "0", x(0) - 1, bottom - 2, "right", 0.6)
+            caption(context, "-24", x(-24) - 1, bottom - 2, "right", 0.6)
+            caption(context, "-48", x(-48) - 1, bottom - 2, "right", 0.6)
+            // gain reduction, 0 at the top, -24 dB at the bottom
+            const meterLeft = width - PAD - meterWidth
+            context.fillStyle = "rgba(10, 30, 80, 0.45)"
+            context.fillRect(meterLeft, top, meterWidth, bottom - top)
+            const reduction = clamp(-gainToDb(card.meters.gain) / 24, 0, 1)
+            context.save()
+            context.shadowColor = "white"
+            context.shadowBlur = 5
+            context.fillStyle = "rgba(255, 255, 255, 0.9)"
+            context.fillRect(meterLeft + 1, top + 1, meterWidth - 2, (bottom - top - 2) * reduction)
+            context.restore()
+            caption(context, "GR", meterLeft + meterWidth / 2, bottom + 0, "center", 0)
+        },
+        // One axis, 0 Hz in the centre: the input's partials as faint outlines, where the shift puts them as bright
+        // bars, the shift as an arrow along the top. Below 0 Hz a partial is dropped (dimmed), reflected back
+        // above 0 Hz, or, shifting up, the negative-frequency images cross 0 Hz (duplicate).
+        "freq-shifter": (context, width, height, card) => {
+            lcd(context, width, height)
+            const shift = card.value("shiftHz"), mode = card.value("reflect")
+            const reflectDown = mode === 1 || mode === 3, duplicateUp = mode === 2 || mode === 3
+            // wide enough for the highest partial (1350 Hz) shifted by the most (+1000 Hz)
+            const left = PAD, right = width - PAD, range = 2500
+            const top = PAD + 16, base = height - PAD - 9
+            context.save()
+            context.beginPath()
+            context.rect(left, 0, right - left, height)
+            context.clip()
+            const x = hz => (left + right) / 2 + (right - left) / 2 * hz / range
+            for (let hz = -2500; hz <= 2500; hz += 500) {gridLine(context, x(hz), PAD, x(hz), base, hz === 0)}
+            gridLine(context, left, base, right, base)
+            for (const hz of [-2000, -1000, 0, 1000, 2000]) {
+                caption(context, hz === 0 ? "0" : `${hz / 1000}K`, x(hz), height - PAD + 1, "center", 0.7)
+            }
+            const tall = base - top
+            const bar = (hz, level, alpha, outline) => {
+                if (hz < -range || hz > range) {return}
+                context.save()
+                context.globalAlpha = alpha
+                if (outline) {
+                    context.strokeStyle = "rgba(255, 255, 255, 0.55)"
+                    context.lineWidth = 0.8
+                    context.strokeRect(x(hz) - 1.5, base - level * tall, 3, level * tall)
+                } else {
+                    context.shadowColor = "white"
+                    context.shadowBlur = 4
+                    context.fillStyle = "white"
+                    context.fillRect(x(hz) - 1, base - level * tall, 2, level * tall)
+                }
+                context.restore()
+            }
+            const ROOT = 150
+            for (let n = 1; n <= 9; n++) {
+                const hz = n * ROOT, level = 0.9 / Math.sqrt(n)
+                bar(hz, level, 1, true)
+                const shifted = hz + shift
+                if (shifted >= 0) {
+                    bar(shifted, level, 1, false)
+                } else {
+                    bar(shifted, level, 0.3, false)
+                    if (reflectDown) {bar(-shifted, level, 0.85, false)}
+                }
+                if (duplicateUp && shift - hz > 0) {bar(shift - hz, level, 0.55, false)}
+            }
+            // the shift, from 0 Hz to where 0 Hz goes
+            const y = PAD + 6, from = x(0), to = x(clamp(shift, -range, range))
+            context.save()
+            context.strokeStyle = "white"
+            context.fillStyle = "white"
+            context.shadowColor = "white"
+            context.shadowBlur = 3
+            context.lineWidth = 1.2
+            context.beginPath()
+            context.moveTo(from, y)
+            context.lineTo(to, y)
+            context.stroke()
+            const direction = Math.sign(shift) || 1
+            context.beginPath()
+            context.moveTo(to + direction * 3, y)
+            context.lineTo(to - direction * 1.5, y - 3)
+            context.lineTo(to - direction * 1.5, y + 3)
+            context.fill()
+            context.restore()
+            // the value beyond the arrow's tip, or before it where it would leave the screen
+            const text = format({text: "shift"}, shift).toUpperCase()
+            context.font = "700 6.5px Lato, sans-serif"
+            const textWidth = context.measureText(text).width
+            const ahead = shift >= 0 ? to + 6 + textWidth <= right - 1 : to - 6 - textWidth >= left + 1
+            const forward = (shift >= 0) === ahead
+            caption(context, text, ahead ? to + direction * 6 : to - direction * 6, y + (ahead ? 2.5 : 9.5),
+                forward ? "left" : "right", 0.9)
+            context.restore()
+        },
+        // an analogue meter of the gain reduction, lit from above
+        limiter: (context, width, height, card) => {
+            const face = context.createLinearGradient(0, 0, 0, height)
+            face.addColorStop(0, "#f4f1e8")
+            face.addColorStop(1, "#d6d3cb")
+            context.fillStyle = face
+            context.fillRect(0, 0, width, height)
+            for (const lx of [0.3, 0.7]) {
+                const light = context.createRadialGradient(width * lx, -6, 2, width * lx, -6, height * 0.75)
+                light.addColorStop(0, "rgba(255, 214, 130, 0.85)")
+                light.addColorStop(0.4, "rgba(255, 228, 170, 0.25)")
+                light.addColorStop(1, "rgba(255, 240, 210, 0)")
+                context.fillStyle = light
+                context.fillRect(0, 0, width, height)
+            }
+            // the needle turns on the cap's centre, just below the bottom edge
+            const cx = width / 2, cy = height + 3, radius = height * 0.74
+            const scale = [0, 1, 2, 3, 5, 7, 10, 15, 20]
+            const angleOf = db => 48 - 96 * Math.sqrt(clamp(db, 0, 20) / 20)
+            context.save()
+            context.lineCap = "butt"
+            context.strokeStyle = "#3b3a37"
+            context.lineWidth = 1
+            context.beginPath()
+            const [ax, ay] = polar(cx, cy, radius, angleOf(20))
+            context.moveTo(ax, ay)
+            for (let db = 0; db <= 20; db += 0.25) {
+                const [px, py] = polar(cx, cy, radius, angleOf(20 - db))
+                context.lineTo(px, py)
+            }
+            context.stroke()
+            context.strokeStyle = "#d8322d"
+            context.lineWidth = 3
+            context.beginPath()
+            for (let db = 10; db <= 20; db += 0.25) {
+                const [px, py] = polar(cx, cy, radius + 2, angleOf(db))
+                db === 10 ? context.moveTo(px, py) : context.lineTo(px, py)
+            }
+            context.stroke()
+            context.font = "700 7px Lato, sans-serif"
+            context.textAlign = "center"
+            for (const db of scale) {
+                const [x0, y0] = polar(cx, cy, radius, angleOf(db))
+                const [x1, y1] = polar(cx, cy, radius - (db % 5 === 0 || db < 4 ? 5 : 3), angleOf(db))
+                context.strokeStyle = db >= 10 ? "#d8322d" : "#3b3a37"
+                context.lineWidth = 1
+                context.beginPath()
+                context.moveTo(x0, y0)
+                context.lineTo(x1, y1)
+                context.stroke()
+                if (db === 0 || db === 3 || db === 5 || db === 10 || db === 20 || db === 1) {
+                    const [tx, ty] = polar(cx, cy, radius + 9, angleOf(db))
+                    context.fillStyle = db >= 10 ? "#d8322d" : "#3b3a37"
+                    context.textBaseline = "middle"
+                    context.fillText(`${db === 0 ? "0" : -db}`, tx, ty)
+                    context.textBaseline = "alphabetic"
+                }
+            }
+            context.font = "900 11px Lato, sans-serif"
+            context.fillStyle = "rgba(60, 58, 54, 0.75)"
+            context.fillText("GR", cx, height * 0.66)
+            context.font = "700 5.5px Lato, sans-serif"
+            context.fillText("dB", cx, height * 0.66 + 7)
+            // the needle and its pivot
+            const reduction = clamp(-gainToDb(card.meters.gain), 0, 20)
+            const angle = angleOf(reduction)
+            const [nx, ny] = polar(cx, cy, radius + 3, angle)
+            context.strokeStyle = "rgba(0, 0, 0, 0.18)"
+            context.lineWidth = 2
+            context.beginPath()
+            context.moveTo(cx + 2, cy)
+            context.lineTo(nx + 2, ny + 1)
+            context.stroke()
+            context.strokeStyle = "#2a2a2a"
+            context.lineWidth = 1.2
+            context.beginPath()
+            context.moveTo(cx, cy)
+            context.lineTo(nx, ny)
+            context.stroke()
+            context.fillStyle = "#3a3a3a"
+            context.beginPath()
+            context.arc(cx, cy, 9, Math.PI, 0)
+            context.fill()
+            context.restore()
+            // PEAK: lit while it limits
+            const lit = reduction > 0.3
+            const lx = 12, ly = height - 11
+            context.font = "900 6.5px Lato, sans-serif"
+            context.textAlign = "left"
+            context.fillStyle = "#3b3a37"
+            context.fillText("LIMIT", lx + 6, ly + 2.5)
+            context.save()
+            context.shadowColor = lit ? "#ff5050" : "transparent"
+            context.shadowBlur = lit ? 8 : 0
+            context.fillStyle = lit ? "#ff4040" : "#7a2d2a"
+            context.beginPath()
+            context.arc(lx, ly, 3.2, 0, Math.PI * 2)
+            context.fill()
+            context.restore()
+            // the frame's inner shadow
+            const shade = context.createLinearGradient(0, 0, 0, 10)
+            shade.addColorStop(0, "rgba(0, 0, 0, 0.3)")
+            shade.addColorStop(1, "rgba(0, 0, 0, 0)")
+            context.fillStyle = shade
+            context.fillRect(0, 0, width, 10)
+        },
+        // The impulse response on a fixed logarithmic time axis (2 ms to 30 s): the dry hit at the left edge, the early
+        // reflections inside the room time (they move with the room), then the tail decaying by the decay time (RT20,
+        // it grows to the right). Amplitudes on a dB scale (0 to -60 dB), so a long tail stays visible.
+        reverb: (context, width, height, card) => {
+            lcd(context, width, height)
+            const rt20 = card.value("rt20"), room = card.value("roomMs") / 1000, early = card.value("early")
+            const dry = card.value("dry"), wet = card.value("wet")
+            const FIRST = 0.002, LAST = 30
+            const left = PAD + 3, right = width - PAD, centre = (PAD + height - 13) / 2, half = centre - PAD - 1
+            const x = seconds => left + (right - left) * Math.log(Math.max(seconds, FIRST) / FIRST) / Math.log(LAST / FIRST)
+            const scale = gain => clamp(1 + gainToDb(gain) / 60, 0, 1)
+            for (const [seconds, text] of [[0.01, "10 MS"], [0.1, "100 MS"], [1, "1 S"], [10, "10 S"]]) {
+                gridLine(context, x(seconds), PAD, x(seconds), height - 13)
+                caption(context, text, x(seconds), height - 5, "center", 0.7)
+            }
+            for (const seconds of [0.003, 0.005, 0.03, 0.05, 0.3, 0.5, 3, 5]) {
+                context.save()
+                context.globalAlpha = 0.5
+                gridLine(context, x(seconds), PAD, x(seconds), height - 13)
+                context.restore()
+            }
+            gridLine(context, left, centre, right, centre, true)
+            // a fixed noise, so the tail does not flicker
+            const noise = index => {
+                const value = Math.sin(index * 12.9898 + 4.1414) * 43758.5453
+                return (value - Math.floor(value)) * 2 - 1
+            }
+            const rate = 20 / rt20
+            context.save()
+            context.strokeStyle = "rgba(255, 255, 255, 0.85)"
+            context.lineWidth = 0.7
+            context.beginPath()
+            const columns = Math.round((right - left) * 1.5)
+            for (let column = 0; column < columns; column++) {
+                const seconds = FIRST * Math.pow(LAST / FIRST, column / columns)
+                if (seconds < room * 0.6) {continue}
+                // the tail fades in over the room time, then decays
+                const onset = clamp((seconds - room * 0.6) / room, 0, 1)
+                const envelope = wet * onset * dbToGain(-rate * Math.max(0, seconds - room))
+                const amplitude = scale(envelope * 0.7) * half * Math.abs(noise(column))
+                const at = x(seconds)
+                context.moveTo(at, centre - amplitude)
+                context.lineTo(at, centre + amplitude * 0.9)
+            }
+            context.stroke()
+            context.restore()
+            const spike = (at, gain, alpha) => {
+                const amplitude = scale(gain) * half
+                if (amplitude <= 0) {return}
+                context.save()
+                context.globalAlpha = alpha
+                context.strokeStyle = "white"
+                context.shadowColor = "white"
+                context.shadowBlur = 4
+                context.lineWidth = 1.4
+                context.beginPath()
+                context.moveTo(at, centre - amplitude)
+                context.lineTo(at, centre + amplitude)
+                context.stroke()
+                context.restore()
+            }
+            for (let index = 0; index < 7; index++) {
+                const seconds = room * (0.1 + index * 0.13 + 0.03 * noise(index + 50))
+                spike(x(seconds), wet * early * 0.5 / (1 + index * 0.5), 0.9)
+            }
+            spike(left - 1, dry, 1)
+            caption(context, "DRY", left + 3, PAD + 6, "left", dry > 0 ? 0.7 : 0.3)
+        },
+        // the Bark-scale spectrum, both channels
+        analyser: (context, width, height, card) => {
+            lcd(context, width, height)
+            const left = PAD, right = width - PAD, top = PAD, bottom = height - 12
+            const low = Math.log(20), high = Math.log(20000)
+            const x = hz => left + (right - left) * (Math.log(hz) - low) / (high - low)
+            const y = db => top + (bottom - top) * clamp(-db, 0, 96) / 96
+            for (let decade = 10; decade < 20000; decade *= 10) {
+                for (let n = 1; n < 10; n++) {
+                    const hz = decade * n
+                    if (hz >= 20 && hz <= 20000) {gridLine(context, x(hz), top, x(hz), bottom, false)}
+                }
+            }
+            for (let db = -24; db >= -96; db -= 24) {gridLine(context, left, y(db), right, y(db))}
+            for (const [hz, text] of [[50, "50"], [100, "100"], [200, "200"], [500, "500"], [1000, "1K"], [2000, "2K"], [5000, "5K"], [10000, "10K"]]) {
+                caption(context, text, x(hz), height - 4, "center", 0.75)
+            }
+            for (let db = -24; db >= -72; db -= 24) {caption(context, `${db}`, left + 1, y(db) - 2, "left", 0.55)}
+            const {hz, energy} = card.meters.spectrum
+            // from 20 Hz to 20 kHz exactly, whatever bands the resolution gives: the ends between the bands around them
+            const LOW = 20, HIGH = 20000
+            energy.forEach((band, channel) => {
+                const db = index => 10 * Math.log10(band[index] + 1e-30)
+                const at = frequency => {
+                    const above = hz.findIndex(value => value >= frequency)
+                    if (above <= 0) {return db(above < 0 ? hz.length - 1 : 0)}
+                    const f = Math.log(frequency / hz[above - 1]) / Math.log(hz[above] / hz[above - 1])
+                    return db(above - 1) + (db(above) - db(above - 1)) * f
+                }
+                if (hz.length === 0) {return}
+                const points = [[x(LOW), y(at(LOW))]]
+                for (let index = 0; index < hz.length; index++) {
+                    if (hz[index] > LOW && hz[index] < HIGH) {points.push([x(hz[index]), y(db(index))])}
+                }
+                points.push([x(HIGH), y(at(HIGH))])
+                trace(context, points, channel === 0 ? {fill: bottom} : {alpha: 0.55, width: 1})
+            })
+        }
+    }
+
+    // --- cards --------------------------------------------------------------------------------------------------
+
+    const CONTROL = 44, KNOB = 30, HEADER_KNOB = 24
+
+    const makeCard = (name, host) => {
+        const effect = EFFECTS[name]
+        // values are the host's (knob positions, steps), in the order of the plugin's parameters
+        const params = new Map(effect.params.map((p, index) => [p.key, {...p, index}]))
+        const values = effect.params.map(p => toHost(p, p.value))
+        const card = {
+            name, effect, values, time: 0, views: [], dragging: new Set(),
+            meters: {input: 0, levelDb: -300, gain: 1, phase: 0, spectrum: {hz: [], energy: []}},
+            value: key => {
+                const p = params.get(key)
+                return toEffect(p, values[p.index])
+            }
+        }
+        const element = document.createElement("div")
+        element.className = "card"
+        element.style.setProperty("--accent", effect.accent)
+        const columns = Math.max(...effect.rows.map(row => row.reduce((sum, key) =>
+            sum + (params.get(key).kind === "steps" ? 2 : 1), 0)))
+        const single = effect.rows.length === 1
+        const gridWidth = single ? columns * CONTROL + (columns - 1) * 14 : columns * CONTROL + (columns - 1) * 2
+        element.style.width = `${14 + effect.screen + 14 + gridWidth + 14}px`
+        element.innerHTML = `<div class="header"><div class="titles">
+            <h1>${effect.title.toUpperCase()}</h1><h2>SIGNALSMITH · ${effect.subtitle}</h2></div>
+            <div class="header-controls"></div></div><div class="body"><div class="screen"><canvas></canvas></div>
+            <div class="grid"></div></div>`
+        card.element = element
+        const screen = element.querySelector(".screen")
+        screen.style.width = `${effect.screen}px`
+        const canvas = screen.querySelector("canvas")
+        const context = canvas.getContext("2d")
+
+        const setValue = (p, value) => {
+            const next = p.kind === "steps" ? Math.round(clamp(value, p.low, p.high)) : clamp(value, 0, 1)
+            if (values[p.index] === next) {return}
+            values[p.index] = next
+            host.set(card, p.id, next)
+            card.views.forEach(view => view.update())
+        }
+
+        const knob = (key, size) => {
+            const p = params.get(key)
+            const control = document.createElement("div")
+            control.className = "control"
+            const view = knobView(size, p.bipolar === true)
+            const label = document.createElement("div")
+            label.className = "label"
+            label.textContent = p.label
+            const readout = document.createElement("div")
+            readout.className = "readout"
+            control.append(view.element, label, readout)
+            card.views.push({update: () => {
+                view.update(values[p.index])
+                readout.textContent = format(p, toEffect(p, values[p.index]))
+            }})
+            let drag = null
+            control.addEventListener("pointerdown", () => host.hover(card, p.id), {capture: true})
+            control.addEventListener("pointerdown", event => {
+                if (event.button !== 0 || event.ctrlKey || drag !== null) {return}
+                control.setPointerCapture(event.pointerId)
+                drag = {pointerId: event.pointerId, unit: values[p.index]}
+                control.classList.add("active")
+                card.dragging.add(p.index)
+                host.begin(card, p.id)
+            })
+            control.addEventListener("pointermove", event => {
+                host.hover(card, p.id)
+                if (drag === null || event.pointerId !== drag.pointerId) {return}
+                drag.unit = clamp(drag.unit - event.movementY / 128 * (event.altKey || event.shiftKey ? 0.2 : 1.2), 0, 1)
+                setValue(p, drag.unit)
+            })
+            const end = () => {
+                if (drag === null) {return}
+                drag = null
+                control.classList.remove("active")
+                card.dragging.delete(p.index)
+                host.end(card, p.id)
+            }
+            control.addEventListener("pointerup", end)
+            control.addEventListener("lostpointercapture", end)
+            control.addEventListener("pointerenter", () => {
+                host.hover(card, p.id)
+                control.classList.add("active")
+            })
+            control.addEventListener("pointerleave", () => {
+                if (drag === null) {
+                    control.classList.remove("active")
+                    host.hover(card, null)
+                }
+            })
+            return control
+        }
+
+        const selector = key => {
+            const p = params.get(key)
+            const element = document.createElement("div")
+            element.className = "selector"
+            element.innerHTML = `<div class="lcd"><span class="text"></span><span class="arrows"><span>◀</span>
+                <span>▶</span></span></div><div class="label">${p.label}</div>`
+            const text = element.querySelector(".text")
+            const [previous, next] = element.querySelectorAll(".arrows span")
+            const step = direction => {
+                const count = p.high - p.low + 1
+                const value = p.low + ((values[p.index] - p.low + direction + count) % count)
+                host.begin(card, p.id)
+                setValue(p, value)
+                host.end(card, p.id)
+            }
+            previous.addEventListener("pointerdown", event => {if (event.button === 0 && !event.ctrlKey) {step(-1)}})
+            next.addEventListener("pointerdown", event => {if (event.button === 0 && !event.ctrlKey) {step(1)}})
+            // only the arrows step: a double-click on the display is openDAW's value entry
+            element.addEventListener("pointerdown", () => host.hover(card, p.id), {capture: true})
+            element.addEventListener("pointermove", () => host.hover(card, p.id))
+            element.addEventListener("pointerleave", () => host.hover(card, null))
+            const choices = p.labels.map(label => {
+                const span = document.createElement("span")
+                span.textContent = label
+                text.append(span)
+                return span
+            })
+            card.views.push({update: () => choices.forEach((span, index) =>
+                span.classList.toggle("hidden", index !== Math.round(values[p.index] - p.low)))})
+            return element
+        }
+
+        const control = (key, size) => params.get(key).kind === "steps" ? selector(key) : knob(key, size)
+        const headerControls = element.querySelector(".header-controls")
+        for (const key of effect.header) {
+            headerControls.append(control(key, HEADER_KNOB))
+        }
+        const grid = element.querySelector(".grid")
+        for (const keys of effect.rows) {
+            const row = document.createElement("div")
+            row.className = keys.length < columns || effect.rows.length === 1 ? "row center" : "row"
+            for (const key of keys) {row.append(control(key, effect.rows.length === 1 ? 38 : KNOB))}
+            grid.append(row)
+        }
+        card.views.forEach(view => view.update())
+
+        card.draw = zoom => {
+            const ratio = (window.devicePixelRatio || 1) * zoom
+            const width = canvas.clientWidth, height = canvas.clientHeight
+            const pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio)
+            if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+                canvas.width = pixelWidth
+                canvas.height = pixelHeight
+            }
+            context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0)
+            DISPLAYS[name](context, width, height, card)
+        }
+        card.refresh = () => card.views.forEach(view => view.update())
+        return card
+    }
+
+    // --- preview: every card, signals made up here ----------------------------------------------------------------
+
+    const simulate = (card, time, delta) => {
+        const swell = 0.5 + 0.5 * Math.sin(time * 0.9) * Math.sin(time * 0.23 + 1)
+        const beat = Math.pow(1 - (time * 2 % 1), 3)
+        const input = clamp(0.15 + 0.55 * swell + 0.3 * beat, 0, 1)
+        const meters = card.meters
+        meters.input = input
+        switch (card.name) {
+            case "chorus": {
+                const detuneHz = card.value("detune") * 0.45 / card.value("depthMs")
+                meters.phase = (meters.phase + detuneHz * delta * 4) % 1
+                break
+            }
+            case "dynamics":
+            case "limiter": {
+                const levelDb = gainToDb(input) + (card.name === "limiter" ? gainToDb(card.value("inputGain")) : -8)
+                meters.levelDb = levelDb
+                if (card.name === "limiter") {
+                    const over = Math.max(0, levelDb - gainToDb(card.value("outputLimit")))
+                    meters.gain += (dbToGain(-over) - meters.gain) * (over > 0 ? 0.5 : 0.08)
+                } else {
+                    const invRatio = card.value("compressor/invRatio")
+                    const over = Math.max(0, levelDb - card.value("compressor/limitDb"))
+                    const target = dbToGain(over * (invRatio - 1))
+                    meters.gain += (target - meters.gain) * 0.2
+                }
+                break
+            }
+            case "analyser": {
+                const resolution = card.value("barkResolution")
+                const bands = Math.round(24 * resolution)
+                const hz = [], left = [], right = []
+                for (let index = 0; index < bands; index++) {
+                    const bark = index / resolution
+                    const frequency = 1960 * (bark + 0.53) / (26.28 - bark)
+                    if (frequency > 24000) {break}
+                    hz.push(Math.max(1, frequency))
+                    const tilt = -3 * Math.log2(Math.max(frequency, 30) / 100)
+                    let db = -30 + tilt - 6 * (1 - input)
+                    for (const [center, width, gain] of [[110, 0.18, 18], [220, 0.12, 10], [880 + 300 * Math.sin(time * 0.7), 0.1, 12], [3200, 0.3, 8]]) {
+                        db += gain * Math.exp(-Math.pow(Math.log(frequency / center) / width, 2))
+                    }
+                    const noise = Math.sin(index * 12.9898 + Math.floor(time * 20) * 78.233) * 43758.5453
+                    db += 3 * (noise - Math.floor(noise) - 0.5)
+                    left.push(Math.pow(10, db / 10))
+                    right.push(Math.pow(10, (db - 2 - 2 * Math.sin(time + index * 0.05)) / 10))
+                }
+                meters.spectrum = {hz, energy: [left, right]}
+                break
+            }
+        }
+    }
+
+    // the plugin's page always names its effect (#chorus), without one it is the preview
+    const preview = new URL(location).searchParams.has("preview") || location.hash.length < 2
+    const stage = document.getElementById("stage")
+    const cards = []
+    const quietHost = {set: () => {}, begin: () => {}, end: () => {}, hover: () => {}}
+    // Messages to the plugin (signalsmith_basics.cpp), little endian: the type at byte 0, the parameter id at 4, a
+    // value at 8. Hovering reports the parameter under the pointer (clap.param-hovered): openDAW then takes the
+    // right-click (its parameter menu) and the double-click (its value entry) on the page.
+    const PAGE = {POLL: 1, BEGIN: 2, SET: 3, END: 4, HOVER: 7}
+    const NO_PARAM = 0xffffffff
+    const post = bytes => window.parent.postMessage(bytes, "*")
+    const send = (type, id, value) => {
+        const view = new DataView(new ArrayBuffer(type === PAGE.SET ? 16 : 8))
+        view.setUint8(0, type)
+        view.setUint32(4, id, true)
+        if (type === PAGE.SET) {view.setFloat64(8, value, true)}
+        post(view.buffer)
+    }
+    let hovered = NO_PARAM, dragging = 0
+    const pluginHost = {
+        set: (card, id, value) => send(PAGE.SET, id, value),
+        begin: (card, id) => {
+            dragging++
+            send(PAGE.BEGIN, id)
+        },
+        end: (card, id) => {
+            dragging = Math.max(0, dragging - 1)
+            send(PAGE.END, id)
+        },
+        hover: (card, id) => {
+            const next = id ?? NO_PARAM
+            if (next === hovered || (next === NO_PARAM && dragging > 0)) {return}
+            hovered = next
+            send(PAGE.HOVER, next)
+        }
+    }
+
+    if (preview) {
+        document.body.classList.add("preview")
+        const zoom = Number(new URL(location).searchParams.get("zoom") ?? 1.5)
+        const section = title => {
+            const element = document.createElement("div")
+            element.className = "section"
+            element.innerHTML = `<h3>${title}</h3><div class="shelf"></div>`
+            stage.append(element)
+            return element.querySelector(".shelf")
+        }
+        const panels = section("DEVICE PANEL · 176 PX, ACTUAL SIZE")
+        for (const name of ORDER) {
+            const card = makeCard(name, quietHost)
+            const device = document.createElement("div")
+            device.className = "device"
+            device.innerHTML = `<div class="caption">${EFFECTS[name].title} · ${card.element.style.width.replace("px", "")} × 176</div>`
+            device.append(card.element)
+            panels.append(device)
+            cards.push({card, zoom: 1})
+        }
+        const windows = section(`WINDOW · ${Math.round(zoom * 100)} %`)
+        for (const name of ORDER) {
+            const card = makeCard(name, quietHost)
+            card.element.style.zoom = zoom
+            windows.append(card.element)
+            cards.push({card, zoom})
+        }
+        let last = performance.now()
+        const frame = now => {
+            const delta = Math.min(0.1, (now - last) / 1000)
+            last = now
+            for (const {card, zoom} of cards) {
+                card.time = now / 1000
+                simulate(card, card.time, delta)
+                card.draw(zoom)
+            }
+            requestAnimationFrame(frame)
+        }
+        document.fonts.ready.then(() => requestAnimationFrame(frame))
+    } else {
+        // the plugin's page: its card, zoomed to the window (1:1 in openDAW's 176 px device panel)
+        const card = makeCard(location.hash.slice(1), pluginHost)
+        stage.append(card.element)
+        let zoom = 1
+        const resize = () => {
+            zoom = Math.max(0.25, Math.min(innerWidth / card.element.offsetWidth, innerHeight / 176))
+            stage.style.transform = `scale(${zoom})`
+        }
+        addEventListener("resize", resize)
+        resize()
+        // STATUS (basics.cpp send_status): the parameter count at 1, the band count at 2, host values (f64) from 8,
+        // then f32 readings: input and output peak, chorus phase, dynamics level (dB), gain, the spectrum
+        const PLUGIN_STATUS = 1
+        addEventListener("message", event => {
+            if (!(event.data instanceof ArrayBuffer)) {return}
+            const view = new DataView(event.data)
+            if (view.byteLength < 8 || view.getUint8(0) !== PLUGIN_STATUS) {return}
+            const count = view.getUint8(1), bands = view.getUint16(2, true)
+            if (count !== card.values.length || view.byteLength < 8 + count * 8 + 20 + bands * 12) {return}
+            let changed = false
+            for (let index = 0; index < count; index++) {
+                if (card.dragging.has(index)) {continue}
+                const value = view.getFloat64(8 + index * 8, true)
+                if (value !== card.values[index]) {
+                    card.values[index] = value
+                    changed = true
+                }
+            }
+            if (changed) {card.refresh()}
+            const at = 8 + count * 8
+            const meters = card.meters
+            // peaks and gains as the plugin measured them since the last poll, falling back slowly
+            meters.input = Math.max(view.getFloat32(at, true), meters.input * 0.9)
+            meters.phase = view.getFloat32(at + 8, true)
+            const level = view.getFloat32(at + 12, true)
+            meters.levelDb = level > -200 ? level : Math.max(-300, meters.levelDb - 1)
+            const gain = view.getFloat32(at + 16, true)
+            meters.gain = gain <= meters.gain ? gain : meters.gain + (gain - meters.gain) * 0.12
+            if (bands > 0) {
+                const floats = offset => Array.from({length: bands}, (_, band) => view.getFloat32(offset + band * 4, true))
+                const start = at + 20
+                meters.spectrum = {hz: floats(start), energy: [floats(start + bands * 4), floats(start + bands * 8)]}
+            }
+        })
+        const frame = now => {
+            post(new Uint8Array([PAGE.POLL]).buffer)
+            card.time = now / 1000
+            card.draw(zoom)
+            requestAnimationFrame(frame)
+        }
+        document.fonts.ready.then(() => requestAnimationFrame(frame))
+    }
+</script>
+</body>
+</html>

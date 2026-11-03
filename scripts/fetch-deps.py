@@ -192,6 +192,18 @@ DEPS += [
      or p in ("src/common/helm_common.h", "src/common/helm_common.cpp", "COPYING", "README.md", "changelog")),
 ]
 
+# Signalsmith Basics (Geraint Luff) at main at the time of writing, and the tags its CMake fetches: Linear 0.6.4, DSP
+# v1.7.1, Hilbert IIR 1.0.0. All header-only, MIT.
+SIGNALSMITH_KEEP = lambda p: (p.endswith((".h", ".cpp")) and not p.startswith(("tests/", "design/", "benchmark/"))
+                              or p in ("LICENSE.txt", "README.md"))
+DEPS += [
+    ("signalsmith-basics", "Signalsmith-Audio/basics", "369e906e03760ec219d07b06fa06dc4fd099f377", SIGNALSMITH_KEEP),
+    ("signalsmith-linear", "Signalsmith-Audio/linear", "de55e6a50ffcf6f8f43f649692d94691c7025151", SIGNALSMITH_KEEP),
+    ("signalsmith-dsp", "Signalsmith-Audio/dsp", "2d20161915e733f117545c6be8cd3275a739a1e3", SIGNALSMITH_KEEP),
+    ("signalsmith-hilbert", "Signalsmith-Audio/hilbert-iir", "9e42e09714c8215d51eaa1b52a3d54ae8dd2a3a3",
+     SIGNALSMITH_KEEP),
+]
+
 # Droplets and TapElectric (aquanode) at main at the time of writing: only each plugin's sources from the collection
 AQUANODE = "35f0676f1d1ba2ac6841abc7a65bab8587a11ab0"
 DEPS += [
@@ -328,7 +340,7 @@ def fetch_fonts():
 PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "ripplerx"), ("odin2-", "odin2"),
                  ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
                  ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric"), ("oxygen-", "oxygen"),
-                 ("obxf-", "OB-Xf"), ("helm-", "helm")] + [(d + "-", d) for d, _, _ in ZL]
+                 ("obxf-", "OB-Xf"), ("helm-", "helm"), ("signalsmith-basics-", "signalsmith-basics")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():

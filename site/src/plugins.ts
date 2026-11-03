@@ -139,6 +139,62 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         bundled: "/bundled/wet-chorus.wclap.tar.gz"
     },
     {
+        id: "signalsmith-chorus", name: "Signalsmith Chorus", kind: "audio-fx",
+        description: "Six-voice stereo chorus",
+        clapId: "uk.co.signalsmith.basics.chorus",
+        archive: "build/signalsmith-basics/signalsmith-basics.wclap.tar.gz", build: "scripts/build-signalsmith-basics.sh",
+        credit: "https://github.com/Signalsmith-Audio/basics", source: port("signalsmith-basics"), license: "MIT",
+        panel: true
+    },
+    {
+        id: "signalsmith-crunch", name: "Signalsmith Crunch", kind: "audio-fx",
+        description: "Oversampled distortion and saturation with tone and low cut",
+        clapId: "uk.co.signalsmith.basics.crunch",
+        archive: "build/signalsmith-basics/signalsmith-basics.wclap.tar.gz", build: "scripts/build-signalsmith-basics.sh",
+        credit: "https://github.com/Signalsmith-Audio/basics", source: port("signalsmith-basics"), license: "MIT",
+        panel: true
+    },
+    {
+        id: "signalsmith-dynamics", name: "Signalsmith Dynamics", kind: "audio-fx",
+        description: "Compressor, expander and gate with knee, lookahead and a sidechain",
+        clapId: "uk.co.signalsmith.basics.dynamics",
+        archive: "build/signalsmith-basics/signalsmith-basics.wclap.tar.gz", build: "scripts/build-signalsmith-basics.sh",
+        credit: "https://github.com/Signalsmith-Audio/basics", source: port("signalsmith-basics"), license: "MIT",
+        panel: true
+    },
+    {
+        id: "signalsmith-freq-shifter", name: "Signalsmith Frequency Shifter", kind: "audio-fx",
+        description: "Single-sideband frequency shifter, with reflection or duplication at 0 Hz",
+        clapId: "uk.co.signalsmith.basics.freq-shifter",
+        archive: "build/signalsmith-basics/signalsmith-basics.wclap.tar.gz", build: "scripts/build-signalsmith-basics.sh",
+        credit: "https://github.com/Signalsmith-Audio/basics", source: port("signalsmith-basics"), license: "MIT",
+        panel: true
+    },
+    {
+        id: "signalsmith-limiter", name: "Signalsmith Limiter", kind: "audio-fx",
+        description: "Lookahead limiter with hold, release and channel link",
+        clapId: "uk.co.signalsmith.basics.limiter",
+        archive: "build/signalsmith-basics/signalsmith-basics.wclap.tar.gz", build: "scripts/build-signalsmith-basics.sh",
+        credit: "https://github.com/Signalsmith-Audio/basics", source: port("signalsmith-basics"), license: "MIT",
+        panel: true
+    },
+    {
+        id: "signalsmith-reverb", name: "Signalsmith Reverb", kind: "audio-fx",
+        description: "Feedback delay network reverb with early reflections and damping",
+        clapId: "uk.co.signalsmith.basics.reverb",
+        archive: "build/signalsmith-basics/signalsmith-basics.wclap.tar.gz", build: "scripts/build-signalsmith-basics.sh",
+        credit: "https://github.com/Signalsmith-Audio/basics", source: port("signalsmith-basics"), license: "MIT",
+        panel: true
+    },
+    {
+        id: "signalsmith-analyser", name: "Signalsmith Analyser", kind: "audio-fx",
+        description: "Bark-scale spectrum analyser",
+        clapId: "uk.co.signalsmith.basics.analyser",
+        archive: "build/signalsmith-basics/signalsmith-basics.wclap.tar.gz", build: "scripts/build-signalsmith-basics.sh",
+        credit: "https://github.com/Signalsmith-Audio/basics", source: port("signalsmith-basics"), license: "MIT",
+        panel: true
+    },
+    {
         id: "note-lab", name: "Note Lab", kind: "midi-fx",
         description: "The reference note effect: passes, harmonizes, echoes or holds the notes it gets",
         clapId: "studio.opendaw.note-lab",

@@ -20,6 +20,9 @@ plugin gets there depends on what it is written with, so the ports here come fro
   with an HTML/Canvas interface ([port guide](ports/sc-dark/README.md)).
 - **Note effects** (MIDI effects) follow Note Lab: [porting a note effect](docs/porting-a-midi-effect.md).
 
+What every bundle needs in openDAW (the page, parameters, state, the 176 px device panel):
+[building a WebCLAP for openDAW](docs/building-for-opendaw.md).
+
 ## Plugins
 
 | Plugin | Description | Port | License |
@@ -37,6 +40,7 @@ plugin gets there depends on what it is written with, so the ports here come fro
 | [TapElectric](https://github.com/aquanodemusic/aquanode-plugins/tree/main/effects/tapelectric) | Tape deck atmosphere: power hum with six harmonics, EQ'd tape noise, drift, wobble and saturation | JUCE kit: the processor unchanged (`patches/tapelectric-headless.patch` leaves out upstream's editor), the editor the port's own on the same parameters (`ports/tapelectric/tape_editor.cpp`): the hum as a waveform, the noise EQ as a curve with draggable nodes, the tape motor's delay modulation as a curve | AGPL-3.0 |
 | [oXygen](https://github.com/Wamphyre/oXygen) | Mastering chain: graphic EQ, dynamic EQ, multiband compressor, stereo imager and true-peak maximizer | JUCE kit: upstream's modules in a fixed chain under the port's own processor, which offers their parameters to the host (`ports/oxygen/oxygen_processor.cpp`), and an editor of the port's own sized for openDAW's device panel, a tab per module over the input and output spectrum the DSP side sends (`ports/oxygen/oxygen_editor.cpp`). The kit's `opendaw.device-panel/1`. Without the Master Assistant and Reference Match | BSD-3-Clause (AGPL-3.0 as built) |
 | [Radar](https://github.com/andremichelle/radar) | Loop player: a ray reflecting off lines, arcs and curves drawn into a circle picks where in the sample to play, twelve patterns, played by notes or by the transport | A rewrite in C++ on the JUCE kit (`ports/radar`): the model and ray (`radar_model.cpp`), a two-head grain player locked to the host (`radar_processor.cpp`), an editor with drawing tools and a pattern strip, and a device panel of its own (`radar_editor.cpp`). The kit's own device panel page and size, and page input for the decoded sample | MIT (AGPL-3.0 as built) |
+| [Signalsmith Basics](https://github.com/Signalsmith-Audio/basics) | Seven effects: analyser, chorus, crunch, dynamics (compressor, expander, gate), frequency shifter, limiter, reverb | Plain CLAP, no JUCE: upstream's effects behind seven plugins in one module (`ports/signalsmith-basics/plugin/basics.cpp`), a card per effect with its own display, sized for openDAW's device panel (`ports/signalsmith-basics/page`). Takes over Signalsmith's own WebCLAP build as its update: its clap ids, parameter ids and values, and its CBOR state, byte for byte | MIT |
 | [WetChorus](https://github.com/yonie/WetChorus) | Bucket-brigade stereo chorus after a 1970s guitar combo | Plain CLAP, no JUCE: upstream's engine behind a small C++ wrapper (`ports/wet-chorus/plugin/wetchorus.cpp`), the original panel art on a canvas page. A demo of openDAW's device panel (`opendaw.device-panel/1`), so the site serves its bundle and openDAW's catalogue does not list it | MIT |
 | [Note Lab](ports/note-lab) | The reference note effect: passes, harmonizes, echoes or holds the notes it gets | Plain CLAP, no JUCE (`ports/note-lab/plugin/notelab.cpp`), notes in and out sample exact, a page for the window and openDAW's device panel. The template for porting a note effect ([guide](docs/porting-a-midi-effect.md)), the site serves its bundle | MIT |
 | [Hive](ports/hive) | Note sequencer on a hexagonal grid: spawn tiles start cursors on a pulse or on incoming notes, cursors walk the tiles' arrows and play their notes, splits fork them, sinks swallow them | Plain CLAP, no JUCE (`ports/hive/plugin/hive.cpp`), runs on the host's beat position and copes with a groove after it (Zeitgeist), notes sample exact, eight patterns in a fixed 21.7 KB state (a tile edit changes 16 bytes, a drawn path is one undo step), a page for the window and openDAW's device panel, the site serves its bundle | CC0-1.0 |
@@ -100,6 +104,7 @@ scripts/build-droplets.sh             # and Droplets
 scripts/build-tapelectric.sh          # and TapElectric
 scripts/build-oxygen.sh               # and oXygen
 scripts/build-radar.sh                # and Radar
+scripts/build-signalsmith-basics.sh   # and Signalsmith Basics (no JUCE: seconds), runs ports/signalsmith-basics/check.mjs
 scripts/build-zl-equalizer.sh         # and the ZL Audio plugins: zl-equalizer, zl-compressor, zl-limiter,
                                       # zl-spectrum-equalizer, zl-splitter, zl-inflator, zl-warm, zl-lmatch
 
@@ -187,5 +192,6 @@ license. JUCE is AGPLv3/commercial, OB-Xf is GPL-3.0-or-later, RipplerX GPL-3.0,
 font OFL-1.1), Surge XT GPL-3.0-or-later, Six Sines MIT (GPL-3.0 as built), coopiano MIT, Helm GPL-3.0-or-later (by
 Matt Tytel, https://github.com/mtytel/helm; its factory patches CC BY 4.0, each by its author), OpenSpatialDelay GPL-3.0
 (its fonts OFL-1.1, libmysofa BSD-3-Clause, the MIT KEMAR, CIPIC and HUTUBS HRTF sets under their own terms, see
-`ports/open-spatial-delay/NOTICES.md.in`), the CLAP headers MIT, the DejaVu fonts
+`ports/open-spatial-delay/NOTICES.md.in`), Signalsmith Basics MIT (by Geraint Luff, Signalsmith Audio, with its
+DSP, Linear and Hilbert IIR libraries, MIT, and STFX, Boost Software License 1.0; built without JUCE), the CLAP headers MIT, the DejaVu fonts
 under the Bitstream Vera license; none of them is checked in, `scripts/fetch-deps.py` downloads them.

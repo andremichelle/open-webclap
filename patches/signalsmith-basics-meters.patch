@@ -1,0 +1,63 @@
+diff -ru a/include/signalsmith-basics/chorus.h b/include/signalsmith-basics/chorus.h
+--- a/include/signalsmith-basics/chorus.h	2026-11-03 20:05:55
++++ b/include/signalsmith-basics/chorus.h	2026-11-03 20:05:55
+@@ -41,6 +41,11 @@
+ 	ParamRange depthMs{15};
+ 	ParamRange detune{5};
+ 	ParamRange stereo{1};
++
++	// the oscillator's phase (0..1), for a display
++	Sample lfoPhase() const {
++		return phase;
++	}
+ 	
+ 	template<class Storage>
+ 	void state(Storage &storage) {
+diff -ru a/include/signalsmith-basics/dynamics.h b/include/signalsmith-basics/dynamics.h
+--- a/include/signalsmith-basics/dynamics.h	2026-11-03 20:05:55
++++ b/include/signalsmith-basics/dynamics.h	2026-11-03 20:05:55
+@@ -121,6 +121,9 @@
+ 	} timing;
+ 
+ 	ParamRange mix{1};
++
++	// for a display: the loudest detector level (dB) and the lowest gain since a reader reset them
++	Sample meterLevelDb = -300, meterGain = 1;
+ 	
+ 	DynamicsSTFX(double autoGainRefDb=-20) : autoGainRefDb(autoGainRefDb) {}
+ 
+@@ -239,11 +242,13 @@
+ 			
+ 			Sample gain = std::pow(10, (outDb - inDb)/20);
+ 			gateIsOpen = (gain >= Sample(1e-30));
++			meterLevelDb = std::max(meterLevelDb, inDb);
+ 			if (!gateIsOpen) gain = 0;
+ 			
+ 			smoothedGain1 += (gain - smoothedGain1)*result.slew;
+ 			smoothedGain2 += (smoothedGain1 - smoothedGain2)*result.slew;
+ 			
++			meterGain = std::min(meterGain, smoothedGain2);
+ 			gain = 1 + smoothedMix.at(i)*(smoothedGain2 - 1);
+ 
+ 			for (int c = 0; c < int(channels); ++c) {
+diff -ru a/include/signalsmith-basics/limiter.h b/include/signalsmith-basics/limiter.h
+--- a/include/signalsmith-basics/limiter.h	2026-11-03 20:05:55
++++ b/include/signalsmith-basics/limiter.h	2026-11-03 20:05:55
+@@ -30,6 +30,9 @@
+ 
+ 	ParamStepped smoothingStages{1};
+ 	ParamRange linkChannels{0.5};
++
++	// for a display: the lowest gain since a reader reset it
++	Sample meterGain = 1;
+ 	
+ 	LimiterSTFX(double maxDelayMs=100) : maxDelayMs(maxDelayMs) {}
+ 
+@@ -178,6 +181,7 @@
+ 				// smooth envelope gain
+ 				auto &envelope = channelEnvelopes[c];
+ 				gain = envelope(gain);
++				meterGain = std::min(meterGain, gain);
+ 				if (sqrtWet > Sample(1e-30)) {
+ 					gain += (std::sqrt(gain) - gain)*sqrtWet;
+ 					gain = std::min(gain, channelGains[c]);
