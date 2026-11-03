@@ -185,6 +185,13 @@ DEPS += [
      lambda p: p.endswith((".hpp", ".cpp", ".ini")) or p in ("LICENSE", "README.md", "Makefile")),
 ]
 
+# Helm (Matt Tytel) at master, its last commit: the mopo engine and Helm's synthesis, no JUCE, and the factory patches
+DEPS += [
+    ("helm", "mtytel/helm", "abdedd527e6e1cf86636f0f1e8a3e75b06ed166a",
+     lambda p: p.startswith(("mopo/src/", "src/synthesis/", "patches/Factory Presets/"))
+     or p in ("src/common/helm_common.h", "src/common/helm_common.cpp", "COPYING", "README.md", "changelog")),
+]
+
 # Droplets and TapElectric (aquanode) at main at the time of writing: only each plugin's sources from the collection
 AQUANODE = "35f0676f1d1ba2ac6841abc7a65bab8587a11ab0"
 DEPS += [
@@ -321,7 +328,7 @@ def fetch_fonts():
 PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "ripplerx"), ("odin2-", "odin2"),
                  ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
                  ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric"), ("oxygen-", "oxygen"),
-                 ("obxf-", "OB-Xf")] + [(d + "-", d) for d, _, _ in ZL]
+                 ("obxf-", "OB-Xf"), ("helm-", "helm")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():

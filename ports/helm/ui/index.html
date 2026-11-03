@@ -1,0 +1,1707 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Helm</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400&display=swap">
+    <!--
+        Helm's editor: its sections in openDAW Studio's device style (the header, the Column layout of
+        ControlBuilder.createKnob, the Knob), laid out at 16px and scaled to the window, and the displays Helm
+        draws: waveforms, envelopes, the filter response, the step sequencer and the formant pad.
+
+        Modulation: pick a source in the bar, then drag a knob to set how far that source moves it (an inner arc in
+        the source's colour), double-click to remove it. Esc or the source again leaves.
+
+        Messages are binary, little endian (helm_clap.cpp, enums Page and Plugin). The page says hello, gets the
+        parameter table once and a snapshot, then polls at most every 33 ms and gets only what changed.
+    -->
+    <style>
+        :root {
+            /* openDAW's Colors (studio-enums), default scheme hue 197 */
+            --color-bright: hsl(197, 5%, 100%);
+            --color-gray: hsl(197, 31%, 91%);
+            --color-dark: hsl(197, 15%, 84%);
+            --color-shadow: hsl(197, 10%, 60%);
+            --color-blue: hsl(189, 100%, 65%);
+            --color-cream: hsl(65, 37%, 83%);
+            --color-panel-background: hsl(197, 14%, 12%);
+            --color-background: hsl(197, 14%, 9%);
+            --color-edge: hsla(197, 30%, 80%, 0.08);
+        }
+
+        html, body {
+            /* 70.5em x 43.75em: 1128 x 700 at 16px */
+            font-size: min(100vw / 70.5, 100vh / 43.75);
+            font-family: Rubik, sans-serif;
+            font-weight: 300;
+            font-variant-numeric: tabular-nums;
+            text-rendering: optimizeLegibility;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            color: var(--color-bright);
+            background-color: var(--color-background);
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            outline: none;
+        }
+
+        h1, h5 {
+            margin: 0;
+            font-weight: inherit;
+        }
+
+        /* as wide as its rows, which the window is laid out for; wider, the page scrolls */
+        body > .frame {
+            min-width: 70.5em;
+            width: max-content;
+            height: 43.75em;
+            margin: 0 auto;
+            display: grid;
+            grid-template-rows: 2.25em 1.75em repeat(4, 1fr);
+            row-gap: 0.25em;
+            padding: 0.25em;
+        }
+
+        /* the bar: name, patch browser, volume, voices, level */
+        .bar {
+            display: flex;
+            align-items: center;
+            column-gap: 0.5em;
+            padding: 0 0.5em;
+            font-size: 0.75em;
+            background-color: var(--color-panel-background);
+            border-radius: 3px;
+        }
+
+        .bar .logo {
+            font-weight: 400;
+            letter-spacing: 0.2em;
+            color: var(--color-blue);
+            font-size: 1.25em;
+            margin-right: 0.5em;
+        }
+
+        .bar button, .choice, .toggle {
+            font: inherit;
+            color: var(--color-gray);
+            background: rgba(255, 255, 255, 0.04);
+            border: none;
+            border-radius: 2px;
+            padding: 0.25em 0.5em;
+            cursor: pointer;
+        }
+
+        .bar button:hover, .choice:hover, .toggle:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .bar .patch {
+            min-width: 18em;
+            text-align: left;
+            color: var(--color-bright);
+        }
+
+        .bar .patch .folder {
+            color: var(--color-shadow);
+            margin-right: 0.5em;
+        }
+
+        .bar .author {
+            color: var(--color-shadow);
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* always there, the count two digits wide so nothing moves */
+        .bar .voices {
+            color: var(--color-shadow);
+            white-space: nowrap;
+        }
+
+        .bar .voices > span {
+            display: inline-block;
+            width: 2ch;
+            text-align: right;
+            color: var(--color-gray);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .bar canvas.level {
+            width: 8em;
+            height: 0.5em;
+        }
+
+        .bar .master {
+            display: flex;
+            align-items: center;
+            column-gap: 0.25em;
+            height: 100%;
+        }
+
+        .bar .master svg.knob {
+            width: 1.75em;
+            height: 1.75em;
+        }
+
+        /* modulation sources */
+        .sources {
+            display: flex;
+            align-items: stretch;
+            column-gap: 0.25em;
+            font-size: 0.625em;
+        }
+
+        .source {
+            position: relative;
+            display: flex;
+            align-items: center;
+            column-gap: 0.5em;
+            padding: 0 0.75em;
+            color: var(--color-gray);
+            background: var(--color-panel-background);
+            border-radius: 3px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .source::before {
+            content: "";
+            width: 0.6em;
+            height: 0.6em;
+            border-radius: 50%;
+            background: var(--source-color);
+            opacity: calc(0.25 + var(--level, 0) * 0.75);
+        }
+
+        .source.selected {
+            color: var(--color-background);
+            background: var(--source-color);
+        }
+
+        .source.selected::before {
+            background: var(--color-background);
+        }
+
+        .source .count {
+            color: var(--color-shadow);
+        }
+
+        .source.selected .count {
+            color: inherit;
+        }
+
+        /* rows of sections */
+        .row {
+            display: flex;
+            column-gap: 0.25em;
+            min-height: 0;
+        }
+
+        /* DeviceEditor: the header (2rem, 11px, blue, a groove below), the controls under it */
+        section {
+            display: grid;
+            grid-template-rows: 1.5em 1fr;
+            background-color: var(--color-panel-background);
+            border-radius: 3px;
+            overflow: hidden;
+            flex: 0 0 auto;
+        }
+
+        /* empty sections either side of a row narrower than the window, shown only where there is room (pad) */
+        section.padding {
+            flex: 1 1 0;
+            min-width: 0;
+            display: none;
+        }
+
+        .row.padded > section.padding {
+            display: block;
+        }
+
+        section > header {
+            display: flex;
+            align-items: center;
+            column-gap: 0.4em;
+            padding: 0 0.5em;
+            font-size: 0.6875em;
+            color: var(--color-blue);
+            position: relative;
+        }
+
+        section > header::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 2px;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 0.2) 0 1px, rgba(255, 255, 255, 0.03) 1px 2px);
+        }
+
+        section > header h1 {
+            font-size: inherit;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+
+        section > header .power {
+            width: 0.8em;
+            height: 0.8em;
+            border-radius: 50%;
+            border: 1px solid currentColor;
+            cursor: pointer;
+            opacity: 0.5;
+        }
+
+        section > header .power.on {
+            background: currentColor;
+            opacity: 1;
+        }
+
+        section.off > .controls {
+            filter: brightness(0.5) grayscale(1.0);
+        }
+
+        /* mixins.ControlLayout: columns of 3.5em */
+        .controls {
+            display: grid;
+            grid-auto-columns: 3.5em;
+            grid-template-rows: repeat(2, 3.5em);
+            grid-auto-flow: column;
+            align-content: center;
+            padding: 0.125em 0.25em;
+        }
+
+        /* Column with LKR = [0.625, 2, 0.625] */
+        .column {
+            display: grid;
+            grid-template-rows: 0.625em 2em 0.625em;
+            height: 100%;
+            margin: 0 1px;
+            align-content: center;
+            justify-items: center;
+            color: var(--color-cream);
+            position: relative;
+        }
+
+        .column > h5 {
+            width: 100%;
+            height: 1.5em;
+            line-height: 1.5em;
+            font-size: 0.5em;
+            text-transform: capitalize;
+            letter-spacing: 0.08em;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            text-align: center;
+            color: var(--color-cream);
+        }
+
+        svg.knob {
+            min-width: 1.75em;
+            max-width: 1.75em;
+            min-height: 1.75em;
+            max-height: 1.75em;
+            place-self: center;
+            overflow: visible;
+        }
+
+        svg.knob .shadow {
+            opacity: 0.5;
+            filter: blur(1px);
+            mix-blend-mode: luminosity;
+        }
+
+        svg.knob .mod-range {
+            stroke: var(--source-color, var(--color-blue));
+        }
+
+        .column.modulating svg.knob .disc {
+            fill: var(--source-color);
+        }
+
+        .column.unmodulatable {
+            opacity: 0.4;
+        }
+
+        /* ParameterLabel, its 8px as 0.5em */
+        label {
+            padding: 0 0.5em;
+            white-space: nowrap;
+            max-width: 100%;
+            color: var(--color-gray);
+            position: relative;
+            text-align: center;
+            font-size: 0.5em;
+            overflow: hidden;
+            display: flex;
+            column-gap: 0.25em;
+            justify-content: center;
+        }
+
+        label[unit]:not([unit=""])::after {
+            content: attr(unit);
+            color: var(--color-dark);
+        }
+
+        .modifying label {
+            color: var(--color-blue);
+        }
+
+        .column.modulating label {
+            color: var(--source-color);
+        }
+
+        /* choices and toggles in a column's knob row */
+        .choice, .toggle {
+            align-self: center;
+            font-size: 0.5em;
+            max-width: 6.5em;
+            min-width: 5.5em;
+            padding: 0.35em 0.25em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+        }
+
+        .toggle.on {
+            color: var(--color-background);
+            background: var(--color-blue);
+        }
+
+        .menu {
+            position: fixed;
+            z-index: 10;
+            max-height: 30em;
+            overflow-y: auto;
+            background: hsl(197, 14%, 16%);
+            border-radius: 3px;
+            box-shadow: 0 0.25em 1em rgba(0, 0, 0, 0.5);
+            padding: 0.25em 0;
+            font-size: 0.6875em;
+            color: var(--color-gray);
+        }
+
+        .menu > div {
+            padding: 0.25em 1em;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .menu > div:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .menu > div.current {
+            color: var(--color-blue);
+        }
+
+        .menu > .heading {
+            color: var(--color-shadow);
+            cursor: default;
+            font-size: 0.85em;
+            letter-spacing: 0.08em;
+            padding-top: 0.5em;
+        }
+
+        .menu > .heading:hover {
+            background: none;
+        }
+
+        .menu.patches {
+            display: grid;
+            grid-template-columns: repeat(3, auto);
+            max-height: 36em;
+            padding: 0.25em;
+        }
+
+        .menu.patches > .folder {
+            padding: 0;
+            cursor: default;
+        }
+
+        .menu.patches > .folder:hover {
+            background: none;
+        }
+
+        .menu.patches > .folder > div {
+            padding: 0.15em 1em;
+            cursor: pointer;
+        }
+
+        .menu.patches > .folder > div:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .menu.patches > .folder > .heading {
+            color: var(--color-blue);
+            cursor: default;
+            padding-top: 0.4em;
+        }
+
+        .menu.patches > .folder > .heading:hover {
+            background: none;
+        }
+
+        /* displays: canvases spanning grid cells */
+        canvas.display {
+            width: 100%;
+            height: 100%;
+            border-radius: 2px;
+            background: rgba(0, 0, 0, 0.2);
+            touch-action: none;
+        }
+
+        .display-cell {
+            padding: 0.25em;
+            min-width: 0;
+            min-height: 0;
+        }
+    </style>
+</head>
+<body>
+<div class="frame">
+    <div class="bar">
+        <span class="logo">HELM</span>
+        <button class="prev" title="Previous patch">‹</button>
+        <button class="next" title="Next patch">›</button>
+        <button class="patch"><span class="folder"></span><span class="name">Init</span></button>
+        <span class="author"></span>
+        <span class="voices"><span>0</span> voices</span>
+        <canvas class="level"></canvas>
+        <span class="master"></span>
+    </div>
+    <div class="sources"></div>
+    <div class="row" data-row="0"></div>
+    <div class="row" data-row="1"></div>
+    <div class="row" data-row="2"></div>
+    <div class="row" data-row="3"></div>
+</div>
+<script>
+    // message types, see helm_clap.cpp
+    const PAGE = {HELLO: 1, POLL: 2, BEGIN: 3, SET: 4, END: 5, HOVER: 6, MODULATE: 7, PATCH: 8}
+    const PLUGIN = {DESCRIBE: 0x81, SNAPSHOT: 0x82, VALUES: 0x83, ACTIVITY: 0x84}
+    const PARAM_COUNT = 139, SLOT_COUNT = 32, EMPTY = 0xff, TEXT_SIZE = 32, NO_PARAM = 0xffff
+    const STATE_BODY = PARAM_COUNT * 4 + SLOT_COUNT * 8 + 2 * TEXT_SIZE // a State after its 8-byte header
+    const POLL_MILLIS = 33
+    const SKEW = {LINEAR: 0, QUADRATIC: 1, SQUARE_ROOT: 2, EXPONENTIAL: 3}
+    const SOURCE_LABELS = {
+        amp_envelope: "Amp Env", fil_envelope: "Filter Env", mod_envelope: "Mod Env", mono_lfo_1: "LFO 1",
+        mono_lfo_2: "LFO 2", poly_lfo: "Poly LFO", step_sequencer: "Step Seq", velocity: "Velocity", note: "Note",
+        aftertouch: "Aftertouch", mod_wheel: "Mod Wheel", pitch_wheel: "Pitch Wheel", random: "Random"
+    }
+    const SOURCE_HUES = [189, 30, 280, 140, 90, 330, 50, 0, 210, 260, 170, 110, 240]
+
+    const model = {
+        params: [], byName: new Map(), sources: [],
+        values: new Float32Array(PARAM_COUNT),
+        slots: Array.from({length: SLOT_COUNT}, () => ({source: EMPTY, destination: 0, amount: 0})),
+        name: "Init", author: "",
+        activity: {sources: new Float32Array(16), step: 0, voices: 0, peak: 0, stages: [0, 0, 0], phases: [0, 0, 0]},
+        modSource: -1, patches: [], patchIndex: -1, hovered: NO_PARAM, dragging: 0
+    }
+    const views = [] // {update()} for everything that shows values
+    const animated = [] // {animate()} for what follows the activity
+
+    // --- messages -------------------------------------------------------------------------------------------
+
+    const post = bytes => window.parent.postMessage(bytes.buffer, "*")
+    const message = (type, size, fill) => {
+        const view = new DataView(new ArrayBuffer(size))
+        view.setUint8(0, type)
+        fill?.(view)
+        post(new Uint8Array(view.buffer))
+    }
+    const sendBegin = id => message(PAGE.BEGIN, 4, view => view.setUint16(2, id, true))
+    const sendEnd = id => message(PAGE.END, 4, view => view.setUint16(2, id, true))
+    const sendSet = (id, value) => message(PAGE.SET, 8, view => {
+        view.setUint16(2, id, true)
+        view.setFloat32(4, value, true)
+    })
+    const sendHover = id => {
+        if (model.hovered === id) {return}
+        model.hovered = id
+        message(PAGE.HOVER, 4, view => view.setUint16(2, id, true))
+    }
+    const sendModulate = (source, destination, amount, live) => message(PAGE.MODULATE, 8, view => {
+        view.setUint8(1, source)
+        view.setUint8(2, destination)
+        view.setUint8(3, live ? 1 : 0)
+        view.setFloat32(4, amount, true)
+    })
+    const encodeText = text => {
+        const bytes = new Uint8Array(TEXT_SIZE)
+        bytes.set(new TextEncoder().encode(text).subarray(0, TEXT_SIZE - 1))
+        return bytes
+    }
+    const decodeText = bytes => {
+        const end = bytes.indexOf(0)
+        return new TextDecoder().decode(bytes.subarray(0, end < 0 ? bytes.length : end))
+    }
+
+    const readState = (bytes, offset) => {
+        const view = new DataView(bytes.buffer, bytes.byteOffset + offset)
+        for (let id = 0; id < PARAM_COUNT; id++) {model.values[id] = view.getFloat32(id * 4, true)}
+        const slots = PARAM_COUNT * 4
+        model.slots.forEach((slot, index) => {
+            slot.source = view.getUint8(slots + index * 8)
+            slot.destination = view.getUint8(slots + index * 8 + 1)
+            slot.amount = view.getFloat32(slots + index * 8 + 4, true)
+        })
+        const names = bytes.subarray(offset + slots + SLOT_COUNT * 8)
+        model.name = decodeText(names.subarray(0, TEXT_SIZE))
+        model.author = decodeText(names.subarray(TEXT_SIZE, 2 * TEXT_SIZE))
+    }
+
+    // a patch: the defaults, its values and routings, its names, as the plugin's patch message
+    const sendPatch = patch => {
+        const bytes = new Uint8Array(8 + STATE_BODY)
+        const view = new DataView(bytes.buffer)
+        bytes[0] = PAGE.PATCH
+        model.params.forEach((param, id) => view.setFloat32(8 + id * 4, patch.values?.[param.name] ?? param.default, true))
+        let slot = 0
+        for (const [source, destination, amount] of patch.modulations ?? []) {
+            const s = model.sources.indexOf(source), d = model.byName.get(destination)
+            if (s < 0 || d === undefined || !model.params[d].mod || slot >= SLOT_COUNT) {continue}
+            const at = 8 + PARAM_COUNT * 4 + slot++ * 8
+            bytes[at] = s
+            bytes[at + 1] = d
+            view.setFloat32(at + 4, amount, true)
+        }
+        for (; slot < SLOT_COUNT; slot++) {bytes[8 + PARAM_COUNT * 4 + slot * 8] = EMPTY}
+        bytes.set(encodeText(patch.name), 8 + PARAM_COUNT * 4 + SLOT_COUNT * 8)
+        bytes.set(encodeText(patch.author ?? ""), 8 + PARAM_COUNT * 4 + SLOT_COUNT * 8 + TEXT_SIZE)
+        post(bytes)
+    }
+
+    window.addEventListener("message", event => {
+        if (event.source !== window.parent || !(event.data instanceof ArrayBuffer)) {return}
+        const bytes = new Uint8Array(event.data)
+        const view = new DataView(event.data)
+        switch (bytes[0]) {
+            case PLUGIN.DESCRIBE: {
+                const description = JSON.parse(new TextDecoder().decode(bytes.subarray(4)))
+                if (model.params.length === 0) {build(description)}
+                break
+            }
+            case PLUGIN.SNAPSHOT:
+                readState(bytes, 8)
+                refresh()
+                break
+            case PLUGIN.VALUES: {
+                const count = view.getUint16(2, true)
+                for (let i = 0; i < count; i++) {
+                    const id = view.getUint16(4 + i * 8, true)
+                    if (id < PARAM_COUNT) {model.values[id] = view.getFloat32(8 + i * 8, true)}
+                }
+                refresh()
+                break
+            }
+            case PLUGIN.ACTIVITY: {
+                const {activity} = model
+                model.sources.forEach((_, index) => activity.sources[index] = view.getInt8(4 + index) / 127)
+                activity.step = bytes[4 + model.sources.length]
+                activity.voices = bytes[5 + model.sources.length]
+                activity.peak = bytes[6 + model.sources.length] / 127.5
+                for (let i = 0; i < 3; i++) {
+                    activity.stages[i] = bytes[7 + model.sources.length + i]
+                    activity.phases[i] = bytes[10 + model.sources.length + i] / 255
+                }
+                animate()
+                break
+            }
+        }
+    })
+
+    // --- values ---------------------------------------------------------------------------------------------
+
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
+    const param = name => model.params[model.byName.get(name)]
+    const value = name => model.values[model.byName.get(name)]
+    const unitOf = (p, v) => p.max === p.min ? 0 : (v - p.min) / (p.max - p.min)
+    const fromUnit = (p, unit) => {
+        const v = p.min + clamp(unit, 0, 1) * (p.max - p.min)
+        return p.steps > 0 ? Math.round(v) : v
+    }
+
+    // SynthSlider::getTextFromValue: skew, offset, inversion, multiplier; cutoff as a frequency
+    const displayValue = (p, v) => {
+        let d = v
+        if (p.skew === SKEW.QUADRATIC) {d = d * d}
+        else if (p.skew === SKEW.EXPONENTIAL) {d = Math.pow(2, d)}
+        else if (p.skew === SKEW.SQUARE_ROOT) {d = Math.sqrt(d)}
+        d += p.offset
+        if (p.invert) {d = 1 / d}
+        return d * p.multiply
+    }
+    const number = (v, digits = 3) => {
+        if (!isFinite(v)) {return "∞"}
+        const abs = Math.abs(v)
+        if (abs >= 1000) {return v.toFixed(0)}
+        return Number(v.toPrecision(digits)).toString()
+    }
+    // [number, unit]
+    const format = (p, v) => {
+        if (p.choices) {return [p.choices[clamp(Math.round(v - p.min), 0, p.choices.length - 1)], ""]}
+        if (p.name === "cutoff") {
+            const hz = 440 * Math.pow(2, (v - 69) / 12)
+            return hz >= 1000 ? [number(hz / 1000), "kHz"] : [number(hz), "Hz"]
+        }
+        const d = displayValue(p, v)
+        switch (p.units) {
+            case "secs": return d < 1 ? [number(d * 1000), "ms"] : [number(d), "s"]
+            case "semitones": return [number(d), "st"]
+            case "cents": return [number(d), "ct"]
+            case "s/oct": return [number(d), "s/oct"]
+            case "dB": return [number(d), "dB"]
+            case "%": return [number(d), "%"]
+            case "voices": return [String(Math.round(d)), ""]
+            case "v": return [String(Math.round(d)), ""]
+            case "octaves": return [String(Math.round(d)), "oct"]
+            default: return p.steps > 0 ? [String(Math.round(d)), ""] : [number(d), ""]
+        }
+    }
+
+    const setValue = (id, v) => {
+        model.values[id] = v
+        sendSet(id, v)
+        refresh()
+    }
+    const edit = (id, v) => {
+        sendBegin(id)
+        setValue(id, v)
+        sendEnd(id)
+    }
+
+    const slotsOf = destination => model.slots.filter(slot => slot.source !== EMPTY && slot.destination === destination)
+    const slotOf = (source, destination) => model.slots.find(slot => slot.source === source && slot.destination === destination)
+    // what the page shows at once, before the plugin answers (it does not echo the page's own edits)
+    const setSlot = (source, destination, amount) => {
+        let slot = slotOf(source, destination)
+        if (slot === undefined && amount !== 0) {slot = model.slots.find(slot => slot.source === EMPTY)}
+        if (slot === undefined) {return false}
+        if (amount === 0) {Object.assign(slot, {source: EMPTY, destination: 0, amount: 0})}
+        else {Object.assign(slot, {source, destination, amount})}
+        return true
+    }
+    // the value a destination has now: its own and what the readable sources add
+    const liveValue = id => {
+        let v = model.values[id]
+        for (const slot of slotsOf(id)) {v += model.activity.sources[slot.source] * slot.amount}
+        return v
+    }
+    const sourceColor = index => `hsl(${SOURCE_HUES[index % SOURCE_HUES.length]}, 80%, 65%)`
+
+    // --- knob (Knob.tsx with DefaultDesign) -----------------------------------------------------------------
+
+    const radius = 20.0, trackWidth = 1.5, angleOffset = Math.PI / 5.0, indicator = [0.3, 0.6], indicatorWidth = 2.5
+    const trackRadius = Math.floor(radius - trackWidth * 0.5)
+    const modRadius = trackRadius - 3.5
+    const angleMin = Math.PI / 2.0 + angleOffset
+    const angleMax = Math.PI / 2.0 - angleOffset
+    const angleRange = Math.PI * 2.0 - angleOffset * 2.0
+    const knobWidth = radius * 2.0
+    const knobHeight = radius + Math.ceil(Math.cos(angleOffset) * radius)
+
+    const circleSegment = (r, a0, a1) => {
+        let range = a1 - a0
+        while (range < 0.0) {range += Math.PI * 2.0}
+        const x0 = Math.cos(a0) * r, y0 = Math.sin(a0) * r
+        const x1 = Math.cos(a1) * r, y1 = Math.sin(a1) * r
+        return `M${x0.toFixed(3)} ${y0.toFixed(3)}A${r} ${r} 0 ${range > Math.PI ? 1 : 0} 1 ${x1.toFixed(3)} ${y1.toFixed(3)}`
+    }
+
+    const svgNs = "http://www.w3.org/2000/svg"
+    const svgElement = (name, attributes) => {
+        const element = document.createElementNS(svgNs, name)
+        Object.entries(attributes).forEach(([key, v]) => element.setAttribute(key, String(v)))
+        return element
+    }
+    let gradientId = 0
+    const createKnob = anchor => {
+        const [min, max] = indicator
+        const svg = svgElement("svg", {viewBox: `0 0 ${knobWidth} ${knobHeight}`, class: "knob"})
+        const id = `knob-rim-${gradientId++}`
+        const defs = svgElement("defs", {})
+        const gradient = svgElement("linearGradient", {id, x1: 0, y1: 0, x2: 0, y2: 1})
+        gradient.append(svgElement("stop", {offset: "0%", "stop-color": "white"}),
+            svgElement("stop", {offset: "100%", "stop-color": "black"}))
+        defs.append(gradient)
+        const group = svgElement("g", {
+            fill: "none", stroke: "currentColor", "stroke-linecap": "butt", "stroke-width": trackWidth,
+            transform: `translate(${radius}, ${radius})`
+        })
+        const valuePath = svgElement("path", {d: ""})
+        const modPath = svgElement("path", {d: "", class: "mod-range", "stroke-width": 2})
+        const livePath = svgElement("circle", {r: 1.6, stroke: "none", fill: "var(--color-bright)", visibility: "hidden"})
+        const linePath = svgElement("path", {
+            d: "", "stroke-linecap": "round", "stroke-width": indicatorWidth, stroke: "rgba(0,0,0,0.5)"
+        })
+        group.append(
+            svgElement("circle", {r: radius * max * 1.1, stroke: "none", fill: "black", class: "shadow", cy: radius * 0.1}),
+            svgElement("circle", {r: radius * max, stroke: "none", fill: "currentColor", class: "disc"}),
+            svgElement("circle", {r: radius * max, stroke: `url(#${id})`, "stroke-opacity": 0.5, fill: "none"}),
+            svgElement("path", {stroke: "currentColor", "stroke-opacity": 1 / 3, d: circleSegment(trackRadius, angleMin, angleMax)}),
+            valuePath, modPath, livePath, linePath)
+        svg.append(defs, group)
+        const angleAnc = angleMin + anchor * angleRange
+        const angleOf = unit => angleMin + clamp(unit, 0, 1) * angleRange
+        return {
+            svg,
+            update: unit => {
+                const angleVal = angleOf(unit)
+                valuePath.setAttribute("d", circleSegment(trackRadius,
+                    Math.min(angleVal, angleAnc) - 1.0 / trackRadius, Math.max(angleVal, angleAnc) + 1.0 / trackRadius))
+                const cos = Math.cos(angleVal) * trackRadius
+                const sin = Math.sin(angleVal) * trackRadius
+                linePath.setAttribute("d",
+                    `M${(cos * min).toFixed(3)} ${(sin * min).toFixed(3)}L${(cos * max).toFixed(3)} ${(sin * max).toFixed(3)}`)
+            },
+            // the range a modulation covers (from the value to value + amount), the live position
+            modulation: (from, to, color) => {
+                if (from === null) {
+                    modPath.setAttribute("d", "")
+                    return
+                }
+                const a0 = angleOf(Math.min(from, to)), a1 = angleOf(Math.max(from, to))
+                modPath.setAttribute("d", circleSegment(modRadius, a0, Math.max(a1, a0 + 0.02)))
+                modPath.style.setProperty("--source-color", color)
+            },
+            live: unit => {
+                if (unit === null) {
+                    livePath.setAttribute("visibility", "hidden")
+                    return
+                }
+                const angle = angleOf(unit)
+                livePath.setAttribute("visibility", "visible")
+                livePath.setAttribute("cx", (Math.cos(angle) * trackRadius).toFixed(3))
+                livePath.setAttribute("cy", (Math.sin(angle) * trackRadius).toFixed(3))
+            }
+        }
+    }
+
+    // RelativeUnitValueDragging: vertical, 128 px for the whole range at ratio 1.5, alt or shift for fine (0.25),
+    // escape restores the start; ctrl+click is macOS's right click and opens the host's menu
+    const installDragging = (element, {start, move, finish}) => {
+        let drag = null
+        const end = cancelled => {
+            if (drag === null) {return}
+            finish(cancelled, drag)
+            element.classList.remove("modifying")
+            model.dragging--
+            if (document.pointerLockElement === element) {document.exitPointerLock()}
+            drag = null
+        }
+        element.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey || drag !== null) {return}
+            event.preventDefault()
+            element.setPointerCapture(event.pointerId)
+            try {element.requestPointerLock()?.catch?.(() => {})} catch {}
+            drag = {pointerId: event.pointerId, ...start()}
+            drag.x = drag.unit
+            element.classList.add("modifying")
+            model.dragging++
+        })
+        element.addEventListener("pointermove", event => {
+            if (drag === null || event.pointerId !== drag.pointerId) {return}
+            drag.x += -event.movementY / 128.0 * (event.altKey || event.shiftKey ? 0.25 : 1.5)
+            drag.x = clamp(drag.x, drag.low ?? 0, 1)
+            move(drag.x, drag)
+        })
+        element.addEventListener("pointerup", event => {if (drag !== null && event.pointerId === drag.pointerId) {end(false)}})
+        element.addEventListener("pointercancel", () => end(false))
+        element.addEventListener("lostpointercapture", () => end(false))
+        window.addEventListener("keydown", event => {if (event.key === "Escape") {end(true)}})
+    }
+
+    const reportHover = (element, getId) => {
+        element.addEventListener("pointerenter", () => sendHover(getId()))
+        element.addEventListener("pointerleave", () => {if (model.dragging === 0) {sendHover(NO_PARAM)}})
+    }
+
+    const column = title => {
+        const element = document.createElement("div")
+        element.className = "column"
+        const h5 = document.createElement("h5")
+        h5.textContent = title
+        element.append(h5)
+        return element
+    }
+
+    // A knob for a parameter, or for whichever of two parameters `pick` names (rate: seconds or tempo)
+    const knob = (title, name, pick = () => name) => {
+        const element = column(title)
+        const idOf = () => model.byName.get(pick())
+        const label = document.createElement("label")
+        let knobView = null
+        let anchorOf = null
+        const ensure = () => {
+            const p = model.params[idOf()]
+            const anchor = p.min < 0 && p.max > 0 ? -p.min / (p.max - p.min) : 0
+            if (knobView === null || anchorOf !== anchor) {
+                const next = createKnob(anchor)
+                if (knobView === null) {element.insertBefore(next.svg, label)}
+                else {knobView.svg.replaceWith(next.svg)}
+                knobView = next
+                anchorOf = anchor
+            }
+            return p
+        }
+        element.append(label)
+        const show = text => {
+            const [n, unit] = text
+            label.textContent = n
+            label.setAttribute("unit", unit)
+        }
+        const modulating = () => model.modSource >= 0 && model.params[idOf()].mod
+        installDragging(element, {
+            start: () => {
+                const id = idOf(), p = model.params[id]
+                if (model.modSource >= 0) {
+                    if (!p.mod) {return {id, ignore: true, unit: 0}}
+                    const amount = slotOf(model.modSource, id)?.amount ?? 0
+                    return {id, mod: true, unit: 0.5 + amount / (2 * (p.max - p.min)), start: amount}
+                }
+                sendBegin(id)
+                return {id, unit: unitOf(p, model.values[id]), start: model.values[id]}
+            },
+            move: (unit, drag) => {
+                if (drag.ignore) {return}
+                const p = model.params[drag.id]
+                if (drag.mod) {
+                    drag.amount = (unit - 0.5) * 2 * (p.max - p.min)
+                    if (Math.abs(drag.amount) < 1e-4 * (p.max - p.min)) {drag.amount = 0}
+                    if (setSlot(model.modSource, drag.id, drag.amount)) {sendModulate(model.modSource, drag.id, drag.amount, true)}
+                    refresh()
+                    return
+                }
+                const v = fromUnit(p, unit)
+                if (v !== model.values[drag.id]) {setValue(drag.id, v)}
+            },
+            finish: (cancelled, drag) => {
+                if (drag.ignore) {return}
+                if (drag.mod) {
+                    const amount = cancelled ? drag.start : (drag.amount ?? drag.start)
+                    setSlot(model.modSource, drag.id, amount)
+                    sendModulate(model.modSource, drag.id, amount, false)
+                    refresh()
+                    return
+                }
+                if (cancelled) {setValue(drag.id, drag.start)}
+                sendEnd(drag.id)
+            }
+        })
+        element.addEventListener("dblclick", () => {
+            const id = idOf(), p = model.params[id]
+            if (model.modSource >= 0) {
+                if (!p.mod) {return}
+                setSlot(model.modSource, id, 0)
+                sendModulate(model.modSource, id, 0, false)
+                refresh()
+                return
+            }
+            edit(id, p.default)
+        })
+        reportHover(element, idOf)
+        views.push({
+            update: () => {
+                const id = idOf(), p = ensure()
+                const v = model.values[id]
+                knobView.update(unitOf(p, v))
+                element.classList.toggle("modulating", modulating())
+                element.classList.toggle("unmodulatable", model.modSource >= 0 && !p.mod)
+                if (modulating()) {element.style.setProperty("--source-color", sourceColor(model.modSource))}
+                const slots = slotsOf(id)
+                const shown = model.modSource >= 0 ? slots.find(slot => slot.source === model.modSource) : slots[0]
+                if (shown !== undefined) {
+                    knobView.modulation(unitOf(p, v), unitOf(p, v + shown.amount), sourceColor(shown.source))
+                } else {
+                    knobView.modulation(null)
+                }
+                if (modulating()) {
+                    const amount = shown?.source === model.modSource ? shown.amount : 0
+                    show([(amount >= 0 ? "+" : "") + number(amount), ""])
+                } else {
+                    show(format(p, v))
+                }
+            }
+        })
+        animated.push({
+            animate: () => {
+                const id = idOf()
+                if (knobView === null) {return}
+                if (slotsOf(id).length === 0 || model.activity.voices === 0 && slotsOf(id).every(slot =>
+                    model.activity.sources[slot.source] === 0)) {
+                    knobView.live(null)
+                    return
+                }
+                knobView.live(unitOf(model.params[id], liveValue(id)))
+            }
+        })
+        return element
+    }
+
+    const popup = (anchor, className, fill) => {
+        document.querySelectorAll(".menu").forEach(menu => menu.remove())
+        const menu = document.createElement("div")
+        menu.className = `menu ${className}`
+        fill(menu, () => menu.remove())
+        document.body.append(menu)
+        const rect = anchor.getBoundingClientRect()
+        const width = menu.offsetWidth, height = menu.offsetHeight
+        menu.style.left = `${clamp(rect.left, 4, innerWidth - width - 4)}px`
+        menu.style.top = `${rect.bottom + height + 4 <= innerHeight ? rect.bottom + 2 : Math.max(4, rect.top - height - 2)}px`
+        setTimeout(() => window.addEventListener("pointerdown", function close(event) {
+            if (menu.contains(event.target)) {return}
+            menu.remove()
+            window.removeEventListener("pointerdown", close, true)
+        }, true))
+    }
+
+    // A stepped parameter's choices as a button and a menu; the wheel steps through them
+    const choice = (title, name, pick = () => name) => {
+        const element = column(title)
+        const idOf = () => model.byName.get(pick())
+        const button = document.createElement("button")
+        button.className = "choice"
+        element.append(button, document.createElement("span"))
+        button.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            const id = idOf(), p = model.params[id]
+            popup(button, "", (menu, close) => p.choices.forEach((text, index) => {
+                const item = document.createElement("div")
+                item.textContent = text
+                item.classList.toggle("current", Math.round(model.values[id] - p.min) === index)
+                item.addEventListener("click", () => {
+                    edit(id, p.min + index)
+                    close()
+                })
+                menu.append(item)
+            }))
+        })
+        element.addEventListener("wheel", event => {
+            event.preventDefault()
+            const id = idOf(), p = model.params[id]
+            const next = clamp(model.values[id] + Math.sign(event.deltaY), p.min, p.max)
+            if (next !== model.values[id]) {edit(id, next)}
+        }, {passive: false})
+        reportHover(element, idOf)
+        views.push({update: () => button.textContent = format(model.params[idOf()], model.values[idOf()])[0]})
+        return element
+    }
+
+    const toggle = (title, name, text = ["off", "on"]) => {
+        const element = column(title)
+        const button = document.createElement("button")
+        button.className = "toggle"
+        element.append(button, document.createElement("span"))
+        button.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            const id = model.byName.get(name)
+            edit(id, model.values[id] > 0.5 ? 0 : 1)
+        })
+        reportHover(element, () => model.byName.get(name))
+        views.push({
+            update: () => {
+                const on = value(name) > 0.5
+                button.classList.toggle("on", on)
+                button.textContent = on ? text[1] : text[0]
+            }
+        })
+        return element
+    }
+
+    // the rate of a tempo-synced module: seconds when its sync is "Seconds", else the tempo
+    const rate = (title, prefix, syncName = `${prefix}_sync`, tempoName = `${prefix}_tempo`) =>
+        knob(title, "", () => value(syncName) === 0 ? `${prefix}_frequency` : tempoName)
+
+    // --- displays -------------------------------------------------------------------------------------------
+
+    const displayCell = (columns, rows = 2) => {
+        const cell = document.createElement("div")
+        cell.className = "display-cell"
+        cell.style.gridColumn = `span ${columns}`
+        cell.style.gridRow = `span ${rows}`
+        const canvas = document.createElement("canvas")
+        canvas.className = "display"
+        cell.append(canvas)
+        return {cell, canvas}
+    }
+
+    const prepare = canvas => {
+        const ratio = devicePixelRatio || 1
+        const width = Math.max(1, Math.round(canvas.clientWidth * ratio))
+        const height = Math.max(1, Math.round(canvas.clientHeight * ratio))
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width
+            canvas.height = height
+        }
+        const context = canvas.getContext("2d")
+        context.clearRect(0, 0, width, height)
+        return {context, width, height, ratio}
+    }
+
+    const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    const dot = (context, x, y, ratio) => {
+        context.fillStyle = css("--color-blue")
+        context.beginPath()
+        context.arc(x, y, 2.5 * ratio, 0, Math.PI * 2)
+        context.fill()
+    }
+
+    // Helm's waveforms, -1..1 for a phase 0..1: mopo's Wave::wave (the LFOs; the oscillators' band-limited tables
+    // have the same shapes). Its enum has the falling saw at 3 and the rising one at 4, the names say otherwise.
+    const random = index => {
+        const x = Math.sin(index * 12.9898 + 78.233) * 43758.5453
+        return (x - Math.floor(x)) * 2 - 1
+    }
+    const fraction = x => x - Math.floor(x)
+    const square = phase => phase < 0.5 ? 1 : -1
+    const steps = (phase, n) => 2 * Math.floor(n * phase) / (n - 1) - 1
+    const pyramid = (phase, n) => {
+        const squares = n - 1
+        let out = 0
+        for (let i = 0; i < squares; i++) {out += square(fraction(0.75 + phase + i / (2 * squares)))}
+        return out / squares
+    }
+    const quickSin = phase => {
+        const p = 0.5 - phase, approx = p * (8 - 16 * Math.abs(p))
+        return approx * (0.776 + 0.224 * Math.abs(approx))
+    }
+    const wave = (index, phase) => {
+        switch (index) {
+            case 0: return quickSin(phase)
+            case 1: return Math.abs(2 - 4 * fraction(phase + 0.75)) - 1
+            case 2: return square(phase)
+            case 3: return 1 - 2 * phase
+            case 4: return 2 * phase - 1
+            case 5: return steps(phase, 3)
+            case 6: return steps(phase, 4)
+            case 7: return steps(phase, 8)
+            case 8: return pyramid(phase, 3)
+            case 9: return pyramid(phase, 5)
+            case 10: return pyramid(phase, 9)
+            case 11: return random(Math.floor(phase * 6))
+            case 12: {
+                const i = Math.floor(phase * 6), f = phase * 6 - i
+                return random(i) + (random(i + 1) - random(i)) * (0.5 - 0.5 * Math.cos(f * Math.PI))
+            }
+            default: return 0
+        }
+    }
+
+    // an LFO's (phase: its index in activity.phases) shows where it is as a dot: its phase, its value
+    const waveDisplay = (waveName, {amplitude, color = "--color-blue", source = -1, phase = -1, poly = false} = {}) => {
+        const {cell, canvas} = displayCell(2, 1)
+        const draw = () => {
+            const {context, width, height, ratio} = prepare(canvas)
+            const index = Math.round(value(waveName))
+            const scale = amplitude === undefined ? 1 : value(amplitude)
+            context.strokeStyle = css("--color-edge")
+            context.beginPath()
+            context.moveTo(0, height / 2)
+            context.lineTo(width, height / 2)
+            context.stroke()
+            context.strokeStyle = css(color)
+            context.lineWidth = 1.5 * ratio
+            context.beginPath()
+            for (let x = 0; x <= width; x++) {
+                const y = height / 2 - wave(index, x / width) * scale * (height / 2 - 3 * ratio)
+                x === 0 ? context.moveTo(x, y) : context.lineTo(x, y)
+            }
+            context.stroke()
+            const running = poly ? model.activity.voices > 0 : model.activity.sources[source] !== 0 || model.activity.phases[phase] !== 0
+            if (source >= 0 && phase >= 0 && running) {
+                // on the curve; the random waves (sample and hold, sample and glide) where they are
+                const at = model.activity.phases[phase]
+                const level = index >= 11 ? model.activity.sources[source] : wave(index, at) * scale
+                dot(context, at * width, height / 2 - level * (height / 2 - 3 * ratio), ratio)
+            }
+        }
+        views.push({update: draw})
+        if (source >= 0) {animated.push({animate: draw})}
+        canvas.addEventListener("wheel", event => {
+            event.preventDefault()
+            const id = model.byName.get(waveName), p = model.params[id]
+            const next = clamp(model.values[id] + Math.sign(event.deltaY), p.min, p.max)
+            if (next !== model.values[id]) {edit(id, next)}
+        }, {passive: false})
+        reportHover(canvas, () => model.byName.get(waveName))
+        return cell
+    }
+
+    // ADSR in seconds (the controls are quadratic), the last voice as a dot: its level on the curve of its stage
+    // (Envelope::State: attacking, decaying, releasing, killing)
+    const envelopeDisplay = (prefix, source, stage) => {
+        const {cell, canvas} = displayCell(2, 2)
+        const draw = () => {
+            const {context, width, height, ratio} = prepare(canvas)
+            const a = value(`${prefix}_attack`) ** 2, d = value(`${prefix}_decay`) ** 2
+            const s = value(`${prefix}_sustain`), r = value(`${prefix}_release`) ** 2
+            const pad = 3 * ratio, top = pad, bottom = height - pad
+            const total = Math.max(a + d + r, 0.001) * 1.25
+            const span = width - 2 * pad
+            const hold = span * 0.2
+            const x0 = pad, x1 = x0 + (span - hold) * a / total, x2 = x1 + (span - hold) * d / total
+            const x3 = x2 + hold, x4 = Math.min(width - pad, x3 + (span - hold) * r / total)
+            const y = level => bottom - level * (bottom - top)
+            context.fillStyle = "rgba(102, 230, 255, 0.08)"
+            context.strokeStyle = css("--color-blue")
+            context.lineWidth = 1.5 * ratio
+            context.beginPath()
+            context.moveTo(x0, y(0))
+            context.lineTo(x1, y(1))
+            for (let i = 1; i <= 16; i++) {context.lineTo(x1 + (x2 - x1) * i / 16, y(s + (1 - s) * Math.pow(1 - i / 16, 3)))}
+            context.lineTo(x3, y(s))
+            for (let i = 1; i <= 16; i++) {context.lineTo(x3 + (x4 - x3) * i / 16, y(s * Math.pow(1 - i / 16, 3)))}
+            context.stroke()
+            context.lineTo(x4, y(0))
+            context.closePath()
+            context.fill()
+            const level = model.activity.sources[source]
+            if (model.activity.voices > 0 && level > 0) {
+                const state = model.activity.stages[stage]
+                let x
+                if (state === 0) {x = x0 + (x1 - x0) * level}
+                else if (state === 1) {
+                    // the drawn decay is s + (1 - s)(1 - t)^3, sustaining once it is there
+                    const rest = s >= 0.999 ? 0 : clamp((level - s) / (1 - s), 0, 1)
+                    x = rest < 0.01 ? x3 : x1 + (x2 - x1) * (1 - Math.cbrt(rest))
+                } else {
+                    // the drawn release is s (1 - t)^3, from wherever the note let go
+                    x = x3 + (x4 - x3) * (1 - Math.cbrt(clamp(level / Math.max(s, level, 1e-6), 0, 1)))
+                }
+                dot(context, x, y(level), ratio)
+            }
+        }
+        views.push({update: draw})
+        animated.push({animate: draw})
+        return cell
+    }
+
+    // The filter's response, from the analog prototypes Helm's state variable filter follows: low pass to band
+    // pass to high pass over the blend, squared for 24 dB, the shelves with the resonance as their gain
+    const filterDisplay = () => {
+        const {cell, canvas} = displayCell(3, 2)
+        const draw = () => {
+            const {context, width, height, ratio} = prepare(canvas)
+            const on = value("filter_on") > 0.5
+            const style = Math.round(value("filter_style")), blend = value("filter_blend")
+            const shelf = Math.round(value("filter_shelf")), resonance = value("resonance")
+            const cutoff = 440 * Math.pow(2, (value("cutoff") - 69) / 12)
+            const q = Math.pow(2, -1 + 5 * clamp(resonance, 0, 1))
+            const gainDb = -24 + 48 * resonance, gain = Math.pow(10, gainDb / 40)
+            const minDb = -36, maxDb = 30
+            const fx = x => 20 * Math.pow(1000, x / width)
+            const yOf = db => height - (clamp(db, minDb, maxDb) - minDb) / (maxDb - minDb) * height
+            context.strokeStyle = css("--color-edge")
+            context.beginPath()
+            context.moveTo(0, yOf(0))
+            context.lineTo(width, yOf(0))
+            for (const f of [100, 1000, 10000]) {
+                const x = Math.log(f / 20) / Math.log(1000) * width
+                context.moveTo(x, 0)
+                context.lineTo(x, height)
+            }
+            context.stroke()
+            context.strokeStyle = on ? css("--color-blue") : css("--color-shadow")
+            context.fillStyle = on ? "rgba(102, 230, 255, 0.08)" : "rgba(255, 255, 255, 0.03)"
+            context.lineWidth = 1.5 * ratio
+            context.beginPath()
+            for (let x = 0; x <= width; x++) {
+                const w = fx(x) / cutoff
+                // H(s) at s = jw: numerator over 1 + s/Q + s^2
+                const re = 1 - w * w, im = w / q
+                const denominator = re * re + im * im
+                const magnitude = (nr, ni) => Math.sqrt((nr * nr + ni * ni) / denominator)
+                let m = 1
+                if (!on) {m = 1}
+                else if (style === 2) {
+                    // shelves: A for the band below (low), around (band) or above (high) the cutoff
+                    const a2 = gain * gain
+                    const low = Math.sqrt(((a2 - w * w) ** 2 + (gain * w / q) ** 2) / ((1 - w * w) ** 2 + (w / q) ** 2))
+                    const high = Math.sqrt(((1 - a2 * w * w) ** 2 + (gain * w / q) ** 2) / ((1 - w * w) ** 2 + (w / q) ** 2))
+                    const band = Math.sqrt(((1 - w * w) ** 2 + (a2 * w / q) ** 2) / ((1 - w * w) ** 2 + (w / q) ** 2))
+                    m = shelf === 0 ? low : shelf === 2 ? high : band
+                } else {
+                    const lp = [1, 0], bp = [0, w / q], hp = [-w * w, 0]
+                    const mix = (u, v, t) => [u[0] + (v[0] - u[0]) * t, u[1] + (v[1] - u[1]) * t]
+                    const n = blend <= 1 ? mix(lp, bp, blend) : mix(bp, hp, blend - 1)
+                    m = magnitude(n[0], n[1])
+                    if (style === 1) {m = m * m}
+                }
+                const y = yOf(20 * Math.log10(Math.max(m, 1e-6)))
+                x === 0 ? context.moveTo(x, y) : context.lineTo(x, y)
+            }
+            context.stroke()
+            context.lineTo(width, height)
+            context.lineTo(0, height)
+            context.closePath()
+            context.fill()
+        }
+        views.push({update: draw})
+        // horizontal drag: cutoff, vertical: resonance, one gesture each
+        let drag = null
+        canvas.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            canvas.setPointerCapture(event.pointerId)
+            drag = {cutoff: model.byName.get("cutoff"), resonance: model.byName.get("resonance")}
+            sendBegin(drag.cutoff)
+            sendBegin(drag.resonance)
+            model.dragging++
+        })
+        canvas.addEventListener("pointermove", event => {
+            if (drag === null) {return}
+            const c = model.params[drag.cutoff], r = model.params[drag.resonance]
+            setValue(drag.cutoff, clamp(model.values[drag.cutoff] + event.movementX * (c.max - c.min) / 300, c.min, c.max))
+            setValue(drag.resonance, clamp(model.values[drag.resonance] - event.movementY / 150, r.min, r.max))
+        })
+        const end = () => {
+            if (drag === null) {return}
+            sendEnd(drag.cutoff)
+            sendEnd(drag.resonance)
+            model.dragging--
+            drag = null
+        }
+        canvas.addEventListener("pointerup", end)
+        canvas.addEventListener("lostpointercapture", end)
+        reportHover(canvas, () => model.byName.get("cutoff"))
+        return cell
+    }
+
+    // The 32 steps (step_seq_00..31), the active ones up to num_steps; drawing over them is one gesture
+    const stepDisplay = () => {
+        const {cell, canvas} = displayCell(5, 2)
+        const stepId = index => model.byName.get(`step_seq_${String(index).padStart(2, "0")}`)
+        const draw = () => {
+            const {context, width, height, ratio} = prepare(canvas)
+            const count = Math.round(value("num_steps"))
+            const cell = width / 32
+            context.strokeStyle = css("--color-edge")
+            context.beginPath()
+            context.moveTo(0, height / 2)
+            context.lineTo(width, height / 2)
+            context.stroke()
+            for (let i = 0; i < 32; i++) {
+                const v = model.values[stepId(i)]
+                const active = i < count
+                const current = active && model.activity.voices > 0 && i === model.activity.step
+                context.fillStyle = current ? css("--color-bright") : active ? css("--color-blue") : css("--color-edge")
+                const y = height / 2 - v * (height / 2 - 2 * ratio)
+                context.fillRect(i * cell + ratio, Math.min(y, height / 2), cell - 2 * ratio, Math.max(Math.abs(y - height / 2), ratio))
+            }
+        }
+        views.push({update: draw})
+        animated.push({animate: draw})
+        let drag = null
+        const paint = event => {
+            const rect = canvas.getBoundingClientRect()
+            const index = clamp(Math.floor((event.clientX - rect.left) / rect.width * 32), 0, 31)
+            const v = clamp(1 - 2 * (event.clientY - rect.top) / rect.height, -1, 1)
+            const id = stepId(index)
+            if (!drag.touched.has(id)) {
+                drag.touched.add(id)
+                sendBegin(id)
+            }
+            setValue(id, Math.abs(v) < 0.03 ? 0 : v)
+        }
+        canvas.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            canvas.setPointerCapture(event.pointerId)
+            drag = {touched: new Set()}
+            model.dragging++
+            paint(event)
+        })
+        canvas.addEventListener("pointermove", event => {
+            if (drag !== null) {paint(event)}
+        })
+        const end = () => {
+            if (drag === null) {return}
+            drag.touched.forEach(sendEnd)
+            model.dragging--
+            drag = null
+        }
+        canvas.addEventListener("pointerup", end)
+        canvas.addEventListener("lostpointercapture", end)
+        return cell
+    }
+
+    // The formant pad: x and y, the vowels in the corners as Helm has them (A O / I E)
+    const formantDisplay = () => {
+        const {cell, canvas} = displayCell(2, 2)
+        const draw = () => {
+            const {context, width, height, ratio} = prepare(canvas)
+            const on = value("formant_on") > 0.5
+            context.font = `${9 * ratio}px Rubik, sans-serif`
+            context.fillStyle = css("--color-shadow")
+            context.textBaseline = "top"
+            context.fillText("A", 3 * ratio, 3 * ratio)
+            context.fillText("I", 3 * ratio, height - 12 * ratio)
+            context.textAlign = "right"
+            context.fillText("O", width - 3 * ratio, 3 * ratio)
+            context.fillText("E", width - 3 * ratio, height - 12 * ratio)
+            const x = value("formant_x") * width, y = value("formant_y") * height
+            context.fillStyle = on ? css("--color-blue") : css("--color-shadow")
+            context.beginPath()
+            context.arc(x, y, 4 * ratio, 0, Math.PI * 2)
+            context.fill()
+        }
+        views.push({update: draw})
+        let drag = null
+        const place = event => {
+            const rect = canvas.getBoundingClientRect()
+            setValue(drag.x, clamp((event.clientX - rect.left) / rect.width, 0, 1))
+            setValue(drag.y, clamp((event.clientY - rect.top) / rect.height, 0, 1))
+        }
+        canvas.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            canvas.setPointerCapture(event.pointerId)
+            drag = {x: model.byName.get("formant_x"), y: model.byName.get("formant_y")}
+            sendBegin(drag.x)
+            sendBegin(drag.y)
+            model.dragging++
+            place(event)
+        })
+        canvas.addEventListener("pointermove", event => {
+            if (drag !== null) {place(event)}
+        })
+        const end = () => {
+            if (drag === null) {return}
+            sendEnd(drag.x)
+            sendEnd(drag.y)
+            model.dragging--
+            drag = null
+        }
+        canvas.addEventListener("pointerup", end)
+        canvas.addEventListener("lostpointercapture", end)
+        reportHover(canvas, () => model.byName.get("formant_x"))
+        return cell
+    }
+
+    // --- sections -------------------------------------------------------------------------------------------
+
+    const section = (row, title, {power} = {}, ...children) => {
+        const element = document.createElement("section")
+        const header = document.createElement("header")
+        if (power) {
+            const button = document.createElement("span")
+            button.className = "power"
+            button.addEventListener("pointerdown", event => {
+                if (event.button !== 0 || event.ctrlKey) {return}
+                const id = model.byName.get(power)
+                edit(id, model.values[id] > 0.5 ? 0 : 1)
+            })
+            reportHover(button, () => model.byName.get(power))
+            header.append(button)
+            views.push({
+                update: () => {
+                    const on = value(power) > 0.5
+                    button.classList.toggle("on", on)
+                    element.classList.toggle("off", !on)
+                }
+            })
+        }
+        const h1 = document.createElement("h1")
+        h1.textContent = title
+        header.append(h1)
+        const controls = document.createElement("div")
+        controls.className = "controls"
+        controls.append(...children)
+        element.append(header, controls)
+        document.querySelector(`.row[data-row="${row}"]`).append(element)
+        return element
+    }
+
+    const sourceIndex = name => model.sources.indexOf(name)
+
+    const buildSections = () => {
+        section(0, "OSCILLATOR 1", {},
+            waveDisplay("osc_1_waveform"), choice("wave", "osc_1_waveform"), knob("volume", "osc_1_volume"),
+            knob("transpose", "osc_1_transpose"), knob("tune", "osc_1_tune"),
+            knob("unison", "osc_1_unison_voices"), knob("detune", "osc_1_unison_detune"),
+            toggle("harmonize", "unison_1_harmonize"))
+        section(0, "OSCILLATOR 2", {},
+            waveDisplay("osc_2_waveform"), choice("wave", "osc_2_waveform"), knob("volume", "osc_2_volume"),
+            knob("transpose", "osc_2_transpose"), knob("tune", "osc_2_tune"),
+            knob("unison", "osc_2_unison_voices"), knob("detune", "osc_2_unison_detune"),
+            toggle("harmonize", "unison_2_harmonize"))
+        section(0, "SUB, NOISE, CROSS MOD", {},
+            waveDisplay("sub_waveform"), choice("sub wave", "sub_waveform"), toggle("octave", "sub_octave", ["0", "-1"]),
+            knob("sub", "sub_volume"), knob("shuffle", "sub_shuffle"),
+            knob("noise", "noise_volume"), knob("cross mod", "cross_modulation"))
+        section(0, "FEEDBACK", {},
+            knob("amount", "osc_feedback_amount"), knob("transpose", "osc_feedback_transpose"),
+            knob("tune", "osc_feedback_tune"))
+        section(0, "VOICE", {},
+            knob("voices", "polyphony"), knob("bend range", "pitch_bend_range"),
+            knob("glide", "portamento"), choice("glide", "portamento_type"),
+            toggle("legato", "legato"), knob("velocity", "velocity_track"))
+
+        section(1, "FILTER", {power: "filter_on"},
+            filterDisplay(), choice("style", "filter_style"),
+            knob("blend", "filter_blend"),
+            knob("cutoff", "cutoff"), knob("resonance", "resonance"),
+            knob("drive", "filter_drive"), knob("key track", "keytrack"),
+            choice("shelf", "filter_shelf"), knob("env depth", "fil_env_depth"))
+        section(1, "FILTER ENVELOPE", {},
+            envelopeDisplay("fil", sourceIndex("fil_envelope"), 1),
+            knob("attack", "fil_attack"), knob("decay", "fil_decay"),
+            knob("sustain", "fil_sustain"), knob("release", "fil_release"))
+        section(1, "AMP ENVELOPE", {},
+            envelopeDisplay("amp", sourceIndex("amp_envelope"), 0),
+            knob("attack", "amp_attack"), knob("decay", "amp_decay"),
+            knob("sustain", "amp_sustain"), knob("release", "amp_release"))
+        section(1, "FORMANT", {power: "formant_on"}, formantDisplay())
+
+        section(2, "MOD ENVELOPE", {},
+            envelopeDisplay("mod", sourceIndex("mod_envelope"), 2),
+            knob("attack", "mod_attack"), knob("decay", "mod_decay"),
+            knob("sustain", "mod_sustain"), knob("release", "mod_release"))
+        for (const [title, prefix, phase] of [["MONO LFO 1", "mono_lfo_1", 0], ["MONO LFO 2", "mono_lfo_2", 1]]) {
+            section(2, title, {},
+                waveDisplay(`${prefix}_waveform`, {amplitude: `${prefix}_amplitude`, source: sourceIndex(prefix), phase}),
+                choice("wave", `${prefix}_waveform`), knob("amp", `${prefix}_amplitude`),
+                rate("rate", prefix), choice("sync", `${prefix}_sync`), choice("retrigger", `${prefix}_retrigger`))
+        }
+        section(2, "POLY LFO", {},
+            waveDisplay("poly_lfo_waveform", {amplitude: "poly_lfo_amplitude", source: sourceIndex("poly_lfo"), phase: 2, poly: true}),
+            choice("wave", "poly_lfo_waveform"), knob("amp", "poly_lfo_amplitude"),
+            rate("rate", "poly_lfo"), choice("sync", "poly_lfo_sync"))
+        section(2, "ARPEGGIATOR", {power: "arp_on"},
+            rate("rate", "arp"), choice("sync", "arp_sync"), knob("gate", "arp_gate"),
+            knob("octaves", "arp_octaves"), choice("pattern", "arp_pattern"))
+
+        section(3, "STEP SEQUENCER", {},
+            stepDisplay(), knob("steps", "num_steps"), knob("smooth", "step_smoothing"),
+            rate("rate", "step", "step_sequencer_sync", "step_sequencer_tempo"),
+            choice("sync", "step_sequencer_sync"), choice("retrigger", "step_sequencer_retrigger"))
+        section(3, "DISTORTION", {power: "distortion_on"},
+            choice("type", "distortion_type"), knob("drive", "distortion_drive"), knob("mix", "distortion_mix"))
+        section(3, "STUTTER", {power: "stutter_on"},
+            rate("rate", "stutter"), choice("sync", "stutter_sync"),
+            rate("resample", "stutter_resample"), choice("sync", "stutter_resample_sync"),
+            knob("softness", "stutter_softness"))
+        section(3, "DELAY", {power: "delay_on"},
+            rate("rate", "delay"), choice("sync", "delay_sync"),
+            knob("feedback", "delay_feedback"), knob("mix", "delay_dry_wet"))
+        section(3, "REVERB", {power: "reverb_on"},
+            knob("feedback", "reverb_feedback"), knob("damping", "reverb_damping"), knob("mix", "reverb_dry_wet"))
+    }
+
+    // Rows narrower than the frame get an empty section at either end; a full row gets none (their gaps would not
+    // fit). The layout is in em, so this holds at any scale: measured once, and again with the font loaded.
+    const measure = () => document.querySelectorAll(".row").forEach(row => {
+        const gap = parseFloat(getComputedStyle(row).columnGap)
+        const sections = [...row.children].filter(child => !child.classList.contains("padding"))
+        const used = sections.reduce((sum, section) => sum + section.offsetWidth, 0) + gap * (sections.length - 1)
+        row.classList.toggle("padded", row.clientWidth - used >= 2 * gap + 1)
+    })
+    const pad = () => {
+        document.querySelectorAll(".row").forEach(row => {
+            row.prepend(Object.assign(document.createElement("section"), {className: "padding"}))
+            row.append(Object.assign(document.createElement("section"), {className: "padding"}))
+        })
+        measure()
+        document.fonts?.ready.then(measure)
+    }
+
+    // --- the bar --------------------------------------------------------------------------------------------
+
+    const buildSources = () => {
+        const bar = document.querySelector(".sources")
+        const buttons = model.sources.map((name, index) => {
+            const button = document.createElement("div")
+            button.className = "source"
+            button.style.setProperty("--source-color", sourceColor(index))
+            const text = document.createElement("span")
+            text.textContent = SOURCE_LABELS[name] ?? name
+            const count = document.createElement("span")
+            count.className = "count"
+            button.append(text, count)
+            button.addEventListener("pointerdown", event => {
+                if (event.button !== 0 || event.ctrlKey) {return}
+                model.modSource = model.modSource === index ? -1 : index
+                refresh()
+            })
+            bar.append(button)
+            return {button, count}
+        })
+        window.addEventListener("keydown", event => {
+            if (event.key === "Escape" && model.modSource >= 0 && model.dragging === 0) {
+                model.modSource = -1
+                refresh()
+            }
+        })
+        views.push({
+            update: () => {
+                buttons.forEach(({button, count}, index) => {
+                    button.classList.toggle("selected", model.modSource === index)
+                    const n = model.slots.filter(slot => slot.source === index).length
+                    count.textContent = n > 0 ? String(n) : ""
+                })
+            }
+        })
+        animated.push({
+            animate: () => buttons.forEach(({button}, index) =>
+                button.style.setProperty("--level", String(Math.abs(model.activity.sources[index]))))
+        })
+    }
+
+    const buildBar = () => {
+        const bar = document.querySelector(".bar")
+        const master = bar.querySelector(".master")
+        const volume = knob("volume", "volume")
+        master.append(volume)
+        const patchButton = bar.querySelector(".patch")
+        const show = index => {
+            const patch = model.patches[index]
+            if (patch === undefined) {return}
+            model.patchIndex = index
+            sendPatch(patch)
+        }
+        bar.querySelector(".prev").addEventListener("click", () =>
+            show((Math.max(model.patchIndex, 0) - 1 + model.patches.length) % model.patches.length))
+        bar.querySelector(".next").addEventListener("click", () => show((model.patchIndex + 1) % model.patches.length))
+        patchButton.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            popup(patchButton, "patches", (menu, close) => {
+                const init = document.createElement("div")
+                init.className = "folder"
+                const heading = document.createElement("div")
+                heading.className = "heading"
+                heading.textContent = "INIT"
+                const item = document.createElement("div")
+                item.textContent = "Init"
+                item.addEventListener("click", () => {
+                    model.patchIndex = -1
+                    sendPatch({name: "Init", author: "", values: {}, modulations: []})
+                    close()
+                })
+                init.append(heading, item)
+                const folders = new Map()
+                model.patches.forEach((patch, index) => {
+                    if (!folders.has(patch.folder)) {folders.set(patch.folder, [])}
+                    folders.get(patch.folder).push(index)
+                })
+                // three columns, folders filled in order
+                const columns = [init, document.createElement("div"), document.createElement("div")]
+                columns.slice(1).forEach(element => element.className = "folder")
+                let column = 0, rows = 1
+                const total = model.patches.length + folders.size + 2
+                for (const [folder, indices] of folders) {
+                    if (rows > total / 3 && column < 2) {
+                        column++
+                        rows = 0
+                    }
+                    const heading = document.createElement("div")
+                    heading.className = "heading"
+                    heading.textContent = folder.toUpperCase()
+                    columns[column].append(heading)
+                    for (const index of indices) {
+                        const item = document.createElement("div")
+                        item.textContent = model.patches[index].name
+                        item.classList.toggle("current", index === model.patchIndex)
+                        item.addEventListener("click", () => {
+                            show(index)
+                            close()
+                        })
+                        columns[column].append(item)
+                    }
+                    rows += indices.length + 1
+                }
+                menu.append(...columns)
+            })
+        })
+        const level = bar.querySelector(".level")
+        animated.push({
+            animate: () => {
+                const {context, width, height} = prepare(level)
+                context.fillStyle = css("--color-edge")
+                context.fillRect(0, 0, width, height)
+                const peak = model.activity.peak
+                context.fillStyle = peak > 1 ? "hsl(0, 80%, 60%)" : css("--color-blue")
+                context.fillRect(0, 0, width * clamp(peak / 1.5, 0, 1), height)
+                bar.querySelector(".voices > span").textContent = String(model.activity.voices)
+            }
+        })
+        views.push({
+            update: () => {
+                const index = model.patches.findIndex(patch => patch.name === model.name)
+                if (index >= 0 && model.patches[model.patchIndex]?.name !== model.name) {model.patchIndex = index}
+                patchButton.querySelector(".name").textContent = model.name || "Untitled"
+                patchButton.querySelector(".folder").textContent = model.patches[model.patchIndex]?.name === model.name
+                    ? model.patches[model.patchIndex].folder : ""
+                bar.querySelector(".author").textContent = model.author ? `by ${model.author}, CC BY 4.0` : ""
+            }
+        })
+    }
+
+    // --- run ------------------------------------------------------------------------------------------------
+
+    const build = description => {
+        model.params = description.params
+        model.sources = description.sources
+        model.params.forEach((p, id) => {
+            model.byName.set(p.name, id)
+            model.values[id] = p.default
+        })
+        buildBar()
+        buildSources()
+        buildSections()
+        pad()
+        refresh()
+    }
+
+    let refreshPending = false
+    const refresh = () => {
+        if (refreshPending) {return}
+        refreshPending = true
+        requestAnimationFrame(() => {
+            refreshPending = false
+            views.forEach(view => view.update())
+            animated.forEach(view => view.animate())
+        })
+    }
+    let animatePending = false
+    const animate = () => {
+        if (animatePending) {return}
+        animatePending = true
+        requestAnimationFrame(() => {
+            animatePending = false
+            animated.forEach(view => view.animate())
+        })
+    }
+
+    let lastPoll = 0
+    const poll = now => {
+        if (now - lastPoll >= POLL_MILLIS) {
+            lastPoll = now
+            if (model.params.length > 0) {message(PAGE.POLL, 4)}
+        }
+        requestAnimationFrame(poll)
+    }
+    requestAnimationFrame(poll)
+    window.addEventListener("resize", refresh)
+
+    fetch("patches.json").then(response => response.json()).then(({patches}) => {
+        model.patches = patches
+        refresh()
+    }).catch(() => {})
+    message(PAGE.HELLO, 4)
+</script>
+</body>
+</html>

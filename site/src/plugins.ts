@@ -62,6 +62,13 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         credit: "https://github.com/surge-synthesizer/surge", source: port("surge-xt"), license: "GPL-3.0-or-later"
     },
     {
+        id: "helm", name: "Helm", kind: "instrument",
+        description: "Polyphonic subtractive synth: unison oscillators, blendable filter, step sequencer, arpeggiator, effects",
+        clapId: "org.tytel.helm",
+        archive: "build/helm/helm.wclap.tar.gz", build: "scripts/build-helm.sh",
+        credit: "https://github.com/mtytel/helm", source: port("helm"), license: "GPL-3.0-or-later"
+    },
+    {
         id: "coopiano", name: "coopiano", kind: "instrument",
         description: "Physically modelled piano: hammer, strings, soundboard, sympathetic resonance and room, no samples",
         clapId: "com.peterc.coopiano",

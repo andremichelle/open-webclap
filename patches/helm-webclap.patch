@@ -1,0 +1,391 @@
+Helm: float wavetables, attacks from the note's sample, a clearMemory hook through mopo's processor graph and a
+voice kill, for WebCLAP.
+
+- fixed_point_wave: the band-limited wavetables (11 waveforms x 64 harmonic limits x 2048 values, the second half
+  the interpolation deltas) hold floats instead of doubles: 5.8 MB less memory per instance, a little faster in the
+  unison loop (the lookups miss the cache less). The oscillators read them through const float pointers and still
+  mix in doubles; the difference is below 1e-7 of full scale.
+- Processor::clearMemory (no-op), ProcessorRouter (every processor it runs), VoiceHandler (also the global router
+  and every voice): Memory::clear, and Delay, SimpleDelay (the oscillator feedback), ReverbComb, ReverbAllPass,
+  Stutter and Feedback silence their buffers. Allocates nothing, so a CLAP reset can call it on the audio thread.
+- Envelope: the attack outputs the value at the end of the block, as the attack's last block already does, so a
+  note starts on its sample when the wrapper splits the block there (the per-sample smoothing ramps from 0 within
+  the note's first block instead of a block later).
+- HelmEngine::followArpeggiatorSwitch: when the arpeggiator switches, its notes end; this ran only at the start
+  of process(), so a note in the block that switched it (a patch loaded, then a key) was dropped with them. It
+  runs before every note on and off too.
+- VoiceHandler::killAllVoices and HelmEngine::killAllVoices: the arpeggiator lets go, the sustain lifts and every
+  voice gets kVoiceKill (a VOICE_KILL_TIME fade); process until no voice is active.
+
+
+--- a/mopo/src/delay.h
++++ b/mopo/src/delay.h
+@@ -42,6 +42,7 @@
+ 
+       virtual Processor* clone() const override { return new Delay(*this); }
+       virtual void process() override;
++      virtual void clearMemory() override { memory_->clear(); }
+ 
+       inline void tick(int i, const mopo_float* audio, mopo_float* dest);
+ 
+--- a/mopo/src/envelope.cpp
++++ b/mopo/src/envelope.cpp
+@@ -63,8 +63,8 @@
+         output(kValue)->buffer[0] = current_value_;
+       }
+       else {
+-        output(kValue)->buffer[0] = current_value_;
+         current_value_ += samples_to_process_ * attack_increment;
++        output(kValue)->buffer[0] = current_value_;
+       }
+     }
+     if (state_ == kDecaying) {
+--- a/mopo/src/feedback.h
++++ b/mopo/src/feedback.h
+@@ -36,6 +36,7 @@
+ 
+       virtual Processor* clone() const override { return new Feedback(*this); }
+       virtual void process() override;
++      virtual void clearMemory() override { utils::zeroBuffer(buffer_, MAX_BUFFER_SIZE); }
+       virtual void refreshOutput();
+ 
+       inline void tick(int i) {
+--- a/mopo/src/memory.h
++++ b/mopo/src/memory.h
+@@ -81,6 +81,11 @@
+         return utils::interpolate(from, to, sample_fraction);
+       }
+ 
++      void clear() {
++        utils::zeroBuffer(memory_, size_);
++        offset_ = 0;
++      }
++
+       unsigned int getOffset() const { return offset_; }
+ 
+       void setOffset(int offset) { offset_ = offset; }
+--- a/mopo/src/processor.h
++++ b/mopo/src/processor.h
+@@ -101,6 +101,9 @@
+       // Cleanup shared memory.
+       virtual void destroy();
+ 
++      // Silences delay lines and other buffers that would sound on, allocating nothing (WebCLAP reset).
++      virtual void clearMemory() { }
++
+       // Subclasses override this for main processing code.
+       virtual void process() = 0;
+ 
+--- a/mopo/src/processor_router.cpp
++++ b/mopo/src/processor_router.cpp
+@@ -127,6 +127,14 @@
+       local_feedback_order_[i]->setBufferSize(buffer_size);
+   }
+ 
++  void ProcessorRouter::clearMemory() {
++    updateAllProcessors();
++    for (Processor* processor : local_order_)
++      processor->clearMemory();
++    for (Feedback* feedback : local_feedback_order_)
++      feedback->clearMemory();
++  }
++
+   void ProcessorRouter::addProcessor(Processor* processor) {
+     MOPO_ASSERT(processor->router() == 0 || processor->router() == this);
+     (*global_changes_)++;
+--- a/mopo/src/processor_router.h
++++ b/mopo/src/processor_router.h
+@@ -42,6 +42,7 @@
+       virtual void process() override;
+       virtual void setSampleRate(int sample_rate) override;
+       virtual void setBufferSize(int buffer_size) override;
++      virtual void clearMemory() override;
+ 
+       virtual void addProcessor(Processor* processor);
+       virtual void addIdleProcessor(Processor* processor);
+--- a/mopo/src/reverb_all_pass.h
++++ b/mopo/src/reverb_all_pass.h
+@@ -42,6 +42,7 @@
+       }
+ 
+       virtual void process() override;
++      virtual void clearMemory() override { memory_->clear(); }
+ 
+       void tick(int i, mopo_float* dest, int period,
+                 const mopo_float* audio_buffer, const mopo_float* feedback_buffer) {
+--- a/mopo/src/reverb_comb.h
++++ b/mopo/src/reverb_comb.h
+@@ -43,6 +43,10 @@
+       }
+ 
+       virtual void process() override;
++      virtual void clearMemory() override {
++        memory_->clear();
++        filtered_sample_ = 0.0;
++      }
+ 
+       void tick(int i, mopo_float* dest, int period,
+                 const mopo_float* audio_buffer,
+--- a/mopo/src/simple_delay.h
++++ b/mopo/src/simple_delay.h
+@@ -44,6 +44,7 @@
+       }
+ 
+       virtual void process() override;
++      virtual void clearMemory() override { memory_->clear(); }
+ 
+       inline void tick(int i, mopo_float* dest,
+                        const mopo_float* audio,
+--- a/mopo/src/stutter.h
++++ b/mopo/src/stutter.h
+@@ -43,6 +43,14 @@
+ 
+       virtual Processor* clone() const override { return new Stutter(*this); }
+       virtual void process() override;
++      virtual void clearMemory() override {
++        if (memory_)
++          memory_->clear();
++        offset_ = 0.0;
++        memory_offset_ = 0.0;
++        last_amplitude_ = 0.0;
++        resampling_ = true;
++      }
+ 
+     protected:
+       void startResampling(mopo_float sample_period) {
+--- a/mopo/src/voice_handler.cpp
++++ b/mopo/src/voice_handler.cpp
+@@ -186,6 +186,21 @@
+       all_voices_[i]->processor()->setBufferSize(buffer_size);
+   }
+ 
++  void VoiceHandler::clearMemory() {
++    ProcessorRouter::clearMemory();
++    global_router_.clearMemory();
++    for (Voice* voice : all_voices_)
++      voice->processor()->clearMemory();
++  }
++
++  // Every voice fades out over VOICE_KILL_TIME and is freed once silent, sustained ones too
++  void VoiceHandler::killAllVoices() {
++    pressed_notes_.clear();
++    sustain_ = false;
++    for (Voice* voice : active_voices_)
++      voice->kill();
++  }
++
+   int VoiceHandler::getNumActiveVoices() {
+     return active_voices_.size();
+   }
+--- a/mopo/src/voice_handler.h
++++ b/mopo/src/voice_handler.h
+@@ -137,6 +137,8 @@
+       virtual void process() override;
+       virtual void setSampleRate(int sample_rate) override;
+       virtual void setBufferSize(int buffer_size) override;
++      virtual void clearMemory() override;
++      void killAllVoices();
+       int getNumActiveVoices();
+       CircularQueue<mopo_float>& getPressedNotes() { return pressed_notes_; }
+       bool isNotePlaying(mopo_float note);
+--- a/src/synthesis/fixed_point_oscillator.cpp
++++ b/src/synthesis/fixed_point_oscillator.cpp
+@@ -39,7 +39,7 @@
+ 
+     int waveform = static_cast<int>(input(kWaveform)->source->buffer[0] + 0.5);
+     waveform = mopo::utils::iclamp(waveform, 0, FixedPointWaveLookup::kWhiteNoise - 1);
+-    mopo_float* wave_buffer = FixedPointWave::getBuffer(waveform, 2.0 * phase_inc);
++    const float* wave_buffer = FixedPointWave::getBuffer(waveform, 2.0 * phase_inc);
+ 
+     mopo_float first_adjust = bool(shuffle) * 2.0 / shuffle;
+     mopo_float second_adjust = 1.0 / (1.0 - 0.5 * shuffle);
+--- a/src/synthesis/fixed_point_wave.h
++++ b/src/synthesis/fixed_point_wave.h
+@@ -56,7 +56,7 @@
+ 
+       static const int HARMONICS = 63;
+ 
+-      typedef mopo_float (*wave_type)[2 * FIXED_LOOKUP_SIZE];
++      typedef float (*wave_type)[2 * FIXED_LOOKUP_SIZE];
+ 
+       FixedPointWaveLookup();
+ 
+@@ -71,17 +71,17 @@
+       void preprocessPyramid(wave_type buffer);
+       void preprocessDiffs(wave_type wave);
+ 
+-      mopo_float sin_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float triangle_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float square_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float down_saw_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float up_saw_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float three_step_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float four_step_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float eight_step_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float three_pyramid_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float five_pyramid_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+-      mopo_float nine_pyramid_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float sin_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float triangle_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float square_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float down_saw_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float up_saw_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float three_step_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float four_step_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float eight_step_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float three_pyramid_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float five_pyramid_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
++      float nine_pyramid_[HARMONICS + 1][2 * FIXED_LOOKUP_SIZE];
+ 
+       wave_type waves_[kNumFixedPointWaveforms];
+   };
+@@ -101,7 +101,7 @@
+         return lookup_.waves_[waveform][0][index];
+       }
+ 
+-      static inline mopo_float* getBuffer(int waveform, int phase_inc) {
++      static inline const float* getBuffer(int waveform, int phase_inc) {
+         int clamped_inc = mopo::utils::iclamp(phase_inc, 1, INT_MAX);
+         return lookup_.waves_[waveform][getHarmonicIndex(clamped_inc)];
+       }
+@@ -112,7 +112,7 @@
+                                    0, FixedPointWaveLookup::HARMONICS - 1);
+       }
+ 
+-      static inline mopo_float interpretWave(const mopo_float* buffer, unsigned int t) {
++      static inline mopo_float interpretWave(const float* buffer, unsigned int t) {
+         int index = getIndex(t);
+         mopo_float mult = getFractional(t);
+         mopo_float inc = mult * buffer[index + FixedPointWaveLookup::FIXED_LOOKUP_SIZE];
+--- a/src/synthesis/helm_engine.cpp
++++ b/src/synthesis/helm_engine.cpp
+@@ -352,12 +352,16 @@
+     return voice_handler_->getLastActiveNote();
+   }
+ 
+-  void HelmEngine::process() {
++  void HelmEngine::followArpeggiatorSwitch() {
+     bool playing_arp = arp_on_->value();
+     if (was_playing_arp_ != playing_arp)
+       arpeggiator_->allNotesOff();
+ 
+     was_playing_arp_ = playing_arp;
++  }
++
++  void HelmEngine::process() {
++    followArpeggiatorSwitch();
+     arpeggiator_->process();
+     ProcessorRouter::process();
+ 
+@@ -382,6 +386,7 @@
+   }
+ 
+   void HelmEngine::noteOn(mopo_float note, mopo_float velocity, int sample, int channel) {
++    followArpeggiatorSwitch();
+     if (arp_on_->value())
+       arpeggiator_->noteOn(note, velocity, sample);
+     else
+@@ -389,6 +394,7 @@
+   }
+ 
+   VoiceEvent HelmEngine::noteOff(mopo_float note, int sample) {
++    followArpeggiatorSwitch();
+     if (arp_on_->value())
+       return arpeggiator_->noteOff(note, sample);
+     return voice_handler_->noteOff(note, sample);
+@@ -427,6 +433,11 @@
+ 
+   void HelmEngine::sustainOn() {
+     voice_handler_->sustainOn();
++  }
++
++  void HelmEngine::killAllVoices() {
++    arpeggiator_->allNotesOff();
++    voice_handler_->killAllVoices();
+   }
+ 
+   void HelmEngine::sustainOff() {
+--- a/src/synthesis/helm_engine.h
++++ b/src/synthesis/helm_engine.h
+@@ -66,6 +66,13 @@
+       void sustainOn();
+       void sustainOff();
+ 
++      // The arpeggiator switched: its notes end. Before every note too, so a note in the block that switches it
++      // goes where the switch sends it instead of being dropped with the others.
++      void followArpeggiatorSwitch();
++
++      // WebCLAP reset: the arpeggiator lets go, every voice is killed (process until none is active)
++      void killAllVoices();
++
+     private:
+       HelmVoiceHandler* voice_handler_;
+       Arpeggiator* arpeggiator_;
+--- a/src/synthesis/helm_oscillators.cpp
++++ b/src/synthesis/helm_oscillators.cpp
+@@ -110,7 +110,7 @@
+     }
+   }
+ 
+-  void HelmOscillators::prepareBuffers(mopo_float** wave_buffers,
++  void HelmOscillators::prepareBuffers(const float** wave_buffers,
+                                        const int* detune_diffs,
+                                        const int* oscillator_phase_diffs,
+                                        int waveform) {
+@@ -202,7 +202,7 @@
+       tickInitialVoices(j);
+ 
+     for (int v = 1; v < voices1; ++v) {
+-      const mopo_float* wave_buffer = wave_buffers1_[v];
++      const float* wave_buffer = wave_buffers1_[v];
+       unsigned int start_phase = oscillator1_phases_[v];
+       int detune = detune_diffs1_[v];
+ 
+@@ -220,7 +220,7 @@
+     }
+ 
+     for (int v = 1; v < voices2; ++v) {
+-      const mopo_float* wave_buffer = wave_buffers2_[v];
++      const float* wave_buffer = wave_buffers2_[v];
+       unsigned int start_phase = oscillator2_phases_[v];
+       int detune = detune_diffs2_[v];
+ 
+--- a/src/synthesis/helm_oscillators.h
++++ b/src/synthesis/helm_oscillators.h
+@@ -61,7 +61,7 @@
+                                int oscillator_diff,
+                                bool harmonize, mopo_float detune,
+                                int voices);
+-      void prepareBuffers(mopo_float** wave_buffers,
++      void prepareBuffers(const float** wave_buffers,
+                           const int* detune_diffs,
+                           const int* oscillator_phase_diffs,
+                           int waveform);
+@@ -92,14 +92,14 @@
+         oscillator2_totals_[i] += FixedPointWave::interpretWave(wave_buffers2_[0], phase2);
+       }
+ 
+-      inline void tickVoice1(int i, int voice, const mopo_float* wave_buffer,
++      inline void tickVoice1(int i, int voice, const float* wave_buffer,
+                              unsigned int start_phase, int detune) {
+         int phase = oscillator1_cross_mods_[i] + start_phase +
+                     i * detune + oscillator1_phase_diffs_[i];
+         oscillator1_totals_[i] += FixedPointWave::interpretWave(wave_buffer, phase);
+       }
+ 
+-      inline void tickVoice2(int i, int voice, const mopo_float* wave_buffer,
++      inline void tickVoice2(int i, int voice, const float* wave_buffer,
+                              unsigned int start_phase, int detune) {
+         int phase = oscillator2_cross_mods_[i] + start_phase +
+                     i * detune + oscillator2_phase_diffs_[i];
+@@ -128,8 +128,8 @@
+       unsigned int oscillator1_phases_[MAX_UNISON];
+       unsigned int oscillator2_phases_[MAX_UNISON];
+ 
+-      mopo_float* wave_buffers1_[MAX_UNISON];
+-      mopo_float* wave_buffers2_[MAX_UNISON];
++      const float* wave_buffers1_[MAX_UNISON];
++      const float* wave_buffers2_[MAX_UNISON];
+       int detune_diffs1_[MAX_UNISON];
+       int detune_diffs2_[MAX_UNISON];
+       int oscillator1_phase_diffs_[MAX_BUFFER_SIZE];

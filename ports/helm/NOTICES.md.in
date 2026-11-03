@@ -1,0 +1,29 @@
+# Helm for WebCLAP
+
+Helm by Matt Tytel, a polyphonic subtractive synthesizer, ported to WebCLAP. This is not an official Helm release.
+
+- Helm: https://github.com/mtytel/helm (commit abdedd5, version 0.9.0)
+- This port, and the complete source of this bundle: @SOURCE_URL@
+  Build it with `scripts/build-helm.sh`, which fetches every dependency below at the commit named here.
+
+## License
+
+The bundle is licensed under the **GNU General Public License, version 3 or later** (`LICENSE`), Helm's license.
+It contains no JUCE: `module.wasm` is Helm's engine (mopo and its synthesis code), changed by
+`patches/helm-webclap.patch`, behind the port's CLAP wrapper; the editor is the port's own web page.
+
+The factory patches (`ui/patches.json`, converted from Helm's `patches/Factory Presets`) are licensed under the
+**Creative Commons Attribution 4.0 International License** (`licenses/CC-BY-4.0.txt`), each by the author it names.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licenses for details.
+
+## Components
+
+| Component | In | Copyright | License |
+|---|---|---|---|
+| [Helm](https://github.com/mtytel/helm) and its mopo engine (with `patches/helm-webclap.patch`) | module | 2013-2017 Matt Tytel | GPL-3.0-or-later |
+| Helm's factory patches | ui | their authors: Matt Tytel, Cris Owl Alvarez, SF, Mikolis, Ones & Zeros | CC BY 4.0 |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/helm`) | both | 2026 André Michelle | GPL-3.0-or-later |
+| WASI shim ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/webclap/wasi_shim.cpp`) | module | 2026 André Michelle | MIT |
+| [CLAP](https://github.com/free-audio/clap) headers | module | 2014-2022 Alexandre Bique | MIT |
