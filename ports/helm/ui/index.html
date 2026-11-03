@@ -714,17 +714,19 @@
         if (p.invert) {d = 1 / d}
         return d * p.multiply
     }
-    const number = (v, digits = 3) => {
-        if (!isFinite(v)) {return "∞"}
+    // digits by size: 1234, 123, 12.3, 1.23, 0.123; nothing smaller than a thousandth
+    const number = v => {
+        if (!isFinite(v)) {return v < 0 ? "-∞" : "∞"}
         const abs = Math.abs(v)
-        if (abs >= 1000) {return v.toFixed(0)}
-        return Number(v.toPrecision(digits)).toString()
+        const fixed = abs >= 100 ? 0 : abs >= 10 ? 1 : abs >= 1 ? 2 : 3
+        return Number(v.toFixed(fixed)).toString()
     }
+    // the levels Helm sets as the square root of a gain: in dB
+    const AMPLITUDES = new Set(["volume", "osc_1_volume", "osc_2_volume", "sub_volume", "noise_volume"])
     // [number, unit]
     const format = (p, v) => {
         if (p.choices) {return [p.choices[clamp(Math.round(v - p.min), 0, p.choices.length - 1)], ""]}
-        // the volume is a quadratic gain
-        if (p.name === "volume") {return v <= 0 ? ["-∞", "dB"] : [(40 * Math.log10(v)).toFixed(1), "dB"]}
+        if (AMPLITUDES.has(p.name)) {return v <= 0 ? ["-∞", "dB"] : [(40 * Math.log10(v)).toFixed(1), "dB"]}
         if (p.name === "cutoff") {
             const hz = 440 * Math.pow(2, (v - 69) / 12)
             return hz >= 1000 ? [number(hz / 1000), "kHz"] : [number(hz), "Hz"]

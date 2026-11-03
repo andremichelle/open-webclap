@@ -3,8 +3,12 @@
     instrument. Plain CLAP, no JUCE: upstream's engine (mopo and src/synthesis, which never used JUCE) behind this
     wrapper, changed only by patches/helm-webclap.patch (float wavetables, clearMemory, killAllVoices).
 
-    Parameters. Every Helm control is a CLAP parameter, 139 of them, in Helm's own units and ranges (the editor
-    shows them skewed as Helm does, value_to_text too). Their ids are the controls' positions in name order, fixed
+    Parameters. Every Helm control is a CLAP parameter, 139 of them. A host that maps the CLAP value linearly
+    between min and max and shows it as a number (openDAW, which does not ask value_to_text) shows what the editor
+    shows where that is a multiple of the value: those parameters reach the host in their display units (Tune in
+    cents, the percentages 0..100, the BPM; unitless 0..1 and -1..1 values as percent). The curved ones (times,
+    rates, volumes, the cutoff) stay in Helm's units, evenly spaced for a host's knob and automation; value_to_text
+    gives every one Helm's display. The editor and the state use Helm's units throughout. Their ids are the controls' positions in name order, fixed
     by paramNames below, so a later build reads older states and automation. The modulation routings are not
     parameters: up to 32 slots, each a source, a destination (a parameter id) and an amount in the destination's
     units.
@@ -37,6 +41,7 @@
 #include "utils.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -162,7 +167,25 @@ double clampValue (const mopo::ValueDetails& details, double value)
     return details.steps > 0 ? std::round (value) : value;
 }
 
-// Helm's SynthSlider::getTextFromValue: the display skew, offset, inversion and multiplier, then the units
+// A number as the editor shows it: digits by size (1234, 123, 12.3, 1.23, 0.123), trailing zeros dropped
+std::string formatNumber (double value)
+{
+    const double magnitude = std::abs (value);
+    const int decimals = magnitude >= 100.0 ? 0 : magnitude >= 10.0 ? 1 : magnitude >= 1.0 ? 2 : 3;
+    char text[64];
+    std::snprintf (text, sizeof text, "%.*f", decimals, value);
+    std::string number = text;
+    if (number.find ('.') != std::string::npos)
+    {
+        number.erase (number.find_last_not_of ('0') + 1);
+        if (number.back() == '.')
+            number.pop_back();
+    }
+    return number == "-0" ? "0" : number;
+}
+
+// Helm's SynthSlider::getTextFromValue (the display skew, offset, inversion and multiplier), with the editor's
+// units: ms below a second, st, ct, oct, no unit for counts
 void formatValue (const mopo::ValueDetails& details, double value, char* text, uint32_t size)
 {
     double display = value;
@@ -177,12 +200,51 @@ void formatValue (const mopo::ValueDetails& details, double value, char* text, u
     if (details.display_invert)
         display = 1.0 / display;
     display *= details.display_multiply;
-    if (details.steps > 0)
-        std::snprintf (text, size, "%d%s%s", (int) std::lround (display), details.display_units.empty() ? "" : " ",
-                       details.display_units.c_str());
-    else
-        std::snprintf (text, size, "%.3g%s%s", display, details.display_units.empty() ? "" : " ",
-                       details.display_units.c_str());
+    const std::string& units = details.display_units;
+    std::string unit = units;
+    if (units == "secs")
+    {
+        unit = display < 1.0 ? "ms" : "s";
+        if (display < 1.0)
+            display *= 1000.0;
+    }
+    else if (units == "semitones")
+        unit = "st";
+    else if (units == "cents")
+        unit = "ct";
+    else if (units == "octaves")
+        unit = "oct";
+    else if (units == "voices" || units == "v")
+        unit = "";
+    const std::string number = details.steps > 0 ? std::to_string ((long) std::lround (display)) : formatNumber (display);
+    std::snprintf (text, size, "%s%s%s", number.c_str(), unit.empty() ? "" : " ", unit.c_str());
+}
+
+// A choice as the editor names it: off, auto and on in capitals, "Sync to Playhead" as "Sync", "Tempo" (dotted,
+// triplets) as "BPM"
+std::string choiceName (const std::string& name)
+{
+    if (name == "off" || name == "auto" || name == "on")
+    {
+        std::string upper = name;
+        for (char& c : upper)
+            c = (char) std::toupper ((unsigned char) c);
+        return upper;
+    }
+    if (name == "Sync to Playhead")
+        return "Sync";
+    if (name.compare (0, 5, "Tempo") == 0)
+        return "BPM" + name.substr (5);
+    return name;
+}
+
+// The levels Helm sets as the square root of a gain (the knob is quadratic): shown in dB
+bool isAmplitude (const char* name)
+{
+    for (const char* amplitude : { "volume", "osc_1_volume", "osc_2_volume", "sub_volume", "noise_volume" })
+        if (std::strcmp (name, amplitude) == 0)
+            return true;
+    return false;
 }
 
 // The names of a stepped control's choices, as Helm's editor shows them, indexed by the value
@@ -215,6 +277,8 @@ struct Helm
 
     std::unique_ptr<mopo::HelmEngine> engine;
     const mopo::ValueDetails* details[paramCount] {};
+    mopo::ValueDetails shown[paramCount] {}; // Helm's details, unitless fractions as percent
+    double clapScale[paramCount] {};         // the host's value is Helm's times this
     mopo::Value* controls[paramCount] {};
     mopo::cr::SmoothValue* smoothed[paramCount] {}; // the controls that glide to a new value (the cutoff)
     bool modulatable[paramCount] {};
@@ -272,7 +336,18 @@ struct Helm
                 }
                 controls[id] = control->second;
                 smoothed[id] = dynamic_cast<mopo::cr::SmoothValue*> (control->second);
-                details[id] = &mopo::Parameters::getDetails (paramNames[id]);
+                shown[id] = mopo::Parameters::getDetails (paramNames[id]);
+                details[id] = &shown[id];
+                auto& d = shown[id];
+                const bool linear = d.display_skew == mopo::ValueDetails::kLinear && ! d.display_invert
+                                    && d.post_offset == 0.0 && d.steps == 0;
+                if (linear && d.display_units.empty() && d.display_multiply == 1.0 && d.min >= -1.0 && d.max <= 1.0
+                    && std::strcmp (paramNames[id], "step_smoothing") != 0)
+                {
+                    d.display_multiply = 100.0;
+                    d.display_units = "%";
+                }
+                clapScale[id] = linear ? d.display_multiply : 1.0;
                 modulatable[id] = mono.count (paramNames[id]) > 0;
                 state.values[id] = (float) details[id]->default_value;
             }
@@ -381,6 +456,15 @@ struct Helm
             wake();
         }
     }
+
+    // A value in the host's units (events, flush)
+    void hostClapValue (clap_id id, double value)
+    {
+        if (id < paramCount)
+            hostParam (id, value / clapScale[id]);
+    }
+
+    double clapValue (clap_id id) const { return state.values[id] * clapScale[id]; }
 
     void disconnect (size_t slot)
     {
@@ -652,7 +736,7 @@ struct Helm
                 case CLAP_EVENT_PARAM_VALUE:
                 {
                     const auto* e = reinterpret_cast<const clap_event_param_value*> (header);
-                    hostParam (e->param_id, e->value);
+                    hostClapValue (e->param_id, e->value);
                     break;
                 }
                 default:
@@ -705,7 +789,7 @@ struct Helm
                     return false;
                 const clap_id id = u16 (2);
                 setParam (id, f32 (4));
-                outEvents.push_back ({ CLAP_EVENT_PARAM_VALUE, id, state.values[id] });
+                outEvents.push_back ({ CLAP_EVENT_PARAM_VALUE, id, clapValue (id) });
                 requestFlush();
                 return true;
             }
@@ -751,7 +835,7 @@ struct Helm
                 outEvents.push_back ({ CLAP_EVENT_PARAM_GESTURE_BEGIN, id, 0.0 });
         for (clap_id id = 0; id < paramCount; ++id)
             if (changed[id])
-                outEvents.push_back ({ CLAP_EVENT_PARAM_VALUE, id, state.values[id] });
+                outEvents.push_back ({ CLAP_EVENT_PARAM_VALUE, id, clapValue (id) });
         for (clap_id id = 0; id < paramCount; ++id)
             if (changed[id])
                 outEvents.push_back ({ CLAP_EVENT_PARAM_GESTURE_END, id, 0.0 });
@@ -815,7 +899,7 @@ struct Helm
             {
                 json += ",\"choices\":[";
                 for (int c = 0; c < d.steps; ++c)
-                    json += (c == 0 ? "\"" : ",\"") + names[(int) d.min + c] + "\"";
+                    json += (c == 0 ? "\"" : ",\"") + choiceName (names[(int) d.min + c]) + "\"";
                 json += "]";
             }
             json += "}";
@@ -1015,9 +1099,10 @@ bool paramsInfo (const clap_plugin* plugin, uint32_t index, clap_param_info* inf
     }
     std::snprintf (info->name, sizeof info->name, "%s", d.display_name.c_str());
     std::snprintf (info->module, sizeof info->module, "%s", paramModule (paramNames[index]));
-    info->min_value = d.min;
-    info->max_value = d.max;
-    info->default_value = d.default_value;
+    const double scale = self (plugin).clapScale[index];
+    info->min_value = d.min * scale;
+    info->max_value = d.max * scale;
+    info->default_value = d.default_value * scale;
     return true;
 }
 
@@ -1025,23 +1110,34 @@ bool paramsValue (const clap_plugin* plugin, clap_id id, double* value)
 {
     if (id >= paramCount)
         return false;
-    *value = self (plugin).state.values[id];
+    *value = self (plugin).clapValue (id);
     return true;
 }
 
-bool paramsValueToText (const clap_plugin* plugin, clap_id id, double value, char* text, uint32_t size)
+bool paramsValueToText (const clap_plugin* plugin, clap_id id, double clap, char* text, uint32_t size)
 {
     if (id >= paramCount || size == 0)
         return false;
+    const double value = clap / self (plugin).clapScale[id];
     const auto& d = *self (plugin).details[id];
     if (const std::string* names = choices (paramNames[id]); names != nullptr && d.steps > 0)
     {
         // Helm's string lookups are indexed by the value (the stutter tempo starts at 6)
         const int index = std::clamp ((int) std::lround (value - d.min), 0, d.steps - 1);
-        std::snprintf (text, size, "%s", names[(int) d.min + index].c_str());
+        std::snprintf (text, size, "%s", choiceName (names[(int) d.min + index]).c_str());
         return true;
     }
-    if (std::strcmp (paramNames[id], "volume") == 0)
+    if (std::strcmp (paramNames[id], "cutoff") == 0)
+    {
+        // a MIDI note, as a frequency
+        const double hz = 440.0 * std::pow (2.0, (value - 69.0) / 12.0);
+        if (hz >= 1000.0)
+            std::snprintf (text, size, "%.3g kHz", hz / 1000.0);
+        else
+            std::snprintf (text, size, "%.3g Hz", hz);
+        return true;
+    }
+    if (isAmplitude (paramNames[id]))
     {
         // a quadratic gain, as the editor shows it
         if (value <= 0.0)
@@ -1054,29 +1150,43 @@ bool paramsValueToText (const clap_plugin* plugin, clap_id id, double value, cha
     return true;
 }
 
+double textToHelmValue (const mopo::ValueDetails& d, clap_id id, const char* text, bool* ok);
+
+// The host's text to its value: Helm's value of that display, in the host's units
 bool paramsTextToValue (const clap_plugin* plugin, clap_id id, const char* text, double* value)
 {
     if (id >= paramCount)
         return false;
-    const auto& d = *self (plugin).details[id];
+    bool ok = false;
+    *value = textToHelmValue (*self (plugin).details[id], id, text, &ok) * self (plugin).clapScale[id];
+    return ok;
+}
+
+double textToHelmValue (const mopo::ValueDetails& d, clap_id id, const char* text, bool* ok)
+{
+    *ok = true;
     if (const std::string* names = choices (paramNames[id]); names != nullptr && d.steps > 0)
         for (int c = 0; c < d.steps; ++c)
-            if (names[(int) d.min + c] == text)
-            {
-                *value = d.min + c;
-                return true;
-            }
+            if (choiceName (names[(int) d.min + c]) == text || names[(int) d.min + c] == text)
+                return d.min + c;
     char* end = nullptr;
     const double number = std::strtod (text, &end);
     if (end == text)
-        return false;
-    if (std::strcmp (paramNames[id], "volume") == 0)
     {
-        *value = clampValue (d, std::pow (10.0, number / 40.0));
-        return true;
+        *ok = false;
+        return 0.0;
     }
-    // the display value back to the control's: undo the multiplier, the inversion, the offset and the skew
-    double display = number / d.display_multiply;
+    if (isAmplitude (paramNames[id]))
+        return clampValue (d, std::pow (10.0, number / 40.0));
+    if (std::strcmp (paramNames[id], "cutoff") == 0)
+    {
+        const double hz = std::strstr (text, "k") != nullptr ? number * 1000.0 : number;
+        return clampValue (d, 69.0 + 12.0 * std::log2 (std::max (hz, 1.0) / 440.0));
+    }
+    // the display value back to the control's: milliseconds as seconds, then undo the multiplier, the inversion,
+    // the offset and the skew
+    const bool milliseconds = d.display_units == "secs" && std::strstr (text, "ms") != nullptr;
+    double display = (milliseconds ? number / 1000.0 : number) / d.display_multiply;
     if (d.display_invert)
         display = 1.0 / display;
     display -= d.post_offset;
@@ -1087,8 +1197,9 @@ bool paramsTextToValue (const clap_plugin* plugin, clap_id id, const char* text,
         case mopo::ValueDetails::kSquareRoot: display = display * display; break;
         default: break;
     }
-    *value = clampValue (d, display);
-    return std::isfinite (*value);
+    const double value = clampValue (d, display);
+    *ok = std::isfinite (value);
+    return value;
 }
 
 void paramsFlush (const clap_plugin* plugin, const clap_input_events* in, const clap_output_events* out)
@@ -1101,7 +1212,7 @@ void paramsFlush (const clap_plugin* plugin, const clap_input_events* in, const 
         if (header->space_id == CLAP_CORE_EVENT_SPACE_ID && header->type == CLAP_EVENT_PARAM_VALUE)
         {
             const auto* e = reinterpret_cast<const clap_event_param_value*> (header);
-            p.hostParam (e->param_id, e->value);
+            p.hostClapValue (e->param_id, e->value);
         }
     }
     if (out != nullptr)
