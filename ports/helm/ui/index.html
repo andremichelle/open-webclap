@@ -266,7 +266,7 @@
         /* DeviceEditor: the header (2rem, 11px, blue, a groove below), the controls under it */
         section {
             display: grid;
-            grid-template-rows: 1.5em 1fr;
+            grid-template-rows: 1.25em 1fr;
             background-color: var(--color-panel-background);
             border-radius: 3px;
             overflow: hidden;
@@ -289,7 +289,7 @@
             align-items: center;
             column-gap: 0.4em;
             padding: 0 0.5em;
-            font-size: 0.6875em;
+            font-size: 0.5625em;
             color: var(--color-blue);
             position: relative;
         }
@@ -304,15 +304,17 @@
             background: linear-gradient(to bottom, rgba(0, 0, 0, 0.2) 0 1px, rgba(255, 255, 255, 0.03) 1px 2px);
         }
 
+        /* the box from the capitals to the baseline, so the centred circle is centred on the letters */
         section > header h1 {
             font-size: inherit;
             letter-spacing: 0.03em;
             white-space: nowrap;
+            text-box: trim-both cap alphabetic;
         }
 
         section > header .power {
-            width: 0.8em;
-            height: 0.8em;
+            width: 7px;
+            height: 7px;
             border-radius: 50%;
             border: 1px solid currentColor;
             cursor: pointer;
@@ -721,12 +723,10 @@
         const fixed = abs >= 100 ? 0 : abs >= 10 ? 1 : abs >= 1 ? 2 : 3
         return Number(v.toFixed(fixed)).toString()
     }
-    // the levels Helm sets as the square root of a gain: in dB
-    const AMPLITUDES = new Set(["volume", "osc_1_volume", "osc_2_volume", "sub_volume", "noise_volume"])
+
     // [number, unit]
     const format = (p, v) => {
         if (p.choices) {return [p.choices[clamp(Math.round(v - p.min), 0, p.choices.length - 1)], ""]}
-        if (AMPLITUDES.has(p.name)) {return v <= 0 ? ["-∞", "dB"] : [(40 * Math.log10(v)).toFixed(1), "dB"]}
         if (p.name === "cutoff") {
             const hz = 440 * Math.pow(2, (v - 69) / 12)
             return hz >= 1000 ? [number(hz / 1000), "kHz"] : [number(hz), "Hz"]
@@ -1542,76 +1542,76 @@
     const sourceIndex = name => model.sources.indexOf(name)
 
     const buildSections = () => {
-        section(0, "OSCILLATOR 1", {},
+        section(0, "Oscillator 1", {},
             waveDisplay("osc_1_waveform"), choice("wave", "osc_1_waveform"), knob("volume", "osc_1_volume"),
             knob("transpose", "osc_1_transpose"), knob("tune", "osc_1_tune"),
             knob("unison", "osc_1_unison_voices"), knob("detune", "osc_1_unison_detune"),
             toggle("harmonize", "unison_1_harmonize"))
-        section(0, "OSCILLATOR 2", {},
+        section(0, "Oscillator 2", {},
             waveDisplay("osc_2_waveform"), choice("wave", "osc_2_waveform"), knob("volume", "osc_2_volume"),
             knob("transpose", "osc_2_transpose"), knob("tune", "osc_2_tune"),
             knob("unison", "osc_2_unison_voices"), knob("detune", "osc_2_unison_detune"),
             toggle("harmonize", "unison_2_harmonize"))
-        section(0, "SUB, NOISE, CROSS MOD", {},
+        section(0, "Sub, Noise, Cross Mod", {},
             waveDisplay("sub_waveform"), choice("sub wave", "sub_waveform"), toggle("octave", "sub_octave", ["0", "-1"]),
             knob("sub", "sub_volume"), knob("shuffle", "sub_shuffle"),
             knob("noise", "noise_volume"), knob("cross mod", "cross_modulation"))
-        section(0, "FEEDBACK", {},
+        section(0, "Feedback", {},
             knob("amount", "osc_feedback_amount"), knob("transpose", "osc_feedback_transpose"),
             knob("tune", "osc_feedback_tune"))
-        section(0, "VOICE", {},
+        section(0, "Voice", {},
             knob("voices", "polyphony"), knob("bend range", "pitch_bend_range"),
             knob("glide", "portamento"), choice("glide", "portamento_type"),
             toggle("legato", "legato"), knob("velocity", "velocity_track"))
 
-        section(1, "FILTER", {power: "filter_on"},
+        section(1, "Filter", {power: "filter_on"},
             filterDisplay(), choice("style", "filter_style"),
             knob("blend", "filter_blend"),
             knob("cutoff", "cutoff"), knob("resonance", "resonance"),
             knob("drive", "filter_drive"), knob("key track", "keytrack"),
             choice("shelf", "filter_shelf"), knob("env depth", "fil_env_depth"))
-        section(1, "FILTER ENVELOPE", {},
+        section(1, "Filter Envelope", {},
             envelopeDisplay("fil", sourceIndex("fil_envelope"), 1),
             knob("attack", "fil_attack"), knob("decay", "fil_decay"),
             knob("sustain", "fil_sustain"), knob("release", "fil_release"))
-        section(1, "AMP ENVELOPE", {},
+        section(1, "Amp Envelope", {},
             envelopeDisplay("amp", sourceIndex("amp_envelope"), 0),
             knob("attack", "amp_attack"), knob("decay", "amp_decay"),
             knob("sustain", "amp_sustain"), knob("release", "amp_release"))
-        section(1, "FORMANT", {power: "formant_on"}, formantDisplay())
+        section(1, "Formant", {power: "formant_on"}, formantDisplay())
 
-        section(2, "MOD ENVELOPE", {},
+        section(2, "Mod Envelope", {},
             envelopeDisplay("mod", sourceIndex("mod_envelope"), 2),
             knob("attack", "mod_attack"), knob("decay", "mod_decay"),
             knob("sustain", "mod_sustain"), knob("release", "mod_release"))
-        for (const [title, prefix, phase] of [["MONO LFO 1", "mono_lfo_1", 0], ["MONO LFO 2", "mono_lfo_2", 1]]) {
+        for (const [title, prefix, phase] of [["Mono LFO 1", "mono_lfo_1", 0], ["Mono LFO 2", "mono_lfo_2", 1]]) {
             section(2, title, {},
                 waveDisplay(`${prefix}_waveform`, {amplitude: `${prefix}_amplitude`, source: sourceIndex(prefix), phase}),
                 choice("wave", `${prefix}_waveform`), knob("amp", `${prefix}_amplitude`),
                 rate("rate", prefix), choice("sync", `${prefix}_sync`), choice("retrigger", `${prefix}_retrigger`))
         }
-        section(2, "POLY LFO", {},
+        section(2, "Poly LFO", {},
             waveDisplay("poly_lfo_waveform", {amplitude: "poly_lfo_amplitude", source: sourceIndex("poly_lfo"), phase: 2, poly: true}),
             choice("wave", "poly_lfo_waveform"), knob("amp", "poly_lfo_amplitude"),
             rate("rate", "poly_lfo"), choice("sync", "poly_lfo_sync"))
-        section(2, "ARPEGGIATOR", {power: "arp_on"},
+        section(2, "Arpeggiator", {power: "arp_on"},
             rate("rate", "arp"), choice("sync", "arp_sync"), knob("gate", "arp_gate"),
             knob("octaves", "arp_octaves"), choice("pattern", "arp_pattern"))
 
-        section(3, "STEP SEQUENCER", {},
+        section(3, "Step Sequencer", {},
             stepDisplay(), knob("steps", "num_steps"), knob("smooth", "step_smoothing"),
             rate("rate", "step", "step_sequencer_sync", "step_sequencer_tempo"),
             choice("sync", "step_sequencer_sync"), choice("retrigger", "step_sequencer_retrigger"))
-        section(3, "DISTORTION", {power: "distortion_on"},
+        section(3, "Distortion", {power: "distortion_on"},
             choice("type", "distortion_type"), knob("drive", "distortion_drive"), knob("mix", "distortion_mix"))
-        section(3, "STUTTER", {power: "stutter_on"},
+        section(3, "Stutter", {power: "stutter_on"},
             rate("rate", "stutter"), choice("sync", "stutter_sync"),
             rate("resample", "stutter_resample"), choice("sync", "stutter_resample_sync"),
             knob("softness", "stutter_softness"))
-        section(3, "DELAY", {power: "delay_on"},
+        section(3, "Delay", {power: "delay_on"},
             rate("rate", "delay"), choice("sync", "delay_sync"),
             knob("feedback", "delay_feedback"), knob("mix", "delay_dry_wet"))
-        section(3, "REVERB", {power: "reverb_on"},
+        section(3, "Reverb", {power: "reverb_on"},
             knob("feedback", "reverb_feedback"), knob("damping", "reverb_damping"), knob("mix", "reverb_dry_wet"))
     }
 

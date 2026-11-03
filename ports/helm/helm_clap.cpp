@@ -6,12 +6,12 @@
     Parameters. Every Helm control is a CLAP parameter, 139 of them. A host that maps the CLAP value linearly
     between min and max and shows it as a number (openDAW, which does not ask value_to_text) shows what the editor
     shows where that is a multiple of the value: those parameters reach the host in their display units (Tune in
-    cents, the percentages 0..100, the BPM; unitless 0..1 and -1..1 values as percent). The curved ones (times,
-    rates, volumes, the cutoff) stay in Helm's units, evenly spaced for a host's knob and automation; value_to_text
-    gives every one Helm's display. The editor and the state use Helm's units throughout. Their ids are the controls' positions in name order, fixed
-    by paramNames below, so a later build reads older states and automation. The modulation routings are not
-    parameters: up to 32 slots, each a source, a destination (a parameter id) and an amount in the destination's
-    units.
+    cents, the percentages 0..100, the BPM; unitless 0..1 and -1..1 values and the volumes, a percentage of their
+    knob, as percent). The curved ones (times, rates, the cutoff) stay in Helm's units, evenly spaced for a host's
+    knob and automation; value_to_text gives every one Helm's display. The editor and the state use Helm's units
+    throughout. The ids are the controls' positions in name order, fixed by paramNames below, so a later build
+    reads older states and automation. The modulation routings are not parameters: up to 32 slots, each a source,
+    a destination (a parameter id) and an amount in the destination's units.
 
     Processing. Helm reads its controls once per block, so parameter events apply at the start of the block, the
     host's block is not split at them. Notes start and end at their sample: mopo's envelopes run at control rate (a
@@ -238,7 +238,8 @@ std::string choiceName (const std::string& name)
     return name;
 }
 
-// The levels Helm sets as the square root of a gain (the knob is quadratic): shown in dB
+// The levels (the knob is the square root of the gain): shown and set as a percentage of the knob, a number a
+// host can take in its own value entry
 bool isAmplitude (const char* name)
 {
     for (const char* amplitude : { "volume", "osc_1_volume", "osc_2_volume", "sub_volume", "noise_volume" })
@@ -341,13 +342,15 @@ struct Helm
                 auto& d = shown[id];
                 const bool linear = d.display_skew == mopo::ValueDetails::kLinear && ! d.display_invert
                                     && d.post_offset == 0.0 && d.steps == 0;
-                if (linear && d.display_units.empty() && d.display_multiply == 1.0 && d.min >= -1.0 && d.max <= 1.0
-                    && std::strcmp (paramNames[id], "step_smoothing") != 0)
+                const bool fraction = linear && d.display_units.empty() && d.display_multiply == 1.0 && d.min >= -1.0
+                                      && d.max <= 1.0 && std::strcmp (paramNames[id], "step_smoothing") != 0;
+                if (fraction || isAmplitude (paramNames[id]))
                 {
+                    d.display_skew = mopo::ValueDetails::kLinear;
                     d.display_multiply = 100.0;
                     d.display_units = "%";
                 }
-                clapScale[id] = linear ? d.display_multiply : 1.0;
+                clapScale[id] = linear || isAmplitude (paramNames[id]) ? d.display_multiply : 1.0;
                 modulatable[id] = mono.count (paramNames[id]) > 0;
                 state.values[id] = (float) details[id]->default_value;
             }
@@ -1137,15 +1140,6 @@ bool paramsValueToText (const clap_plugin* plugin, clap_id id, double clap, char
             std::snprintf (text, size, "%.3g Hz", hz);
         return true;
     }
-    if (isAmplitude (paramNames[id]))
-    {
-        // a quadratic gain, as the editor shows it
-        if (value <= 0.0)
-            std::snprintf (text, size, "-inf dB");
-        else
-            std::snprintf (text, size, "%.1f dB", 40.0 * std::log10 (value));
-        return true;
-    }
     formatValue (d, value, text, size);
     return true;
 }
@@ -1176,8 +1170,6 @@ double textToHelmValue (const mopo::ValueDetails& d, clap_id id, const char* tex
         *ok = false;
         return 0.0;
     }
-    if (isAmplitude (paramNames[id]))
-        return clampValue (d, std::pow (10.0, number / 40.0));
     if (std::strcmp (paramNames[id], "cutoff") == 0)
     {
         const double hz = std::strstr (text, "k") != nullptr ? number * 1000.0 : number;
