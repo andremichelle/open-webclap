@@ -20,8 +20,9 @@ plugin gets there depends on what it is written with, so the ports here come fro
   with an HTML/Canvas interface ([port guide](ports/sc-dark/README.md)).
 - **Note effects** (MIDI effects) follow Note Lab: [porting a note effect](docs/porting-a-midi-effect.md).
 
-What every bundle needs in openDAW (the page, parameters, state, the 176 px device panel):
-[building a WebCLAP for openDAW](docs/building-for-opendaw.md).
+What every bundle needs in openDAW, which ports target first: the 176 px device panel, the gestures openDAW owns (no
+wheel or double-click of the page's own), looking like a stock device, parameters, state, the data between page and
+plugin, SIMD and speed, updating an existing bundle: [building a WebCLAP for openDAW](docs/building-for-opendaw.md).
 
 ## Plugins
 
@@ -144,7 +145,8 @@ openDAW. See [ports/sc-dark/DEVELOPMENT.md](ports/sc-dark/DEVELOPMENT.md).
 
 ## Contributing
 
-New ports are welcome, from any toolchain. A good candidate is open source, can do without threads (hosts like
+New ports are welcome, from any toolchain. Read [building a WebCLAP for openDAW](docs/building-for-opendaw.md) first:
+ports target openDAW, and it lists what that takes, with a checklist. A good candidate is open source, can do without threads (hosts like
 openDAW run plugins single-threaded: no `std::thread`, no wasm threads) and draws its editor in software or as a web
 page. Each plugin gets its own folder, `ports/<port>/`, named in lower case with dashes, a row in the table above
 and an entry in `site/src/plugins.ts`.
