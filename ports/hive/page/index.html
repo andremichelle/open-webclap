@@ -1,0 +1,999 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hive</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400&display=swap">
+<style>
+    :root {
+        /* openDAW's Colors (studio-enums), default scheme hue 197, as in the Helm editor */
+        --bright: hsl(197, 5%, 100%);
+        --gray: hsl(197, 31%, 91%);
+        --dark: hsl(197, 15%, 84%);
+        --shadow: hsl(197, 10%, 60%);
+        --blue: hsl(189, 100%, 65%);
+        --cream: hsl(65, 37%, 83%);
+        --panel: hsl(197, 14%, 12%);
+        --background: hsl(197, 14%, 9%);
+        --edge: hsla(197, 30%, 80%, 0.08);
+        --menu: hsl(197, 14%, 16%);
+        /* tile kinds */
+        --spawn: hsl(40, 90%, 62%);
+        --sink: hsl(197, 10%, 42%);
+        --turn: hsl(255, 75%, 75%);
+        --split: hsl(140, 55%, 62%);
+        --random: hsl(320, 70%, 74%);
+    }
+    html, body {margin: 0; height: 100%; overflow: hidden}
+    body {background: var(--background); color: var(--bright); font: 300 12px/1.3 Rubik, system-ui, sans-serif;
+        font-variant-numeric: tabular-nums}
+    *, *::before, *::after {box-sizing: border-box; user-select: none; -webkit-user-select: none; outline: none}
+    canvas {display: block; touch-action: none}
+    body.panel .window-only, body.window .panel-only {display: none !important}
+
+    /* controls: openDAW's flat buttons, no borders, active in blue */
+    button {font: inherit; color: var(--gray); background: rgba(255, 255, 255, 0.04); border: none; border-radius: 2px;
+        padding: 0.35em 0.6em; cursor: pointer; white-space: nowrap}
+    button:hover {background: rgba(255, 255, 255, 0.08)}
+    button.active {color: var(--background); background: var(--blue)}
+    button.playing {box-shadow: inset 0 0 0 1px var(--blue)}
+    button:disabled {color: var(--shadow); background: rgba(255, 255, 255, 0.02); cursor: default}
+    .choice::after {content: "▾"; margin-left: 0.5em; color: var(--shadow); font-size: 0.8em}
+    .scrub {display: inline-flex; align-items: baseline; justify-content: center; gap: 0.2em; min-width: 4em;
+        padding: 0.35em 0.5em; border-radius: 2px; background: rgba(0, 0, 0, 0.18); color: var(--gray);
+        cursor: ns-resize; white-space: nowrap;
+        box-shadow: 0 0.5px 0.5px 0 rgba(255, 255, 255, 0.04), 0 0.5px 0.5px 0 rgba(0, 0, 0, 0.03) inset}
+    .scrub:hover, .scrub.dragging {color: var(--blue)}
+    .scrub .unit {color: var(--shadow); font-size: 0.85em}
+    .scrub input {font: inherit; color: var(--blue); background: none; border: none; width: 4em; padding: 0; text-align: center}
+    .seg {display: flex; gap: 2px}
+    .seg > button {flex: 1 1 auto}
+    .seg.even > button {flex: 1 1 0; padding-left: 0; padding-right: 0; min-width: 0}
+    .menu {position: fixed; z-index: 10; max-height: 18em; overflow-y: auto; background: var(--menu); border-radius: 3px;
+        box-shadow: 0 0.25em 1em rgba(0, 0, 0, 0.5); padding: 0.25em 0; color: var(--gray); min-width: 8em}
+    .menu > div {padding: 0.3em 1em; cursor: pointer; white-space: nowrap}
+    .menu > div:hover {background: rgba(255, 255, 255, 0.08)}
+    .menu > div.current {color: var(--blue)}
+    .logo {font-weight: 400; letter-spacing: 0.2em; color: var(--blue); font-size: 13px}
+    .info {color: var(--shadow); font-size: 11px}
+
+    /* a parameter in the bar: its name small in cream above, the control below */
+    .param {display: flex; flex-direction: column; align-items: stretch; gap: 3px}
+    .param > h5 {margin: 0; font-weight: 300; font-size: 9px; letter-spacing: 0.08em; color: var(--cream); text-align: center}
+
+    /* device panel, 352 x 176 */
+    /* no background of its own: openDAW's device panel shows through */
+    html:has(body.panel) {background: transparent}
+    body.panel {display: grid; grid-template-columns: 176px 1fr; font-size: 11px; background: transparent}
+    body.panel canvas.grid {width: 176px; height: 176px; cursor: pointer}
+    .side {display: flex; flex-direction: column; gap: 6px; padding: 8px 8px 8px 2px; min-width: 0}
+    .side .head {display: flex; justify-content: space-between; align-items: baseline}
+    .side .head span:last-child {color: var(--shadow); font-size: 10px}
+    .side .seg > button {padding: 0.45em 0; flex: 1 1 0}
+    .side .info {font-size: 10px}
+    /* as wide as its text, rounded, a bit taller than the pattern buttons */
+    .side .big {align-self: flex-start; padding: 6px 14px; border-radius: 4px; margin-bottom: 10px}
+    .grow {flex: 1}
+
+    /* window */
+    body.window {display: grid; gap: 4px; padding: 4px; grid-template-columns: 1fr 252px; grid-template-rows: auto 1fr}
+    .bar {grid-column: 1 / -1; display: flex; gap: 8px; align-items: flex-end; padding: 6px 10px 8px;
+        background: var(--panel); border-radius: 3px}
+    /* in line with the controls: as high as a button, the capitals centred in it */
+    .bar .logo {align-self: flex-end; height: 24px; display: flex; align-items: center; margin-right: 2px}
+    .bar .logo > span {text-box: trim-both cap alphabetic}
+    .bar .patterns > button {min-width: 1.9em; padding-left: 0; padding-right: 0}
+    .bar .scrub {min-width: 3.4em}
+    .stage {position: relative; min-width: 0; min-height: 0; background: var(--panel); border-radius: 3px}
+    .stage canvas {position: absolute; inset: 0; width: 100%; height: 100%}
+    /* the side panel: the properties scroll, the tile clipboard and the hint stay at the bottom */
+    .column {display: flex; flex-direction: column; gap: 4px; min-height: 0}
+    .props {flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; min-height: 0; padding-right: 6px;
+        scrollbar-gutter: stable}
+    /* a light, rounded thumb on a clear track (Chrome uses these only without scrollbar-color / scrollbar-width) */
+    .props::-webkit-scrollbar, .menu::-webkit-scrollbar {width: 6px}
+    .props::-webkit-scrollbar-track, .menu::-webkit-scrollbar-track {background: transparent}
+    .props::-webkit-scrollbar-thumb, .menu::-webkit-scrollbar-thumb {background: hsla(197, 30%, 80%, 0.28); border-radius: 3px}
+    .props::-webkit-scrollbar-thumb:hover, .menu::-webkit-scrollbar-thumb:hover {background: hsla(197, 30%, 80%, 0.45)}
+    .clipboard {flex: none; display: flex; flex-direction: column}
+    .hint {flex: none; background: var(--panel); border-radius: 3px; padding: 8px; color: var(--shadow); font-size: 10px;
+        line-height: 1.6}
+    .hint b {font-weight: 400; color: var(--cream)}
+    /* DeviceEditor's section: the header in blue with a groove below */
+    section {background: var(--panel); border-radius: 3px; display: flex; flex-direction: column; flex: none}
+    section > header {display: flex; align-items: center; gap: 0.5em; height: 22px; padding: 0 8px; font-size: 10px;
+        letter-spacing: 0.03em; color: var(--blue); position: relative}
+    section > header::after {content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0.2) 0 1px, rgba(255, 255, 255, 0.03) 1px 2px)}
+    section > header .grow {flex: 1}
+    section > header .meta {color: var(--shadow)}
+    section > header .power {width: 8px; height: 8px; border-radius: 50%; border: 1px solid currentColor;
+        cursor: pointer; opacity: 0.5}
+    section > header .power.on {background: currentColor; opacity: 1}
+    section > .body {padding: 8px; display: flex; flex-direction: column; gap: 6px}
+    section.off > .body {filter: brightness(0.5) grayscale(1)}
+    .field {display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 8px}
+    .field > span:first-child {color: var(--cream); font-size: 10px; letter-spacing: 0.04em}
+    .field .scrub {justify-content: flex-end}
+    .field .seg > button {flex: 1 1 0; padding-left: 0; padding-right: 0}
+    .inline {display: flex; gap: 4px}
+    .inline > .scrub {flex: 1}
+    .kinds {display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px}
+    .kinds button {display: flex; align-items: center; gap: 0.5em; justify-content: center}
+    .kinds button::before {content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--kind)}
+    .kinds button.active::before {background: var(--background)}
+    /* the compass: the six neighbours around the keep button, as on the grid */
+    .compass {position: relative; width: 112px; height: 100px; align-self: center}
+    .compass button {position: absolute; width: 32px; height: 32px; padding: 0; border-radius: 50%; font-size: 14px;
+        transform: translate(-50%, -50%)}
+    .compass button svg.arrow {width: 20px; height: 20px; display: block; margin: auto; overflow: visible}
+    .compass button svg.arrow path {fill: currentColor; stroke: currentColor; stroke-width: 1.1; stroke-linecap: round;
+        stroke-linejoin: round}
+    .compass button.keep::after {content: ""; display: block; width: 6px; height: 6px; margin: auto; border-radius: 50%;
+        background: currentColor}
+</style>
+</head>
+<body>
+<canvas class="grid panel-only"></canvas>
+<div class="side panel-only">
+    <div class="head"><span class="logo">HIVE</span></div>
+    <div class="seg patterns"></div>
+    <div class="grow"></div>
+    <button class="big">Edit</button>
+</div>
+<div class="bar window-only"></div>
+<div class="stage window-only">
+    <canvas class="grid"></canvas>
+</div>
+<div class="column window-only">
+    <div class="props"></div>
+    <div class="clipboard fixed"></div>
+    <div class="hint fixed">
+        <div><b>Click</b> selects a tile</div>
+        <div><b>Drag</b> across tiles draws a path</div>
+        <div><b>R</b> / <b>⇧R</b> turns · <b>⌫</b> clears</div>
+        <div><b>⌘C</b> / <b>⌘V</b> copies and pastes a tile</div>
+        <div>Values: drag up and down (<b>⇧</b> fine), double-click types</div>
+    </div>
+</div>
+<script>
+// ---------------------------------------------------------------- protocol, see plugin/hive.cpp
+const PAGE_HELLO = 1, PAGE_POLL = 2, PAGE_PARAM_BEGIN = 3, PAGE_PARAM_SET = 4, PAGE_PARAM_END = 5, PAGE_HOVER = 6
+const PAGE_SHOW_WINDOW = 7, PAGE_TILE = 8, PAGE_HEADER = 9, PAGE_PATTERN = 10, PAGE_COMMIT = 11, PAGE_LIVE = 1
+const PLUGIN_SNAPSHOT = 1, PLUGIN_DELTA = 2, DELTA_PLAYING = 1, EDIT_TILE = 0
+const PATTERN = 0, GATE = 1, TRANSPOSE = 2, RATE = 3, PARAM_COUNT = 4, INVALID_ID = 0xffffffff
+const POLL_MILLIS = 33
+const ECHO_MILLIS = 400 // an edit coming back from the plugin within this time of our own is ours
+
+// ---------------------------------------------------------------- hex geometry (redblobgames, axial, pointy top)
+const MAX_N = 8, MAX_R = MAX_N - 1, PATTERN_COUNT = 8
+const DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]]   // E NE NW W SW SE
+const cells = [], indexOf = new Map()
+for (let q = -MAX_R; q <= MAX_R; q++) {
+    for (let r = Math.max(-MAX_R, -q - MAX_R); r <= Math.min(MAX_R, -q + MAX_R); r++) {
+        indexOf.set(q + "," + r, cells.length)
+        cells.push({q, r})
+    }
+}
+const TILE_COUNT = cells.length, PATTERN_BYTES = 8 + TILE_COUNT * 16
+const distance = (q, r) => (Math.abs(q) + Math.abs(r) + Math.abs(q + r)) / 2
+const cellAt = (q, r) => indexOf.get(q + "," + r)
+
+// ---------------------------------------------------------------- music and time
+const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+const noteName = p => NAMES[((p % 12) + 12) % 12] + (Math.floor(p / 12) - 1)
+const SCALES = [["Chromatic", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]], ["Major", [0, 2, 4, 5, 7, 9, 11]],
+    ["Minor", [0, 2, 3, 5, 7, 8, 10]], ["Dorian", [0, 2, 3, 5, 7, 9, 10]], ["Penta Major", [0, 2, 4, 7, 9]],
+    ["Penta Minor", [0, 3, 5, 7, 10]]]
+const quantize = (pitch, root, scale) => {
+    const degrees = SCALES[scale][1], rel = pitch - root, octave = Math.floor(rel / 12), pc = rel - octave * 12
+    let best = 0
+    for (const d of degrees) {if (d <= pc) {best = d}}
+    return root + octave * 12 + best
+}
+// Tonnetz: east is a fifth, north east a minor third, south east a major third, folded into one octave
+const autoPitch = (q, r, root) => root + (((7 * q + 4 * r) % 12) + 12) % 12
+// how long a cursor stays on a tile, see duration_ticks in plugin/hive.cpp
+const DURATIONS = ["1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2", "1 bar"], DURATION_DEFAULT = 2
+const RATES = ["1/4", "1/2", "1 bar", "2 bars", "4 bars", "8 bars"]
+// the global rate: how fast cursors walk, the tiles' durations divided by it
+const SPEEDS = ["1/8", "1/4", "1/2", "1/1", "2/1", "4/1", "8/1"]
+const EDGES = ["Wrap", "Bounce", "Die"]
+const KIND = {PATH: 0, SPAWN: 1, SINK: 2, TURN: 3, SPLIT: 4, RANDOM: 5}
+const KINDS = [
+    {name: "Path", color: "--shadow", info: "Sends the cursor along its arrow, whichever way it came in. Without an arrow (the dot) the cursor goes straight on."},
+    {name: "Spawn", color: "--spawn", info: "Starts cursors on a pulse and/or on incoming notes."},
+    {name: "Sink", color: "--sink", info: "Swallows every cursor that enters."},
+    {name: "Turn", color: "--turn", info: "Turns the cursor relative to the way it came in: cursors from different sides leave differently."},
+    {name: "Split", color: "--split", info: "Sends a cursor out in every direction picked."},
+    {name: "Random", color: "--random", info: "Sends the cursor in a random direction (the same each time at the same position)."}
+]
+const TRIGGERS = ["Pulse", "Note", "Both"]
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+
+// ---------------------------------------------------------------- model: the plugin's bytes, decoded
+const newTile = () => ({kind: KIND.PATH, note: false, hold: false, dir: -1, turn: 1, fork: (1 << 1) | (1 << 5),
+    pitch: null, velocity: 100, repeat: 1, chance: 100, trigger: 0, rate: 2, offset: 0, life: 16, key: -1, duration: DURATION_DEFAULT})
+const newHeader = () => ({size: 5, edge: 0, root: 48, scale: 5})
+const decodeTile = (b, o) => ({kind: b[o], note: (b[o + 1] & 1) !== 0, hold: (b[o + 1] & 2) !== 0,
+    dir: b[o + 2] > 5 ? -1 : b[o + 2], turn: (b[o + 3] << 24) >> 24, fork: b[o + 4], pitch: b[o + 5] > 127 ? null : b[o + 5],
+    velocity: b[o + 6], repeat: b[o + 7], chance: b[o + 8], trigger: b[o + 9], rate: b[o + 10], offset: b[o + 11],
+    life: b[o + 12], key: b[o + 13] > 127 ? -1 : b[o + 13], duration: b[o + 14] < DURATIONS.length ? b[o + 14] : DURATION_DEFAULT})
+const encodeTile = (t, b, o) => {
+    b.set([t.kind, (t.note ? 1 : 0) | (t.hold ? 2 : 0), t.dir < 0 ? 255 : t.dir, t.turn & 255, t.fork,
+        t.pitch === null ? 255 : t.pitch, t.velocity, t.repeat, t.chance, t.trigger, t.rate, t.offset, t.life,
+        t.key < 0 ? 255 : t.key, t.duration, 0], o)
+}
+const decodeHeader = (b, o) => ({size: b[o], edge: b[o + 1], root: b[o + 2], scale: b[o + 3]})
+const encodeHeader = (h, b, o) => b.set([h.size, h.edge, h.root, h.scale, 0, 0, 0, 0], o)
+const decodePattern = (b, o) => ({header: decodeHeader(b, o), tiles: cells.map((_, i) => decodeTile(b, o + 8 + i * 16))})
+
+const panel = new URLSearchParams(location.search).has("panel")
+document.body.classList.add(panel ? "panel" : "window")
+const state = {
+    patterns: Array.from({length: PATTERN_COUNT}, () => ({header: newHeader(), tiles: cells.map(newTile)})),
+    values: [0, 80, 0, 3], active: 0, playing: false, cursors: [], connected: false,
+    gesture: INVALID_ID, hovered: INVALID_ID, lastPoll: 0, echoes: new Map()
+}
+let selected = cellAt(0, 0)
+const flash = new Float32Array(TILE_COUNT)
+const edited = () => state.values[PATTERN] // the pattern the editor shows is the one picked
+const pattern = () => state.patterns[edited()]
+const inside = (q, r, p = pattern()) => distance(q, r) <= p.header.size - 1
+
+// ---------------------------------------------------------------- messages to the plugin
+const post = bytes => window.parent.postMessage(bytes.buffer, "*")
+const postParam = (type, id, value) => {
+    const message = new DataView(new ArrayBuffer(type === PAGE_PARAM_SET ? 16 : 8))
+    message.setUint8(0, type)
+    message.setUint32(4, id, true)
+    if (type === PAGE_PARAM_SET) {message.setFloat64(8, value, true)}
+    post(new Uint8Array(message.buffer))
+}
+const hover = id => {
+    if (state.hovered === id) {return}
+    state.hovered = id
+    const message = new DataView(new ArrayBuffer(8))
+    message.setUint8(0, PAGE_HOVER)
+    message.setUint32(4, id, true)
+    post(new Uint8Array(message.buffer))
+}
+const reportHover = (element, id) => {
+    element.addEventListener("pointerenter", () => hover(id))
+    element.addEventListener("pointerleave", () => {if (state.gesture === INVALID_ID) {hover(INVALID_ID)}})
+    return element
+}
+const pickParam = (id, value) => {
+    state.values[id] = value
+    postParam(PAGE_PARAM_BEGIN, id)
+    postParam(PAGE_PARAM_SET, id, value)
+    postParam(PAGE_PARAM_END, id)
+    refresh()
+}
+const sendTile = (index, live = false) => {
+    const bytes = new Uint8Array(24)
+    bytes[0] = PAGE_TILE; bytes[1] = live ? PAGE_LIVE : 0; bytes[2] = edited()
+    new DataView(bytes.buffer).setUint16(4, index, true)
+    encodeTile(pattern().tiles[index], bytes, 8)
+    state.echoes.set(`${edited()}:${index}`, performance.now())
+    post(bytes)
+}
+const sendHeader = (live = false) => {
+    const bytes = new Uint8Array(16)
+    bytes[0] = PAGE_HEADER; bytes[1] = live ? PAGE_LIVE : 0; bytes[2] = edited()
+    encodeHeader(pattern().header, bytes, 8)
+    state.echoes.set(`${edited()}:h`, performance.now())
+    post(bytes)
+}
+const sendPattern = () => {
+    const bytes = new Uint8Array(8 + PATTERN_BYTES), p = pattern()
+    bytes[0] = PAGE_PATTERN; bytes[2] = edited()
+    encodeHeader(p.header, bytes, 8)
+    p.tiles.forEach((tile, i) => encodeTile(tile, bytes, 16 + i * 16))
+    post(bytes)
+}
+const commit = () => post(new Uint8Array([PAGE_COMMIT]))
+
+// ---------------------------------------------------------------- messages from the plugin
+let dragging = false // a drag on the grid or a value: the properties are not rebuilt under it
+let refreshDue = false
+window.addEventListener("message", event => {
+    if (!(event.data instanceof ArrayBuffer)) {return}
+    const bytes = new Uint8Array(event.data), view = new DataView(event.data)
+    if (bytes.length < 8) {return}
+    if (bytes[0] === PLUGIN_SNAPSHOT && bytes.length >= 8 + PARAM_COUNT * 8 + PATTERN_COUNT * PATTERN_BYTES) {
+        state.connected = true
+        state.active = bytes[1]
+        state.playing = bytes[2] !== 0
+        for (let id = 0; id < PARAM_COUNT; id++) {
+            if (id !== state.gesture) {state.values[id] = view.getFloat64(8 + id * 8, true)}
+        }
+        const base = 8 + PARAM_COUNT * 8
+        state.patterns = state.patterns.map((_, i) => decodePattern(bytes, base + i * PATTERN_BYTES))
+        if (!state.playing) {state.cursors = []}
+        refresh()
+    } else if (bytes[0] === PLUGIN_DELTA) {
+        const mask = bytes[1], wasActive = state.active, wasPlaying = state.playing
+        state.active = bytes[2]
+        state.playing = (bytes[3] & DELTA_PLAYING) !== 0
+        const cursorCount = bytes[4], edgeCount = bytes[5], editCount = view.getUint16(6, true)
+        let offset = 8, structural = mask !== 0 || wasActive !== state.active || wasPlaying !== state.playing
+        for (let id = 0; id < PARAM_COUNT; id++) {
+            if ((mask & (1 << id)) === 0) {continue}
+            if (id !== state.gesture) {state.values[id] = view.getFloat64(offset, true)}
+            offset += 8
+        }
+        const now = performance.now()
+        for (let i = 0; i < editCount; i++, offset += 20) {
+            const p = bytes[offset], type = bytes[offset + 1], index = view.getUint16(offset + 2, true)
+            const key = `${p}:${type === EDIT_TILE ? index : "h"}`
+            if (now - (state.echoes.get(key) ?? -Infinity) < ECHO_MILLIS) {continue}
+            if (type === EDIT_TILE) {
+                state.patterns[p].tiles[index] = decodeTile(bytes, offset + 4)
+                if (p === edited() && index === selected) {structural = true}
+            } else {
+                state.patterns[p].header = decodeHeader(bytes, offset + 4)
+                structural = true
+            }
+        }
+        for (let i = 0; i < TILE_COUNT; i++) {
+            if (bytes[offset + (i >> 3)] & (1 << (i & 7))) {flash[i] = 1}
+        }
+        offset += Math.ceil(TILE_COUNT / 8)
+        state.cursors = []
+        for (let i = 0; i < cursorCount && offset + 4 <= bytes.length; i++, offset += 4) {
+            state.cursors.push({q: view.getInt8(offset), r: view.getInt8(offset + 1), heading: bytes[offset + 2],
+                alpha: Math.max(0.12, bytes[offset + 3] / 255)})
+        }
+        touch(state.cursors)
+        const hits = []
+        for (let i = 0; i < edgeCount && offset + 4 <= bytes.length; i++, offset += 4) {
+            hits.push({q: view.getInt8(offset), r: view.getInt8(offset + 1), heading: bytes[offset + 2], edge: bytes[offset + 3]})
+        }
+        burst(hits)
+        if (structural) {refresh()}
+    }
+})
+
+// ---------------------------------------------------------------- drawing (panel and window)
+const grid = document.querySelector(panel ? "body > canvas.grid" : ".stage canvas.grid")
+const layout = canvas => {
+    const ratio = devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight
+    if (canvas.width !== Math.round(w * ratio) || canvas.height !== Math.round(h * ratio)) {
+        canvas.width = Math.round(w * ratio); canvas.height = Math.round(h * ratio)
+    }
+    const R = pattern().header.size - 1, pad = panel ? 6 : 14
+    const size = Math.min((w - pad * 2) / (Math.sqrt(3) * (2 * R + 1)), (h - pad * 2) / (3 * R + 2))
+    return {ratio, w, h, size, cx: w / 2, cy: h / 2}
+}
+const center = (g, q, r) => ({x: g.cx + g.size * Math.sqrt(3) * (q + r / 2), y: g.cy + g.size * 1.5 * r})
+const hexPath = (ctx, x, y, s) => {
+    ctx.beginPath()
+    for (let i = 0; i < 6; i++) {
+        const a = Math.PI / 180 * (60 * i - 30)
+        ctx[i ? "lineTo" : "moveTo"](x + s * Math.cos(a), y + s * Math.sin(a))
+    }
+    ctx.closePath()
+}
+const dirAngle = d => -d * Math.PI / 3 // E = 0, counter clockwise on screen
+// an arrow from the centre: a strong line with round caps, a small head with rounded corners
+const drawArrow = (ctx, x, y, s, angle, color, body) => {
+    const cos = Math.cos(angle), sin = Math.sin(angle), head = Math.max(2.5, s * 0.32), half = head * 0.6
+    const tx = x + cos * s, ty = y + sin * s, bx = tx - cos * head, by = ty - sin * head
+    ctx.strokeStyle = color
+    ctx.fillStyle = color
+    ctx.lineCap = "round"; ctx.lineJoin = "round"
+    ctx.lineWidth = body
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(bx, by)
+    ctx.stroke()
+    ctx.lineWidth = Math.max(1, body * 0.5) // the stroke rounds the head's corners
+    ctx.beginPath()
+    ctx.moveTo(tx, ty)
+    ctx.lineTo(bx - sin * half, by + cos * half)
+    ctx.lineTo(bx + sin * half, by - cos * half)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+}
+// glow: a tile lights up while a cursor is on it and fades after, brighter when it played a note
+const glow = new Float32Array(TILE_COUNT)
+// particles where cursors reach the edge, in canvas pixels
+const particles = []
+const BLUE = (alpha) => `hsla(189, 100%, 65%, ${alpha})`
+const touch = cursors => {
+    for (const {q, r, alpha} of cursors) {
+        const index = cellAt(q, r)
+        if (index !== undefined) {glow[index] = Math.max(glow[index], alpha)}
+    }
+}
+const burst = hits => {
+    if (hits.length === 0 || state.active !== edited()) {return}
+    const g = layout(grid), scale = panel ? 0.4 : 1
+    for (const {q, r, heading, edge} of hits) {
+        // the tile's side facing the heading: between its corners at the normal ± 30°
+        const {x, y} = center(g, q, r), normal = dirAngle(heading), radius = g.size * 0.92
+        const ax = x + Math.cos(normal - Math.PI / 6) * radius, ay = y + Math.sin(normal - Math.PI / 6) * radius
+        const bx = x + Math.cos(normal + Math.PI / 6) * radius, by = y + Math.sin(normal + Math.PI / 6) * radius
+        const count = (edge === 2 ? 18 : 12) * (panel ? 0.5 : 1)
+        for (let i = 0; i < count && particles.length < 600; i++) {
+            const along = Math.random(), ex = ax + (bx - ax) * along, ey = ay + (by - ay) * along
+            // wrap and die spray outwards, bounce sprays back in
+            const angle = normal + (edge === 1 ? Math.PI : 0) + (Math.random() - 0.5) * 1.6
+            const speed = (30 + Math.random() * 110) * scale
+            const life = 0.4 + Math.random() * (edge === 2 ? 0.7 : 0.45)
+            particles.push({x: ex, y: ey, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life, age: 0,
+                size: (0.8 + Math.random() * 1.6) * (panel ? 0.7 : 1)})
+        }
+    }
+}
+const stepEffects = elapsed => {
+    for (let i = 0; i < TILE_COUNT; i++) {
+        if (glow[i] > 0) {glow[i] = Math.max(0, glow[i] - elapsed * 1.6)}
+        if (flash[i] > 0) {flash[i] = Math.max(0, flash[i] - elapsed * 3)}
+    }
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const particle = particles[i]
+        particle.age += elapsed
+        if (particle.age >= particle.life) {particles.splice(i, 1); continue}
+        const drag = Math.pow(0.12, elapsed)
+        particle.vx *= drag; particle.vy *= drag
+        particle.x += particle.vx * elapsed; particle.y += particle.vy * elapsed
+    }
+}
+let colors = null
+const draw = () => {
+    colors ??= {shadow: css("--shadow"), gray: css("--gray"), blue: css("--blue"), cream: css("--cream"),
+        kinds: KINDS.map(k => css(k.color))}
+    const detailed = !panel, ctx = grid.getContext("2d"), g = layout(grid), p = pattern()
+    ctx.setTransform(g.ratio, 0, 0, g.ratio, 0, 0)
+    ctx.clearRect(0, 0, g.w, g.h)
+    const s = g.size * 0.92, line = detailed ? 1.5 : 1, playingHere = state.active === edited()
+    // smaller in the device panel, where the tiles are small
+    const arrow = detailed ? s * 0.4 : s * 0.5, body = detailed ? Math.max(1.5, s * 0.075) : Math.max(1, s * 0.1)
+    const live = []
+    cells.forEach(({q, r}, index) => {
+        if (!inside(q, r, p)) {return}
+        live.push(index)
+        const tile = p.tiles[index], {x, y} = center(g, q, r)
+        hexPath(ctx, x, y, s)
+        ctx.fillStyle = tile.kind === KIND.SINK ? "hsl(197, 14%, 6%)" : tile.note ? "hsl(197, 14%, 20%)" : "hsl(197, 14%, 15.5%)"
+        ctx.fill()
+    })
+    if (playingHere) { // the glow over the tiles and around them
+        ctx.save()
+        ctx.globalCompositeOperation = "lighter"
+        for (const index of live) {
+            const level = Math.max(glow[index] * 0.55, flash[index])
+            if (level <= 0.01) {continue}
+            const {x, y} = center(g, cells[index].q, cells[index].r)
+            ctx.shadowColor = BLUE(level)
+            ctx.shadowBlur = s * (0.4 + level * 0.9) * g.ratio
+            ctx.fillStyle = BLUE(0.08 + level * 0.32)
+            hexPath(ctx, x, y, s * (0.94 + level * 0.06))
+            ctx.fill()
+        }
+        ctx.restore()
+    }
+    for (const index of live) {
+        const {q, r} = cells[index], tile = p.tiles[index], {x, y} = center(g, q, r), color = colors.kinds[tile.kind]
+        if (tile.kind !== KIND.PATH && tile.kind !== KIND.SINK) {
+            ctx.strokeStyle = color
+            ctx.lineWidth = line
+            hexPath(ctx, x, y, s - line)
+            ctx.stroke()
+        }
+        if (tile.kind === KIND.SINK) {
+            ctx.beginPath(); ctx.arc(x, y, s * 0.36, 0, Math.PI * 2)
+            ctx.strokeStyle = color; ctx.lineWidth = line; ctx.stroke()
+        } else if (tile.kind === KIND.TURN || tile.kind === KIND.RANDOM) {
+            if (detailed) {
+                ctx.fillStyle = color
+                ctx.font = `400 ${Math.round(s * 0.4)}px Rubik, sans-serif`
+                ctx.textAlign = "center"; ctx.textBaseline = "middle"
+                ctx.fillText(tile.kind === KIND.TURN ? (tile.turn === 3 ? "⟲" : (tile.turn > 0 ? "↺" : "↻") + Math.abs(tile.turn)) : "?", x, y - s * 0.12)
+            } else {
+                ctx.beginPath(); ctx.arc(x, y, 1.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill()
+            }
+        } else if (tile.kind === KIND.SPLIT) {
+            for (let d = 0; d < 6; d++) {
+                if (tile.fork & (1 << d)) {drawArrow(ctx, x, y, arrow, dirAngle(d), color, body)}
+            }
+        } else if (tile.dir >= 0) {
+            drawArrow(ctx, x, y, arrow, dirAngle(tile.dir), tile.kind === KIND.SPAWN ? color : tile.note ? colors.gray : colors.shadow, body)
+        } else if (detailed) {
+            ctx.beginPath(); ctx.arc(x, y, 1.5, 0, Math.PI * 2); ctx.fillStyle = "hsl(197, 10%, 30%)"; ctx.fill()
+        }
+        // the note, its repeats and how long a cursor stays (when not 1/16)
+        const stays = tile.kind !== KIND.SINK && tile.duration !== DURATION_DEFAULT
+        if (detailed && (tile.note || stays)) {
+            const pitch = quantize(tile.pitch ?? autoPitch(q, r, p.header.root), p.header.root, p.header.scale)
+            const text = [tile.note ? noteName(pitch) + (tile.repeat > 1 ? "×" + tile.repeat : "") : "",
+                stays ? DURATIONS[tile.duration] : ""].filter(part => part !== "").join(" ")
+            ctx.fillStyle = tile.note && tile.pitch !== null ? colors.cream : colors.shadow
+            // the text fits the tile's width at its height (about 1.5 radii), smaller when it would not
+            const room = s * 1.3 - 4
+            let font = Math.max(9, Math.round(s * 0.27))
+            ctx.font = `300 ${font}px Rubik, sans-serif`
+            const width = ctx.measureText(text).width
+            if (width > room) {
+                font = Math.max(6, Math.floor(font * room / width))
+                ctx.font = `300 ${font}px Rubik, sans-serif`
+            }
+            ctx.textAlign = "center"; ctx.textBaseline = "middle"
+            // on the side the arrows leave free
+            const down = tile.kind === KIND.SPLIT ? (tile.fork & 0b110000) !== 0 && (tile.fork & 0b000110) === 0
+                : (tile.kind === KIND.PATH || tile.kind === KIND.SPAWN) && (tile.dir === 4 || tile.dir === 5)
+            ctx.fillText(text, x, y + (s * 0.55 - 2) * (down ? -1 : 1)) // 2 px further from the edge
+        }
+        if (detailed && index === selected) {
+            hexPath(ctx, x, y, s + 1.5)
+            ctx.strokeStyle = colors.blue; ctx.lineWidth = 2; ctx.stroke()
+        }
+    }
+    if (!playingHere) {return} // the cursors walk the pattern playing
+    for (const cursor of state.cursors) {
+        if (!inside(cursor.q, cursor.r, p)) {continue}
+        const {x, y} = center(g, cursor.q, cursor.r)
+        ctx.globalAlpha = cursor.alpha
+        ctx.beginPath(); ctx.arc(x, y, Math.max(2.5, s * 0.26), 0, Math.PI * 2)
+        ctx.fillStyle = colors.blue; ctx.fill()
+        if (detailed) {drawArrow(ctx, x, y, s * 0.17, dirAngle(cursor.heading), "hsl(197, 14%, 9%)", 2)}
+        ctx.globalAlpha = 1
+    }
+    ctx.save()
+    ctx.globalCompositeOperation = "lighter"
+    for (const particle of particles) {
+        const left = 1 - particle.age / particle.life
+        ctx.fillStyle = BLUE(left * left)
+        ctx.beginPath()
+        ctx.arc(particle.x, particle.y, particle.size * (0.6 + left * 0.4), 0, Math.PI * 2)
+        ctx.fill()
+    }
+    ctx.restore()
+}
+const hit = event => {
+    const rect = grid.getBoundingClientRect(), g = layout(grid)
+    const px = event.clientX - rect.left - g.cx, py = event.clientY - rect.top - g.cy
+    const fq = (Math.sqrt(3) / 3 * px - py / 3) / g.size, fr = (2 / 3 * py) / g.size, fs = -fq - fr
+    let q = Math.round(fq), r = Math.round(fr), s = Math.round(fs)
+    const dq = Math.abs(q - fq), dr = Math.abs(r - fr), ds = Math.abs(s - fs)
+    if (dq > dr && dq > ds) {q = -r - s} else if (dr > ds) {r = -q - s}
+    return inside(q, r) ? cellAt(q, r) : -1
+}
+
+// ---------------------------------------------------------------- controls
+const $ = s => document.querySelector(s)
+const el = (tag, props = {}, ...children) => {
+    const e = Object.assign(document.createElement(tag), props)
+    e.append(...children)
+    return e
+}
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v))
+// ctrl+click is the context click on macOS, it arrives as button 0
+const primary = event => event.button === 0 && !event.ctrlKey
+const btn = (text, onClick, active = false) => {
+    const b = el("button", {textContent: text})
+    b.classList.toggle("active", active)
+    b.addEventListener("click", event => {if (!event.ctrlKey) {onClick()}})
+    return b
+}
+// a menu as openDAW's: opens under its button, closes on a pick or a click elsewhere
+let openMenu = null
+const closeMenu = () => {if (openMenu) {openMenu.remove(); openMenu = null}}
+document.addEventListener("pointerdown", e => {if (openMenu && !openMenu.contains(e.target)) {closeMenu()}}, true)
+const choice = (options, current, onPick) => {
+    const b = el("button", {className: "choice", textContent: options.find(o => o.value === current)?.label ?? ""})
+    b.addEventListener("click", event => {
+        if (event.ctrlKey) {return}
+        const wasOpen = openMenu?.owner === b
+        closeMenu()
+        if (wasOpen) {return}
+        const menu = el("div", {className: "menu"})
+        menu.owner = b
+        for (const o of options) {
+            const item = el("div", {textContent: o.label, className: o.value === current ? "current" : ""})
+            item.addEventListener("click", () => {closeMenu(); onPick(o.value)})
+            menu.append(item)
+        }
+        const rect = b.getBoundingClientRect()
+        Object.assign(menu.style, {left: rect.left + "px", top: rect.bottom + 2 + "px", minWidth: rect.width + "px"})
+        document.body.append(menu)
+        const below = innerHeight - rect.bottom - 6
+        if (menu.offsetHeight > below) {menu.style.top = Math.max(4, rect.top - 2 - menu.offsetHeight) + "px"}
+        openMenu = menu
+        menu.querySelector(".current")?.scrollIntoView({block: "nearest"})
+    })
+    return b
+}
+// a value dragged up and down (shift: fine), a double-click types it (typed: false for host
+// parameters, where openDAW's own value entry takes the double-click)
+const scrub = ({value, min, max, unit = "", format = v => String(v), pixels = 4, typed = true, onBegin, onChange, onEnd}) => {
+    const box = el("span", {className: "scrub"}), text = el("span"), unitEl = el("span", {className: "unit", textContent: unit})
+    box.append(text, unitEl)
+    const show = () => {text.textContent = format(value); unitEl.style.display = unit && format(value) !== "∞" ? "" : "none"}
+    const set = (v, live) => {
+        v = clamp(Math.round(v), min, max)
+        if (v === value) {return}
+        value = v
+        show()
+        onChange(v, live)
+    }
+    let drag = null
+    box.addEventListener("pointerdown", e => {
+        if (!primary(e) || box.querySelector("input")) {return}
+        drag = {y: e.clientY, value, moved: false}
+        box.setPointerCapture(e.pointerId)
+        box.classList.add("dragging")
+        dragging = true
+        onBegin?.()
+    })
+    box.addEventListener("pointermove", e => {
+        if (!drag) {return}
+        const v = drag.value + Math.round((drag.y - e.clientY) / (e.shiftKey ? pixels * 4 : pixels))
+        if (v !== value) {drag.moved = true}
+        set(v, true)
+    })
+    const end = () => {
+        if (!drag) {return}
+        const moved = drag.moved
+        drag = null
+        box.classList.remove("dragging")
+        dragging = false
+        onEnd?.(moved)
+        if (refreshDue) {refresh()}
+    }
+    box.addEventListener("pointerup", end)
+    box.addEventListener("lostpointercapture", end)
+    if (typed) {
+        box.addEventListener("dblclick", () => {
+            const input = el("input", {value: String(value)})
+            text.replaceWith(input)
+            unitEl.style.display = "none"
+            input.focus(); input.select()
+            const finish = ok => {
+                if (!input.isConnected) {return}
+                input.replaceWith(text)
+                if (ok && input.value.trim() !== "" && !isNaN(Number(input.value))) {set(Number(input.value), false)}
+                show()
+            }
+            input.addEventListener("keydown", e => {
+                e.stopPropagation()
+                if (e.key === "Enter") {finish(true)} else if (e.key === "Escape") {finish(false)}
+            })
+            input.addEventListener("blur", () => finish(true))
+        })
+    }
+    show()
+    return box
+}
+// a host parameter as a scrub: a gesture per drag, the host's value entry on a double-click
+const paramScrub = (id, options) => reportHover(scrub({...options, value: state.values[id], typed: false,
+    onBegin: () => {state.gesture = id; postParam(PAGE_PARAM_BEGIN, id)},
+    onChange: v => {state.values[id] = v; postParam(PAGE_PARAM_SET, id, v)},
+    onEnd: () => {postParam(PAGE_PARAM_END, id); state.gesture = INVALID_ID}}), id)
+const param = (name, control) => el("div", {className: "param"}, el("h5", {textContent: name}), control)
+const field = (name, control) => el("div", {className: "field"}, el("span", {textContent: name}), control)
+const section = (title, body, {meta = "", power = null} = {}) => {
+    const header = el("header", {}, el("span", {textContent: title}), el("span", {className: "grow"}))
+    if (meta) {header.append(el("span", {className: "meta", textContent: meta}))}
+    const s = el("section", {}, header, el("div", {className: "body"}, ...body))
+    if (power) {
+        const dot = el("span", {className: "power" + (power.on ? " on" : ""), title: power.title})
+        dot.addEventListener("click", power.toggle)
+        header.prepend(dot)
+        s.classList.toggle("off", !power.on)
+    }
+    return s
+}
+
+// ---------------------------------------------------------------- the editor
+let tileClipboard = null, patternClipboard = null
+const tileEdit = (changes, live = false) => {
+    Object.assign(pattern().tiles[selected], changes)
+    sendTile(selected, live)
+}
+const edit = changes => {tileEdit(changes); buildProps()}
+const copyTile = () => {tileClipboard = structuredClone(pattern().tiles[selected]); buildProps()}
+const pasteTile = () => {
+    if (!tileClipboard) {return}
+    pattern().tiles[selected] = structuredClone(tileClipboard)
+    sendTile(selected)
+    buildProps()
+}
+const clearTile = () => {pattern().tiles[selected] = newTile(); sendTile(selected); buildProps()}
+const replacePattern = next => {state.patterns[edited()] = next; sendPattern(); refresh()}
+// a random pattern grown from its spawners: each lays a path, mostly straight, sometimes turning, splitting into a branch
+// or passing a turn tile, with notes along the way. A path ends where it runs into an earlier one (the cursors merge)
+// or at its length, often on a sink, and its spawner's lifetime matches it, so every tile with content is walked
+const randomized = () => {
+    const header = {...pattern().header}, R = header.size - 1
+    const pick = list => list[Math.floor(Math.random() * list.length)]
+    const chance = p => Math.random() < p
+    const tiles = cells.map(newTile), used = new Set()
+    const free = cells.map((c, i) => i).filter(i => distance(cells[i].q, cells[i].r) <= R)
+    // the engine's edges: wrap re-enters on the far side, bounce turns back, die ends the path
+    const advance = (q, r, h) => {
+        const inGrid = (a, b) => distance(a, b) <= R
+        let nq = q + DIRS[h][0], nr = r + DIRS[h][1]
+        if (inGrid(nq, nr)) {return {q: nq, r: nr, h}}
+        if (header.edge === 2) {return null}
+        if (header.edge === 1) {
+            h = (h + 3) % 6
+            nq = q + DIRS[h][0]; nr = r + DIRS[h][1]
+            return inGrid(nq, nr) ? {q: nq, r: nr, h} : null
+        }
+        nq = q; nr = r
+        while (inGrid(nq - DIRS[h][0], nr - DIRS[h][1])) {nq -= DIRS[h][0]; nr -= DIRS[h][1]}
+        return {q: nq, r: nr, h}
+    }
+    const decorate = tile => {
+        tile.note = chance(0.65)
+        if (tile.note && chance(0.12)) {tile.repeat = pick([2, 3, 4])}
+        if (tile.note && chance(0.15)) {tile.chance = pick([50, 66, 75, 90])}
+        if (chance(0.15)) {tile.duration = pick([4, 4, 6, 3, 0])}
+    }
+    // lays a path from (q, r) heading h for up to length tiles, returns how many it laid
+    const walk = (q, r, h, length) => {
+        let laid = 0, at = advance(q, r, h), last = -1
+        while (at !== null && laid < length) {
+            const index = cellAt(at.q, at.r)
+            if (used.has(index)) {return laid + 1} // joins an earlier path
+            used.add(index)
+            laid++
+            last = index
+            const tile = tiles[index], incoming = at.h
+            decorate(tile)
+            let out = incoming
+            const x = Math.random()
+            if (x < 0.06 && laid < length - 2) { // split: on along the path, a branch to the side
+                const side = (incoming + pick([1, -1, 2, -2]) + 6) % 6
+                tile.kind = KIND.SPLIT
+                tile.fork = (1 << incoming) | (1 << side)
+                laid += walk(at.q, at.r, side, Math.floor((length - laid) / 2))
+            } else if (x < 0.14) { // a turn tile
+                tile.kind = KIND.TURN
+                tile.turn = pick([1, -1, 2, -2])
+                out = (incoming + tile.turn + 6) % 6
+            } else {
+                const y = Math.random()
+                out = y < 0.55 ? incoming : y < 0.88 ? (incoming + pick([1, -1]) + 6) % 6 : (incoming + pick([2, -2]) + 6) % 6
+                tile.dir = out === incoming && chance(0.35) ? -1 : out
+            }
+            at = advance(at.q, at.r, out)
+        }
+        if (last >= 0 && at !== null && chance(0.4)) { // the path ends on a sink
+            Object.assign(tiles[last], {kind: KIND.SINK, note: false})
+        }
+        return laid
+    }
+    const count = 3 + Math.floor(Math.random() * 4)
+    for (let n = 0; n < count; n++) {
+        const options = free.filter(i => !used.has(i))
+        if (options.length === 0) {break}
+        const index = pick(options), {q, r} = cells[index], h = Math.floor(Math.random() * 6)
+        used.add(index)
+        const tile = tiles[index]
+        Object.assign(tile, {kind: KIND.SPAWN, dir: h, rate: pick([1, 2, 2, 3]), offset: Math.floor(Math.random() * 8),
+            trigger: n === 0 ? 2 : chance(0.25) ? 1 : 0})
+        tile.note = chance(0.3)
+        const laid = walk(q, r, h, 5 + Math.floor(Math.random() * 12))
+        tile.life = Math.min(255, Math.max(2, laid + 1))
+    }
+    return {header, tiles}
+}
+const headerEdit = (changes, live = false) => {Object.assign(pattern().header, changes); sendHeader(live)}
+
+const patternButtons = () => reportHover(el("div", {className: "seg patterns"}, ...state.patterns.map((_, i) => {
+    const b = btn(String(i + 1), () => pickParam(PATTERN, i), i === edited())
+    b.classList.toggle("playing", state.playing && i === state.active && i !== edited())
+    b.title = state.playing && i === state.active && i !== edited() ? "Playing, switches at the next bar" : ""
+    return b
+})), PATTERN)
+const buildBar = () => {
+    const h = pattern().header
+    $(".bar").replaceChildren(
+        el("span", {className: "logo"}, el("span", {textContent: "HIVE"})),
+        param("Pattern", patternButtons()),
+        param("Edit", el("div", {className: "seg"},
+            btn("Copy", () => {patternClipboard = structuredClone(pattern()); buildBar()}),
+            Object.assign(btn("Paste", () => replacePattern(structuredClone(patternClipboard))), {disabled: !patternClipboard}),
+            btn("Randomize", () => replacePattern(randomized())),
+            btn("Clear", () => replacePattern({header: {...pattern().header}, tiles: cells.map(newTile)})))),
+        param("Size", scrub({value: h.size, min: 2, max: MAX_N, pixels: 12, onChange: (v, live) => {headerEdit({size: v}, live); if (!inside(cells[selected].q, cells[selected].r)) {selected = cellAt(0, 0)}},
+            onEnd: moved => {if (moved) {commit()}}})),
+        param("Edge", choice(EDGES.map((label, value) => ({value, label})), h.edge, v => {headerEdit({edge: v}); buildBar()})),
+        param("Root", scrub({value: h.root, min: 24, max: 84, format: noteName, onChange: (v, live) => headerEdit({root: v}, live),
+            onEnd: moved => {if (moved) {commit()} buildProps()}})),
+        param("Scale", choice(SCALES.map(([label], value) => ({value, label})), h.scale, v => {headerEdit({scale: v}); refresh()})),
+        el("span", {className: "grow"}),
+        param("Rate", reportHover(choice(SPEEDS.map((label, value) => ({value, label})), state.values[RATE], v => pickParam(RATE, v)), RATE)),
+        param("Gate", paramScrub(GATE, {min: 5, max: 100, unit: "%"})),
+        param("Transpose", paramScrub(TRANSPOSE, {min: -24, max: 24, pixels: 6, unit: "st", format: v => v > 0 ? `+${v}` : String(v)})))
+}
+const SVG = "http://www.w3.org/2000/svg"
+const arrowIcon = d => {
+    const svg = document.createElementNS(SVG, "svg"), path = document.createElementNS(SVG, "path")
+    svg.setAttribute("viewBox", "-8 -8 16 16")
+    svg.setAttribute("class", "arrow")
+    path.setAttribute("d", "M-6 0 L2.5 0 M7 0 L2.5 -2.7 L2.5 2.7 Z")
+    path.setAttribute("transform", `rotate(${-d * 60})`)
+    svg.append(path)
+    return svg
+}
+const compass = (isOn, onPick, keep) => {
+    const box = el("div", {className: "compass"}), radius = 36
+    for (let d = 0; d < 6; d++) {
+        const b = btn("", () => onPick(d), isOn(d))
+        b.append(arrowIcon(d))
+        Object.assign(b.style, {left: 56 + Math.cos(dirAngle(d)) * radius * 1.15 + "px", top: 50 + Math.sin(dirAngle(d)) * radius + "px"})
+        box.append(b)
+    }
+    if (keep) {
+        const b = btn("", () => onPick(-1), keep.on)
+        b.classList.add("keep")
+        b.title = "Keep the cursor's heading"
+        Object.assign(b.style, {left: "56px", top: "50px"})
+        box.append(b)
+    }
+    return box
+}
+// a tile value: live while dragged, the host hears of it at the end
+const tileScrub = (key, options) => scrub({...options, value: pattern().tiles[selected][key],
+    onChange: (v, live) => tileEdit({[key]: v}, live), onEnd: moved => {if (moved) {commit()}}})
+const buildProps = () => {
+    if (panel) {return}
+    if (dragging) {refreshDue = true; return}
+    const box = $(".props"), p = pattern(), tile = p.tiles[selected], {q, r} = cells[selected]
+    const kinds = el("div", {className: "kinds"}, ...KINDS.map((k, id) => {
+        const b = btn(k.name, () => edit({kind: id, note: id === KIND.SINK ? false : tile.note}), id === tile.kind)
+        b.style.setProperty("--kind", colors.kinds[id])
+        return b
+    }))
+    const tileRows = [kinds, el("div", {className: "info", textContent: KINDS[tile.kind].info})]
+    if (tile.kind !== KIND.SINK) {
+        tileRows.push(field("Stays", choice(DURATIONS.map((label, value) => ({value, label})), tile.duration, v => edit({duration: v}))))
+    }
+    const sections = [section("Tile", tileRows)]
+    if (tile.kind === KIND.PATH || tile.kind === KIND.SPAWN) {
+        sections.push(section("Direction", [compass(d => d === tile.dir, d => edit({dir: d}), tile.kind === KIND.PATH ? {on: tile.dir < 0} : null)]))
+    } else if (tile.kind === KIND.SPLIT) {
+        sections.push(section("Directions", [compass(d => (tile.fork & (1 << d)) !== 0, d => edit({fork: tile.fork ^ (1 << d)}))],
+            {meta: "each on or off"}))
+    } else if (tile.kind === KIND.TURN) {
+        sections.push(section("Turn", [el("div", {className: "seg even"},
+            ...[[2, "↺120°"], [1, "↺60°"], [-1, "↻60°"], [-2, "↻120°"], [3, "180°"]].map(([v, label]) => btn(label, () => edit({turn: v}), tile.turn === v)))]))
+    }
+    if (tile.kind === KIND.SPAWN) {
+        const rows = [field("Trigger", el("div", {className: "seg"}, ...TRIGGERS.map((label, v) => btn(label, () => edit({trigger: v}), tile.trigger === v))))]
+        if (tile.trigger !== 1) {
+            rows.push(field("Every", choice(RATES.map((label, value) => ({value, label})), tile.rate, v => edit({rate: v}))),
+                field("Offset", tileScrub("offset", {min: 0, max: 63, unit: "steps"})))
+        }
+        if (tile.trigger !== 0) {
+            const keys = [{value: -1, label: "Any key"}]
+            for (let k = 24; k < 108; k++) {keys.push({value: k, label: noteName(k)})}
+            rows.push(field("Key", choice(keys, tile.key, v => edit({key: v}))),
+                field("Hold", btn(tile.hold ? "Lives while held" : "Off", () => edit({hold: !tile.hold}), tile.hold)))
+        }
+        rows.push(field("Lifetime", tileScrub("life", {min: 0, max: 255, unit: "steps", format: v => v === 0 ? "∞" : String(v)})))
+        sections.push(section("Spawn", rows))
+    }
+    const auto = quantize(autoPitch(q, r, p.header.root), p.header.root, p.header.scale)
+    sections.push(section(tile.kind === KIND.SINK ? "Last note" : "Note", [
+        field("Pitch", el("div", {className: "inline"},
+            scrub({value: tile.pitch ?? auto, min: 0, max: 127, format: v => tile.pitch === null ? `Auto ${noteName(v)}` : noteName(v),
+                onChange: (v, live) => tileEdit({pitch: v}, live), onEnd: moved => {if (moved) {commit()} buildProps()}}),
+            btn("Auto", () => edit({pitch: null}), tile.pitch === null))),
+        field("Velocity", tileScrub("velocity", {min: 1, max: 127})),
+        field("Repeats", el("div", {className: "seg"}, ...[1, 2, 3, 4, 6, 8].map(v => btn("×" + v, () => edit({repeat: v}), tile.repeat === v)))),
+        field("Chance", tileScrub("chance", {min: 0, max: 100, unit: "%"}))
+    ], {power: {on: tile.note, title: "Plays a note when a cursor enters", toggle: () => edit({note: !tile.note})}}))
+    box.replaceChildren(...sections)
+    // the tile clipboard stays put above the hint
+    $(".clipboard").replaceChildren(section("Tile clipboard", [el("div", {className: "seg"},
+        btn("Copy", copyTile), Object.assign(btn("Paste", pasteTile), {disabled: !tileClipboard}), btn("Clear", clearTile))]))
+}
+const refresh = () => {
+    if (dragging) {refreshDue = true; return}
+    refreshDue = false
+    if (panel) {
+        $(".patterns").replaceWith(patternButtons())
+        return
+    }
+    if (!inside(cells[selected].q, cells[selected].r)) {selected = cellAt(0, 0)}
+    const props = $(".props")
+    document.querySelectorAll(".fixed").forEach(element => element.style.marginRight = `${props.offsetWidth - props.clientWidth + 6}px`)
+    closeMenu()
+    buildBar()
+    buildProps()
+}
+
+// editing on the grid: click selects, a drag draws a path (adds directions on a split)
+if (panel) {
+    grid.addEventListener("click", () => post(new Uint8Array([PAGE_SHOW_WINDOW])))
+    $(".big").addEventListener("click", () => post(new Uint8Array([PAGE_SHOW_WINDOW])))
+} else {
+    let path = null
+    grid.addEventListener("pointerdown", e => {
+        if (!primary(e)) {return}
+        const index = hit(e)
+        if (index < 0) {return}
+        selected = index
+        path = {last: index, changed: false}
+        grid.setPointerCapture(e.pointerId)
+        buildProps()
+    })
+    grid.addEventListener("pointermove", e => {
+        if (!path) {return}
+        const index = hit(e)
+        if (index < 0 || index === path.last) {return}
+        const a = cells[path.last], b = cells[index]
+        const d = DIRS.findIndex(([dq, dr]) => a.q + dq === b.q && a.r + dr === b.r)
+        if (d >= 0) {
+            const tile = pattern().tiles[path.last]
+            if (tile.kind === KIND.SPLIT) {tile.fork |= 1 << d}
+            else {
+                if (tile.kind === KIND.TURN || tile.kind === KIND.RANDOM || tile.kind === KIND.SINK) {tile.kind = KIND.PATH}
+                tile.dir = d
+            }
+            sendTile(path.last, true)
+            path.changed = true
+        }
+        path.last = index
+        selected = index
+        buildProps()
+    })
+    const endPath = () => {
+        if (path?.changed) {commit()}
+        path = null
+    }
+    grid.addEventListener("pointerup", endPath)
+    grid.addEventListener("lostpointercapture", endPath)
+    window.addEventListener("keydown", e => {
+        if (e.repeat || e.target.tagName === "INPUT") {return}
+        if (e.metaKey || e.ctrlKey) {
+            if (e.key === "c") {copyTile()} else if (e.key === "v") {pasteTile()}
+            return
+        }
+        const tile = pattern().tiles[selected]
+        if (e.key === "r" || e.key === "R") {
+            if (tile.kind === KIND.TURN) {
+                const turns = [2, 1, -1, -2, 3], at = turns.indexOf(tile.turn)
+                tile.turn = turns[(at + (e.shiftKey ? 4 : 1)) % 5]
+            } else if (tile.kind === KIND.SPLIT) {
+                tile.fork = e.shiftKey ? ((tile.fork >> 1) | (tile.fork << 5)) & 63 : ((tile.fork << 1) | (tile.fork >> 5)) & 63
+            } else {
+                tile.dir = ((tile.dir < 0 ? 0 : tile.dir) + (e.shiftKey ? 5 : 1)) % 6
+            }
+            sendTile(selected)
+            buildProps()
+        } else if (e.key === "Backspace" || e.key === "Delete") {
+            clearTile()
+        }
+    })
+}
+
+// frames: poll at most every 33 ms, the plugin answers only when something changed (always while playing)
+let lastFrame = 0
+const frame = now => {
+    const elapsed = Math.min(0.1, (now - (lastFrame || now)) / 1000)
+    lastFrame = now
+    stepEffects(elapsed)
+    if (now - state.lastPoll >= POLL_MILLIS) {
+        state.lastPoll = now
+        post(new Uint8Array([PAGE_POLL]))
+    }
+    draw()
+    requestAnimationFrame(frame)
+}
+colors = null
+draw()
+refresh()
+post(new Uint8Array([PAGE_HELLO]))
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

@@ -147,6 +147,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         bundled: "/bundled/note-lab.wclap.tar.gz"
     },
     {
+        id: "hive", name: "Hive", kind: "midi-fx",
+        description: "Note sequencer on a hexagonal grid: cursors walk the tiles' arrows and play their notes",
+        clapId: "studio.opendaw.hive",
+        archive: "build/hive/hive.wclap.tar.gz", build: "scripts/build-hive.sh",
+        credit: port("hive"), source: port("hive"), license: "CC0-1.0",
+        bundled: "/bundled/hive.wclap.tar.gz"
+    },
+    {
         id: "glitchfest", name: "Glitchfest", kind: "audio-fx",
         description: "Glitch effect: twelve rows of stutter, tape, pitch and more, blocks drawn into patterns on the transport",
         clapId: "studio.opendaw.commons.glitchfest",
