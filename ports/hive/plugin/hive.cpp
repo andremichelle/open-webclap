@@ -69,6 +69,8 @@ enum : uint8_t {TRIGGER_PULSE = 0, TRIGGER_NOTE = 1, TRIGGER_BOTH = 2, TRIGGER_C
 #define EDIT_HEADER 1
 
 #define OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL "opendaw:device-panel"
+// the panel's width at openDAW's 176 px (panel_get_width), read from its cloud index before the plugin loads
+#define OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH "opendaw:device-panel-width:352"
 #define OPENDAW_EXT_DEVICE_PANEL "opendaw.device-panel/1"
 
 typedef struct opendaw_plugin_device_panel {
@@ -1273,7 +1275,7 @@ static const void *hive_get_extension(const clap_plugin_t *plugin, const char *i
 static void hive_on_main_thread(const clap_plugin_t *plugin) {(void) plugin;}
 
 static const char *features[] = {
-    CLAP_PLUGIN_FEATURE_NOTE_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, nullptr
+    CLAP_PLUGIN_FEATURE_NOTE_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH, nullptr
 };
 
 static const clap_plugin_descriptor_t descriptor = {

@@ -159,10 +159,16 @@ std::unique_ptr<juce::webclap::PageExtension> juce::webclap::createPageExtension
     return std::make_unique<RadarPage>();
 }
 
+#define STRING(value) #value
+#define STRINGIFY(value) STRING(value)
+static_assert (RADAR_PANEL_HEIGHT == 176, "the panel width feature is the width at openDAW's 176 px");
+
 const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
 {
     static const char* const features[] = { CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SAMPLER,
-                                            CLAP_PLUGIN_FEATURE_STEREO, "granular", "opendaw:device-panel", nullptr };
+                                            CLAP_PLUGIN_FEATURE_STEREO, "granular", "opendaw:device-panel",
+                                            // the panel's width at openDAW's 176 px, read from its cloud index
+                                            "opendaw:device-panel-width:" STRINGIFY (RADAR_PANEL_WIDTH), nullptr };
 
     static const ClapPluginInfo info {
         "com.andremichelle.radar",

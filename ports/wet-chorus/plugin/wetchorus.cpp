@@ -43,6 +43,8 @@ static const double kModeMax = 180.0;
 #define STATUS_BYTES 40
 
 #define OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL "opendaw:device-panel"
+// the panel's width at openDAW's 176 px (GUI_WIDTH x GUI_HEIGHT scaled, as panel_get_width), read from its cloud index before the plugin loads
+#define OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH "opendaw:device-panel-width:264"
 #define OPENDAW_EXT_DEVICE_PANEL "opendaw.device-panel/1"
 
 typedef struct opendaw_plugin_device_panel {
@@ -74,7 +76,7 @@ struct Chorus {
 
 static const char *features[] = {
     CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_CHORUS, CLAP_PLUGIN_FEATURE_STEREO,
-    OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, nullptr
+    OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH, nullptr
 };
 
 static const clap_plugin_descriptor_t descriptor = {

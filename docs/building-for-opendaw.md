@@ -209,6 +209,10 @@ page there instead of openDAW's generic knobs:
    in a horizontal row of devices, so keep it as narrow as the controls allow.
 4. `get_uri` may answer the window's page or a compact variant (`/index.html?panel`). Both can be open at once and
    both receive everything the plugin sends.
+5. Also name the width as a feature, `opendaw:device-panel-width:<width at 176 px>` (Pearls:
+   `opendaw:device-panel-width:636`). openDAW's cloud index carries the descriptor's features, so the studio opens the
+   panel at its width before the plugin has loaded, instead of growing it once `get_width` answers. It has to match
+   `get_width(176)`; the ports' checks test it.
 
 Designing for 176 px:
 
@@ -254,7 +258,8 @@ shows the device as failed; build with `-g` and without `-O3` for function names
 ## Checklist
 
 - [ ] WASI imports only, no allocation in `process`, parameter events at their sample
-- [ ] the device panel: `opendaw:device-panel`, `opendaw.device-panel/1`, laid out at 176 px
+- [ ] the device panel: `opendaw:device-panel`, `opendaw:device-panel-width:<width>`, `opendaw.device-panel/1`, laid
+  out at 176 px
 - [ ] no surface of its own, the panel's colour, the studio's type (or a skin that keeps the rules)
 - [ ] hover reported; no double-click, right-click or wheel of its own; no pointer lock
 - [ ] a drag is one gesture and one undo step

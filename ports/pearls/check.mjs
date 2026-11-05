@@ -327,6 +327,7 @@ check("one plugin with the device panel, its parameters with unique ids and thei
     assert.equal(descriptors.length, 1)
     assert.equal(descriptors[0].id, PLUGIN)
     assert.ok(descriptors[0].features.includes("opendaw:device-panel"))
+    assert.ok(descriptors[0].features.includes("opendaw:device-panel-width:636"))
     assert.ok(descriptors[0].features.includes("audio-effect"))
     const plugin = new Plugin(module, PLUGIN)
     const infos = plugin.paramInfos()

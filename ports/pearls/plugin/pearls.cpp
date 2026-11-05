@@ -7,7 +7,8 @@
 // module's wavetable synth (when nothing is patched) is left out: Pearls is an audio effect.
 //
 // openDAW shows the page in its device panel (feature "opendaw:device-panel", extension "opendaw.device-panel/1"),
-// every host in the window.
+// every host in the window. The feature "opendaw:device-panel-width:636" names the panel's width, which openDAW reads
+// from its cloud index to open the panel at its size before the plugin loads.
 
 #include <clap/clap.h>
 #include <clap/ext/draft/webview.h>
@@ -38,6 +39,9 @@ extern "C" void emscripten_notify_memory_growth(size_t index) {(void) index;}
 #define PLUGIN_STATUS 1
 
 #define OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL "opendaw:device-panel"
+#define STRING(value) #value
+#define STRINGIFY(value) STRING(value)
+#define OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH "opendaw:device-panel-width:" STRINGIFY(PANEL_WIDTH)
 #define OPENDAW_EXT_DEVICE_PANEL "opendaw.device-panel/1"
 
 typedef struct opendaw_plugin_device_panel {
@@ -916,7 +920,7 @@ static void pearls_on_main_thread(const clap_plugin_t *plugin) {(void) plugin;}
 
 static const char *const FEATURES[] = {CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_GRANULAR,
                                        CLAP_PLUGIN_FEATURE_DELAY, CLAP_PLUGIN_FEATURE_REVERB,
-                                       OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, nullptr};
+                                       OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH, nullptr};
 
 static const clap_plugin_descriptor_t descriptor = {
     CLAP_VERSION_INIT,

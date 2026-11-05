@@ -537,14 +537,15 @@ check("page: a poll answers values and readings, a drag is one gesture marked di
     assert.ok(phase > 0 && phase < 1, `phase ${phase}`)
 })
 
-check("device panel and window: the card's width at 176 px, the window at its aspect ratio", () => {
-    for (const {id} of descriptors) {
+check("device panel and window: the card's width at 176 px as declared, the window at its aspect ratio", () => {
+    for (const {id, features} of descriptors) {
         const plugin = new Plugin(module, id)
         const m = module
         const width = m.malloc(4)
         assert.ok(m.fn(plugin.panel + 4)(plugin.plugin, 176, width))
         const panel = m.u32(width)
         assert.ok(panel >= 272 && panel <= 466, `${id} ${panel}`)
+        assert.ok(features.includes(`opendaw:device-panel-width:${panel}`), `${id} ${panel}`)
         const uri = m.malloc(64)
         m.fn(plugin.panel)(plugin.plugin, uri, 64)
         assert.ok(m.cstr(uri).startsWith("/index.html#"), m.cstr(uri))

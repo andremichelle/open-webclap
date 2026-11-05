@@ -352,7 +352,8 @@ const fixtureHost = async () => fixture(await Host.load(process.argv[2]))
 
 await check("descriptor: a note effect with openDAW's device panel", async host => {
     assert.equal(host.id, "studio.opendaw.hive")
-    assert.ok(host.features.includes("note-effect") && host.features.includes("opendaw:device-panel"))
+    assert.ok(host.features.includes("note-effect") && host.features.includes("opendaw:device-panel")
+        && host.features.includes("opendaw:device-panel-width:352"))
     assert.ok(host.panel && host.webview && host.state && host.params)
 })
 

@@ -356,7 +356,10 @@ struct Effect {
 
 template<class T> static Engine *create_engine() {return new(std::nothrow) T();}
 
-#define FEATURES(...) (const char *[]) {__VA_ARGS__, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, nullptr}
+// the card's width at openDAW's 176 px as "opendaw:device-panel-width:<width>", read from its cloud index before the
+// plugin loads; it is the effect's width below
+#define FEATURES(width, ...) \
+    (const char *[]) {__VA_ARGS__, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, "opendaw:device-panel-width:" #width, nullptr}
 #define DESCRIPTOR(id, name, description, features) \
     {CLAP_VERSION_INIT, id, name, "Signalsmith Audio", "https://signalsmith-audio.co.uk/code/basics/", \
      "https://github.com/andremichelle/open-webclap/tree/main/ports/signalsmith-basics", "", "1.1.0", description, \
@@ -365,27 +368,27 @@ template<class T> static Engine *create_engine() {return new(std::nothrow) T();}
 
 static const Effect EFFECTS[] = {
     {"chorus", DESCRIPTOR("uk.co.signalsmith.basics.chorus", "[Basics] Chorus", "Six-voice stereo chorus",
-        FEATURES(CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_CHORUS)),
+        FEATURES(352, CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_CHORUS)),
         CHORUS, COUNT(CHORUS), 0, 352, false, create_engine<ChorusEngine>},
     {"crunch", DESCRIPTOR("uk.co.signalsmith.basics.crunch", "[Basics] Crunch", "Oversampled distortion and saturation",
-        FEATURES(CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_DISTORTION)),
+        FEATURES(272, CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_DISTORTION)),
         CRUNCH, COUNT(CRUNCH), 0, 272, false, create_engine<CrunchEngine>},
     {"freq-shifter", DESCRIPTOR("uk.co.signalsmith.basics.freq-shifter", "[Basics] Frequency Shifter",
         "Hilbert / Bode single-sideband frequency shifter",
-        FEATURES(CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_FREQUENCY_SHIFTER)),
+        FEATURES(372, CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_FREQUENCY_SHIFTER)),
         FREQ_SHIFTER, COUNT(FREQ_SHIFTER), 0, 372, false, create_engine<FreqShifterEngine>},
     {"limiter", DESCRIPTOR("uk.co.signalsmith.basics.limiter", "[Basics] Limiter", "Lookahead limiter",
-        FEATURES(CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_LIMITER)),
+        FEATURES(338, CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_LIMITER)),
         LIMITER, COUNT(LIMITER), 4, 338, false, create_engine<LimiterEngine>},
     {"reverb", DESCRIPTOR("uk.co.signalsmith.basics.reverb", "[Basics] Reverb", "Feedback delay network reverb",
-        FEATURES(CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_REVERB)),
+        FEATURES(394, CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_REVERB)),
         REVERB, COUNT(REVERB), 5, 394, false, create_engine<ReverbEngine>},
     {"analyser", DESCRIPTOR("uk.co.signalsmith.basics.analyser", "[Basics] Analyser", "Bark-scale spectrum analyser",
-        FEATURES(CLAP_PLUGIN_FEATURE_ANALYZER)),
+        FEATURES(416, CLAP_PLUGIN_FEATURE_ANALYZER)),
         ANALYSER, COUNT(ANALYSER), 0, 416, false, create_engine<AnalyserEngine>},
     {"dynamics", DESCRIPTOR("uk.co.signalsmith.basics.dynamics", "[Basics] Dynamics",
         "Compressor, expander and gate with lookahead and a sidechain",
-        FEATURES(CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_COMPRESSOR, CLAP_PLUGIN_FEATURE_EXPANDER,
+        FEATURES(466, CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_COMPRESSOR, CLAP_PLUGIN_FEATURE_EXPANDER,
                  CLAP_PLUGIN_FEATURE_GATE)),
         DYNAMICS, COUNT(DYNAMICS), 0, 466, true, create_engine<DynamicsEngine>},
 };
