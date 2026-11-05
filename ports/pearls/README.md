@@ -60,7 +60,8 @@ Seed with its latch (Pearls is always latched, the module's state at power-up, s
 
 ## State
 
-`PRL1`, the count, then per parameter its id (FNV-1a of its key) and value (f64), little endian. It loads by id:
+`PRL1`, the count, then per parameter its id (FNV-1a of its key, the top bit cleared: openDAW reads a hovered
+parameter's id as signed, so ids above 2^31 got no menu and no value entry) and value (f64), little endian. It loads by id:
 unknown ids are skipped, missing ones keep their defaults.
 
 ## The page

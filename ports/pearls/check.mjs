@@ -298,7 +298,7 @@ const check = (name, fn) => {
 const fnv1a = text => {
     let hash = 0x811c9dc5
     for (const letter of new TextEncoder().encode(text)) {hash = Math.imul(hash ^ letter, 16777619) >>> 0}
-    return hash
+    return hash & 0x7fffffff
 }
 const ID = Object.fromEntries(["time", "density", "pitch", "size", "shape", "timeRandom", "pitchRandom", "sizeRandom",
     "shapeRandom", "feedback", "dryWet", "reverb", "input", "output", "quality", "record", "freeze",
@@ -332,6 +332,8 @@ check("one plugin with the device panel, its parameters with unique ids and thei
     const infos = plugin.paramInfos()
     assert.equal(infos.length, Object.keys(ID).length)
     assert.deepEqual(infos.map(info => info.id), Object.values(ID))
+    // openDAW reads a hovered id as signed: every id stays below 2^31
+    for (const info of infos) {assert.ok(info.id < 2 ** 31, `${info.name}: ${info.id}`)}
     const byId = new Map(infos.map(info => [info.id, info]))
     assert.equal(byId.get(ID.pitch).min, -24)
     assert.equal(byId.get(ID.pitch).max, 24)

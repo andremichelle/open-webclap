@@ -47,7 +47,7 @@ typedef struct opendaw_plugin_device_panel {
 
 // --- parameters -------------------------------------------------------------------------------------------------
 // Values are what the module's controls give its DSP: knob positions 0..1, the pitch in semitones, the random amounts
-// -1..1 (the attenuverters), gains in dB, steps. Ids are FNV-1a hashes of the keys.
+// -1..1 (the attenuverters), gains in dB, steps. Ids are FNV-1a hashes of the keys, below 2^31 (see fnv1a).
 
 enum class Text {Percent, Signed, Semitones, Db, Labels};
 
@@ -97,10 +97,12 @@ static const Param PARAMS[P_COUNT] = {
     {"sync", "Sync", 0, 6, 0, true, Text::Labels, SYNC},
 };
 
+// the key's FNV-1a hash with the top bit cleared: openDAW reads a hovered parameter's id as a signed number, so an
+// id above 2^31 would match none of its parameters (no menu, no value entry on it)
 static clap_id fnv1a(const char *text) {
     uint32_t hash = 0x811c9dc5u;
     for (; *text != '\0'; text++) {hash = (hash ^ static_cast<uint8_t>(*text)) * 16777619u;}
-    return hash;
+    return hash & 0x7fffffffu;
 }
 
 static double clamp(double value, double low, double high) {return value < low ? low : value > high ? high : value;}
