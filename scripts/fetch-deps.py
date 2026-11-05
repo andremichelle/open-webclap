@@ -212,6 +212,15 @@ DEPS += [
     for name, folder in (("droplets", "synths/droplets"), ("tapelectric", "effects/tapelectric"))
 ]
 
+# Beads (Emilie Gillet, Mutable Instruments) at eurorack master at the time of writing, its DSP and the tables it
+# reads, and stmlib at the eurorack submodule pin, inside eurorack/ so the includes resolve as upstream. MIT.
+DEPS += [
+    ("eurorack", "pichenettes/eurorack", "f4cfa7697095a28d292bff758beb51deb49b5a86",
+     lambda p: p.startswith("beads/dsp/") or p in ("beads/resources.cc", "beads/resources.h", "README.md")),
+    ("eurorack/stmlib", "pichenettes/stmlib", "e3bd7c9cc00e4364166f9905c0509b6ffd0535ec",
+     lambda p: p.startswith(("dsp/", "utils/")) or p in ("stmlib.h", "LICENSE")),
+]
+
 # oXygen (Wamphyre) at main at the time of writing: the mastering modules and their DSP, without the assistant
 # (threads, file loading) and upstream's editor, which the port replaces
 DEPS += [
@@ -340,7 +349,8 @@ def fetch_fonts():
 PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "ripplerx"), ("odin2-", "odin2"),
                  ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
                  ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric"), ("oxygen-", "oxygen"),
-                 ("obxf-", "OB-Xf"), ("helm-", "helm"), ("signalsmith-basics-", "signalsmith-basics")] + [(d + "-", d) for d, _, _ in ZL]
+                 ("obxf-", "OB-Xf"), ("helm-", "helm"), ("signalsmith-basics-", "signalsmith-basics"),
+                 ("stmlib-", "eurorack/stmlib")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():

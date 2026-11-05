@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pearls</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap">
+    <!--
+        Pearls' page: the panel at 176 px high (openDAW's device panel at 1:1), zoomed to the window. ?preview shows it
+        at 1:1 and at 150 % without a plugin.
+    -->
+    <style>
+        :root {
+            --studio: hsl(197, 8%, 9%);
+            --panel: #f3f0ea;
+            --ink: #24221f;
+            --ink-soft: #5f5a52;
+            --ink-faint: #97907f;
+            --line: #dcd7cd;
+            --well: #fbfaf7;
+            --track: #d3cdc1;
+            --knob: #2a2826;
+            --accent: #2b8f95;
+            --led-freeze: #4fb3ff;
+        }
+        * {box-sizing: border-box}
+        html, body {margin: 0; height: 100%}
+        body {
+            background: var(--panel);
+            font-family: Lato, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+        }
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+        body.preview {background: var(--studio); overflow: auto}
+        body.preview #stage {position: static; padding: 28px 24px 40px}
+        .section {margin: 0 0 34px}
+        .section > h3 {margin: 0 0 14px; font-size: 11px; font-weight: 900; letter-spacing: 0.12em; color: #7a808b}
+        .caption {font-size: 9px; color: #7a808b; margin: 0 0 6px 1px; letter-spacing: 0.06em}
+
+        /* the panel: the signal's way from left to right, the name along the bottom */
+        .card {
+            display: flex;
+            flex-direction: column;
+            height: 176px;
+            width: max-content;
+            padding: 8px 12px 6px;
+            background: var(--panel);
+            color: var(--ink);
+        }
+        .columns {display: flex; gap: 12px; height: 138px}
+        .divider {width: 1px; background: var(--line); margin: 2px 0}
+        .label {font-size: 8px; font-weight: 900; letter-spacing: 0.06em; color: var(--ink); white-space: nowrap; line-height: 9px}
+        .value {font-size: 9.5px; color: var(--ink-soft); white-space: nowrap; line-height: 11px; font-variant-numeric: tabular-nums}
+
+        .control {display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: ns-resize; touch-action: none}
+        .control svg, .dial svg {display: block; overflow: visible}
+        .dial {display: flex; justify-content: center; cursor: ns-resize; touch-action: none}
+        .slot {width: 66px; display: flex; justify-content: center}
+
+        .column {display: flex; flex-direction: column; justify-content: space-between}
+        .input {width: 108px}
+        .input .control {align-self: center}
+        .grains .row {display: flex}
+        .grains .dials {position: relative; top: -9px}
+        .actions {display: flex; align-items: center; justify-content: center; gap: 8px}
+        .stack {width: 56px; justify-content: space-around}
+
+        /* segmented choices: the chosen one dark */
+        .segments {display: flex; border: 1px solid var(--ink); border-radius: 2px; overflow: hidden}
+        .segments > div {
+            flex: 1;
+            height: 15px;
+            display: grid;
+            place-items: center;
+            font-size: 7.5px;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            cursor: pointer;
+            color: var(--ink);
+            background: var(--well);
+        }
+        .segments > div + div {border-left: 1px solid var(--ink)}
+        .segments > div.on {background: var(--ink); color: var(--well)}
+        .segments.icons > div {height: 19px}
+        .segments svg {display: block}
+        .segments .hq {font-size: 9px; font-weight: 900; letter-spacing: 0.04em}
+        .group {display: flex; flex-direction: column; align-items: center; gap: 7px; margin-top: 7px}
+        .group > .segments {align-self: stretch}
+
+        /* Freeze and Sync: pills with an LED */
+        .button {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            height: 18px;
+            padding: 0 9px 0 7px;
+            border: 1px solid var(--ink);
+            border-radius: 9px;
+            background: var(--well);
+            font-size: 8px;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            cursor: pointer;
+            touch-action: none;
+        }
+        /* a line as high as the capitals: centring the box centres the letters, whatever the font's ascent */
+        .button .caps, .button .text > span {display: block; line-height: 6px; height: 6px}
+        .button .led {width: 6px; height: 6px; border-radius: 50%; background: var(--line)}
+        .button.on .led {background: var(--led); box-shadow: 0 0 5px var(--led)}
+        .button.freeze {--led: var(--led-freeze)}
+        /* Sync: a pill like Freeze, its value in one cell as wide as the widest */
+        .button.sync {--led: var(--accent); gap: 4px}
+        .button.sync .text {display: grid; margin-left: 4px; color: var(--ink-soft)}
+        .button.sync .text > span {grid-area: 1 / 1; text-align: left}
+        .button.sync .text > span.hidden {visibility: hidden}
+
+        .footer {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            height: 16px;
+            margin-top: 6px;
+            padding-top: 4px;
+            border-top: 1px solid var(--line);
+        }
+        .footer h1 {margin: 0; font-size: 10px; font-weight: 900; letter-spacing: 0.2em; line-height: 12px}
+        .footer h2 {margin: 0; font-size: 7.5px; font-weight: 700; letter-spacing: 0.14em; color: var(--ink-soft); line-height: 12px}
+        .footer .credit {margin-left: auto; font-size: 7px; color: var(--ink-faint); letter-spacing: 0.04em}
+    </style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+    const clamp = (value, low, high) => Math.min(high, Math.max(low, value))
+    const fnv1a = text => {
+        let hash = 0x811c9dc5
+        for (const letter of new TextEncoder().encode(text)) {hash = Math.imul(hash ^ letter, 16777619) >>> 0}
+        return hash
+    }
+
+    // --- parameters ---------------------------------------------------------------------------------------------
+    // As plugin/pearls.cpp, in its order and units: knob positions 0..1, the pitch in semitones, random amounts -1..1,
+    // gains in dB, steps. A knob shows (value - low) / (high - low).
+
+    const percent = v => `${(v * 100).toFixed(1)} %`
+    const signed = v => `${v > 0.005 ? "+" : ""}${(v * 100).toFixed(0)} %`
+    const decibels = v => `${v > 0.05 ? "+" : ""}${v.toFixed(1)} dB`
+    const param = (key, low, high, value, extra = {}) => ({key, id: fnv1a(key), low, high, value, ...extra})
+    const PARAMS = [
+        param("time", 0, 1, 0.25, {label: "TIME", random: "timeRandom", text: percent}),
+        // left of noon regular, right of it random, faster towards the ends
+        param("density", 0, 1, 0.8, {label: "DENSITY", bipolar: true, text: percent}),
+        param("pitch", -24, 24, 0, {label: "PITCH", bipolar: true, random: "pitchRandom",
+            text: v => `${v >= 0.005 ? "+" : ""}${v.toFixed(2)} st`}),
+        param("size", 0, 1, 0.6, {label: "SIZE", random: "sizeRandom", text: v => v > 0.99 ? "delay" : percent(v)}),
+        param("shape", 0, 1, 0.5, {label: "SHAPE", random: "shapeRandom", text: percent}),
+        param("timeRandom", -1, 1, 0, {text: v => `random ${signed(v)}`}),
+        param("pitchRandom", -1, 1, 0, {text: v => `random ${signed(v)}`}),
+        param("sizeRandom", -1, 1, 0, {text: v => `random ${signed(v)}`}),
+        param("shapeRandom", -1, 1, 0, {text: v => `random ${signed(v)}`}),
+        param("feedback", 0, 1, 0.1, {label: "FEEDBACK", text: percent}),
+        param("dryWet", 0, 1, 0.5, {label: "DRY/WET", text: percent}),
+        param("reverb", 0, 1, 0.25, {label: "REVERB", text: percent}),
+        param("input", -24, 24, 0, {label: "INPUT", text: decibels}),
+        param("output", -24, 24, 0, {label: "OUTPUT", text: decibels}),
+        param("quality", 0, 3, 3, {steps: true}),
+        param("record", 0, 1, 0, {steps: true}),
+        param("freeze", 0, 1, 0, {steps: true}),
+        param("quantize", 0, 1, 0, {steps: true}),
+        param("sync", 0, 6, 0, {steps: true, labels: ["OFF", "1/32", "1/16", "1/8", "1/4", "1/2", "1 BAR"]})
+    ]
+    PARAMS.forEach((p, index) => p.index = index)
+    const P = Object.fromEntries(PARAMS.map(p => [p.key, p]))
+
+    // --- knobs, drawn here --------------------------------------------------------------------------------------
+
+    const SVG = "http://www.w3.org/2000/svg"
+    const svg = (name, attributes = {}, parent) => {
+        const element = document.createElementNS(SVG, name)
+        for (const [key, value] of Object.entries(attributes)) {element.setAttribute(key, value)}
+        parent?.append(element)
+        return element
+    }
+    const START = -135, SWEEP = 270
+    const polar = (cx, cy, radius, degrees) => {
+        const radians = degrees * Math.PI / 180
+        return [cx + radius * Math.sin(radians), cy - radius * Math.cos(radians)]
+    }
+    const arc = (cx, cy, radius, from, to) => {
+        if (Math.abs(to - from) < 0.01) {return ""}
+        const [x0, y0] = polar(cx, cy, radius, Math.min(from, to))
+        const [x1, y1] = polar(cx, cy, radius, Math.max(from, to))
+        const large = Math.abs(to - from) > 180 ? 1 : 0
+        return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${radius} ${radius} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`
+    }
+
+    // every knob alike: a dark cap with a white pointer inside a ring, the value as an arc in the accent
+    const knobView = (size, bipolar) => {
+        const c = size / 2, ring = c - 1.2, cap = c - Math.max(4, size * 0.12)
+        const stroke = size > 30 ? 2.2 : 1.8
+        const root = svg("svg", {width: size, height: size, viewBox: `0 0 ${size} ${size}`})
+        svg("path", {d: arc(c, c, ring, START, START + SWEEP), fill: "none", stroke: "var(--track)", "stroke-width": stroke, "stroke-linecap": "round"}, root)
+        const value = svg("path", {fill: "none", stroke: "var(--accent)", "stroke-width": stroke, "stroke-linecap": "round"}, root)
+        svg("circle", {cx: c, cy: c + 1.2, r: cap, fill: "rgba(0,0,0,0.3)", style: "filter: blur(1.2px)"}, root)
+        svg("circle", {cx: c, cy: c, r: cap, fill: "var(--knob)"}, root)
+        const pointer = svg("line", {x1: c, y1: c - cap * 0.3, x2: c, y2: c - cap + 2, stroke: "#ffffff",
+            "stroke-width": size > 30 ? 2 : 1.5, "stroke-linecap": "round"}, root)
+        return {
+            element: root,
+            update: unit => {
+                const angle = START + unit * SWEEP
+                value.setAttribute("d", bipolar ? arc(c, c, ring, 0, angle) : arc(c, c, ring, START, angle))
+                pointer.setAttribute("transform", `rotate(${angle} ${c} ${c})`)
+            }
+        }
+    }
+
+    // quality icons: a crumpled tape, a clean tape, a staircase, HQ
+    const ICONS = [
+        `<svg width="18" height="12" viewBox="0 0 18 12"><rect x="1" y="1.5" width="16" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="6" cy="6" r="1.8" fill="none" stroke="currentColor"/><circle cx="12" cy="6" r="1.8" fill="none" stroke="currentColor"/><path d="M3 10.5l2-2 2 1.5 2-1.5 2 1.5 2-1.5 2 2" fill="none" stroke="currentColor" stroke-width="0.9"/></svg>`,
+        `<svg width="18" height="12" viewBox="0 0 18 12"><rect x="1" y="1.5" width="16" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="6" cy="6" r="1.8" fill="none" stroke="currentColor"/><circle cx="12" cy="6" r="1.8" fill="none" stroke="currentColor"/></svg>`,
+        `<svg width="18" height="12" viewBox="0 0 18 12"><path d="M1 10h3V7h3V4h3V2h3v3h3v3h1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`,
+        `<span class="hq">HQ</span>`
+    ]
+    // the tooltips of the quality modes (Beads' recording media)
+    const QUALITY_NAMES = [
+        "Dirty tape: 8 bit, 24 kHz, saturated, with wow and flutter",
+        "Clean tape: 12 bit, 24 kHz, soft saturation",
+        "Lo-fi digital: 12 bit, 32 kHz",
+        "HQ: 16 bit, 48 kHz, clean"
+    ]
+    const LOGO = `<svg width="13" height="13" viewBox="0 0 22 22">${Array.from({length: 7}, (_, index) => {
+        const angle = index * Math.PI * 2 / 7, x = 11 + 6.5 * Math.cos(angle), y = 11 + 6.5 * Math.sin(angle)
+        return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${(1.6 + index * 0.25).toFixed(2)}" fill="#1f2023"/>`
+    }).join("")}<circle cx="11" cy="11" r="2.4" fill="none" stroke="#1f2023" stroke-width="1.2"/></svg>`
+
+    // --- the panel ----------------------------------------------------------------------------------------------
+
+    const makePanel = host => {
+        const values = PARAMS.map(p => p.value)
+        const dragging = new Set()
+        const views = []
+        const update = () => views.forEach(view => view())
+        const element = document.createElement("div")
+        element.className = "card"
+        element.innerHTML = `
+            <div class="columns">
+                <div class="column input">
+                    <div class="group"><div class="label">QUALITY</div><div class="segments icons quality"></div></div>
+                    <div class="segments record"><div title="Both channels">STEREO</div><div title="Left and right summed, twice as long">MONO</div></div>
+                </div>
+                <div class="divider"></div>
+                <div class="column grains">
+                    <div class="row knobs"></div>
+                    <div class="row dials"></div>
+                    <div class="actions"></div>
+                </div>
+                <div class="divider"></div>
+                <div class="column stack fx"></div>
+                <div class="column stack out"></div>
+            </div>
+            <div class="footer">${LOGO}<h1>PEARLS</h1><h2>TEXTURE AUDIO-FX</h2>
+                <span class="credit">after Beads by Emilie Gillet</span></div>`
+
+        const set = (p, value) => {
+            const next = p.steps ? Math.round(clamp(value, p.low, p.high)) : clamp(value, p.low, p.high)
+            if (values[p.index] === next) {return}
+            values[p.index] = next
+            host.set(p.id, next)
+            update()
+        }
+        // one change as a gesture: a click on a button or a segment
+        const tap = (p, value) => {
+            host.begin(p.id)
+            set(p, value)
+            host.end(p.id)
+        }
+        // the parameter under the pointer goes to the host: openDAW then takes the right-click and the double-click
+        const hoverable = (target, p) => {
+            target.addEventListener("pointerdown", () => host.hover(p.id), {capture: true})
+            target.addEventListener("pointermove", () => host.hover(p.id))
+            target.addEventListener("pointerleave", () => host.hover(null))
+        }
+        // a vertical drag turns a knob as one gesture, shift for fine steps; no wheel
+        const draggable = (target, p) => {
+            let drag = null
+            hoverable(target, p)
+            target.addEventListener("pointerdown", event => {
+                if (event.button !== 0 || event.ctrlKey || drag !== null) {return}
+                target.setPointerCapture(event.pointerId)
+                drag = {pointerId: event.pointerId, unit: (values[p.index] - p.low) / (p.high - p.low)}
+                dragging.add(p.index)
+                host.begin(p.id)
+            })
+            target.addEventListener("pointermove", event => {
+                if (drag === null || event.pointerId !== drag.pointerId) {return}
+                drag.unit = clamp(drag.unit - event.movementY / 128 * (event.shiftKey ? 0.15 : 1), 0, 1)
+                set(p, p.low + drag.unit * (p.high - p.low))
+            })
+            const end = () => {
+                if (drag === null) {return}
+                drag = null
+                dragging.delete(p.index)
+                host.end(p.id)
+            }
+            target.addEventListener("pointerup", end)
+            target.addEventListener("lostpointercapture", end)
+        }
+        const unit = p => (values[p.index] - p.low) / (p.high - p.low)
+        // a knob with its label above and its value below; shown(p) picks what the value line shows
+        const knob = (p, size, shown = () => p) => {
+            const control = document.createElement("div")
+            control.className = "control"
+            const view = knobView(size, p.bipolar === true)
+            control.innerHTML = `<div class="label">${p.label}</div>`
+            control.append(view.element)
+            control.insertAdjacentHTML("beforeend", `<div class="value"></div>`)
+            const text = control.querySelector(".value")
+            views.push(() => {
+                view.update(unit(p))
+                const q = shown()
+                text.textContent = q.text(values[q.index])
+            })
+            draggable(control, p)
+            return control
+        }
+        const segments = (container, p) => {
+            const items = [...container.children]
+            hoverable(container, p)
+            items.forEach((item, index) => item.addEventListener("pointerdown", event => {
+                if (event.button === 0 && !event.ctrlKey) {tap(p, index)}
+            }))
+            views.push(() => items.forEach((item, index) => item.classList.toggle("on", index === values[p.index])))
+        }
+
+        // grains: the knobs, the random amount under each (Density has none), while a dial is hovered or dragged
+        // its knob's value line shows the amount
+        const knobs = element.querySelector(".grains .knobs"), dials = element.querySelector(".grains .dials")
+        for (const key of ["time", "density", "pitch", "size", "shape"]) {
+            const p = P[key], r = P[p.random]
+            let showRandom = false
+            const slot = document.createElement("div")
+            slot.className = "slot"
+            slot.append(knob(p, 46, () => showRandom ? r : p))
+            knobs.append(slot)
+            const dialSlot = document.createElement("div")
+            dialSlot.className = "slot"
+            dials.append(dialSlot)
+            if (r === undefined) {continue}
+            const dial = document.createElement("div")
+            dial.className = "dial"
+            dial.title = `${p.label.toLowerCase()} random`
+            const view = knobView(24, true)
+            dial.append(view.element)
+            dialSlot.append(dial)
+            draggable(dial, r)
+            const show = flag => {
+                showRandom = flag
+                update()
+            }
+            dial.addEventListener("pointerenter", () => show(true))
+            dial.addEventListener("pointerleave", () => {if (!dragging.has(r.index)) {show(false)}})
+            dial.addEventListener("lostpointercapture", () => show(dial.matches(":hover")))
+            views.push(() => view.update(unit(r)))
+        }
+
+        const input = element.querySelector(".input")
+        input.prepend(knob(P.input, 34))
+        const quality = element.querySelector(".quality")
+        ICONS.forEach((icon, index) => quality.insertAdjacentHTML("beforeend", `<div title="${QUALITY_NAMES[index]}">${icon}</div>`))
+        segments(quality, P.quality)
+        segments(element.querySelector(".record"), P.record)
+        const fx = element.querySelector(".fx"), out = element.querySelector(".out")
+        fx.append(knob(P.feedback, 34), knob(P.reverb, 34))
+        out.append(knob(P.dryWet, 34), knob(P.output, 34))
+
+        const actions = element.querySelector(".actions")
+        // Freeze: the buffer stops recording, the grains go on reading what it holds
+        const freeze = document.createElement("div")
+        freeze.className = "button freeze"
+        freeze.title = "Stop recording: the grains keep playing what the buffer holds"
+        freeze.innerHTML = `<span class="led"></span><span class="caps">FREEZE</span>`
+        actions.append(freeze)
+        hoverable(freeze, P.freeze)
+        freeze.addEventListener("pointerdown", event => {
+            if (event.button === 0 && !event.ctrlKey) {tap(P.freeze, values[P.freeze.index] > 0.5 ? 0 : 1)}
+        })
+        views.push(() => freeze.classList.toggle("on", values[P.freeze.index] > 0.5))
+        // Sync: the host's tempo as the module's clock. A click steps to the next value, a vertical drag picks one.
+        const sync = document.createElement("div")
+        sync.className = "button sync"
+        sync.title = "Clock the grains (and the delay) from the host's tempo while it plays"
+        sync.innerHTML = `<span class="led"></span><span class="caps">SYNC</span><span class="text">${P.sync.labels.map(label =>
+            `<span>${label}</span>`).join("")}</span>`
+        actions.append(sync)
+        hoverable(sync, P.sync)
+        const count = P.sync.labels.length
+        let pick = null
+        sync.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            sync.setPointerCapture(event.pointerId)
+            pick = {pointerId: event.pointerId, start: values[P.sync.index], travel: 0}
+            host.begin(P.sync.id)
+        })
+        sync.addEventListener("pointermove", event => {
+            if (pick === null || event.pointerId !== pick.pointerId) {return}
+            pick.travel -= event.movementY
+            if (Math.abs(pick.travel) >= 4) {set(P.sync, clamp(pick.start + Math.round(pick.travel / 12), 0, count - 1))}
+        })
+        const release = () => {
+            if (pick === null) {return}
+            if (Math.abs(pick.travel) < 4) {set(P.sync, (pick.start + 1) % count)}
+            pick = null
+            host.end(P.sync.id)
+        }
+        sync.addEventListener("pointerup", release)
+        sync.addEventListener("lostpointercapture", release)
+        const choices = [...sync.querySelectorAll(".text > span")]
+        views.push(() => {
+            choices.forEach((span, index) => span.classList.toggle("hidden", index !== values[P.sync.index]))
+            sync.classList.toggle("on", values[P.sync.index] > 0)
+        })
+        update()
+        return {element, values, dragging, update}
+    }
+
+    // --- the plugin's page, or the preview -----------------------------------------------------------------------
+
+    const stage = document.getElementById("stage")
+    if (new URL(location).searchParams.has("preview")) {
+        document.body.classList.add("preview")
+        const quiet = {set: () => {}, begin: () => {}, end: () => {}, hover: () => {}}
+        const section = title => {
+            const element = document.createElement("div")
+            element.className = "section"
+            element.innerHTML = `<h3>${title}</h3>`
+            stage.append(element)
+            return element
+        }
+        const caption = document.createElement("div")
+        caption.className = "caption"
+        const small = makePanel(quiet).element
+        section("DEVICE PANEL · 176 PX, ACTUAL SIZE").append(caption, small)
+        const large = makePanel(quiet).element
+        large.style.zoom = 1.5
+        section("WINDOW · 150 %").append(large)
+        document.fonts.ready.then(() => caption.textContent = `Pearls · ${small.offsetWidth} × ${small.offsetHeight}`)
+    } else {
+        // Messages to the plugin (pearls.cpp), little endian: the type at byte 0, the parameter id at 4, a value
+        // (f64) at 8. HOVER reports the parameter under the pointer (clap.param-hovered).
+        const PAGE = {POLL: 1, BEGIN: 2, SET: 3, END: 4, HOVER: 7}
+        const NO_PARAM = 0xffffffff
+        const post = bytes => window.parent.postMessage(bytes, "*")
+        const send = (type, id, value) => {
+            const view = new DataView(new ArrayBuffer(type === PAGE.SET ? 16 : 8))
+            view.setUint8(0, type)
+            view.setUint32(4, id, true)
+            if (type === PAGE.SET) {view.setFloat64(8, value, true)}
+            post(view.buffer)
+        }
+        let hovered = NO_PARAM, gestures = 0
+        const panel = makePanel({
+            set: (id, value) => send(PAGE.SET, id, value),
+            begin: id => {
+                gestures++
+                send(PAGE.BEGIN, id)
+            },
+            end: id => {
+                gestures = Math.max(0, gestures - 1)
+                send(PAGE.END, id)
+            },
+            hover: id => {
+                const next = id ?? NO_PARAM
+                if (next === hovered || (next === NO_PARAM && gestures > 0)) {return}
+                hovered = next
+                send(PAGE.HOVER, next)
+            }
+        })
+        stage.append(panel.element)
+        const resize = () => {
+            const zoom = Math.max(0.25, Math.min(innerWidth / panel.element.offsetWidth, innerHeight / 176))
+            stage.style.transform = `scale(${zoom})`
+        }
+        addEventListener("resize", resize)
+        document.fonts.ready.then(resize)
+        resize()
+        // STATUS (pearls.cpp send_status): the parameter count at 1, the values (f64) from 8, then the peaks (f32)
+        addEventListener("message", event => {
+            if (!(event.data instanceof ArrayBuffer)) {return}
+            const view = new DataView(event.data)
+            if (view.byteLength < 8 || view.getUint8(0) !== 1) {return}
+            const count = view.getUint8(1)
+            if (count !== PARAMS.length || view.byteLength < 8 + count * 8) {return}
+            let changed = false
+            for (let index = 0; index < count; index++) {
+                if (panel.dragging.has(index)) {continue}
+                const value = view.getFloat64(8 + index * 8, true)
+                if (value !== panel.values[index]) {
+                    panel.values[index] = value
+                    changed = true
+                }
+            }
+            if (changed) {panel.update()}
+        })
+        const poll = () => {
+            post(new Uint8Array([PAGE.POLL]).buffer)
+            requestAnimationFrame(poll)
+        }
+        requestAnimationFrame(poll)
+    }
+</script>
+</body>
+</html>

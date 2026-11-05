@@ -1,0 +1,31 @@
+--- a/dsp/dsp.h
++++ b/dsp/dsp.h
+@@ -112,7 +112,7 @@
+   }
+ }
+ 
+-#ifdef TEST
++#if defined(TEST) || defined(__EMSCRIPTEN__)
+   inline int32_t Clip16(int32_t x) {
+     if (x < -32768) {
+       return -32768;
+@@ -144,7 +144,7 @@
+   }
+ #endif
+   
+-#ifdef TEST
++#if defined(TEST) || defined(__EMSCRIPTEN__)
+   inline float Sqrt(float x) {
+     return sqrtf(x);
+   }
+--- a/stmlib.h
++++ b/stmlib.h
+@@ -75,7 +75,7 @@
+ } // namespace impl
+ 
+ 
+-#ifndef TEST
++#if !defined(TEST) && !defined(__EMSCRIPTEN__)
+ #define IN_RAM __attribute__ ((section (".ramtext")))
+ #else
+ #define IN_RAM

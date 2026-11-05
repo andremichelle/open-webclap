@@ -211,6 +211,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         bundled: "/bundled/hive.wclap.tar.gz"
     },
     {
+        id: "pearls", name: "Pearls", kind: "audio-fx",
+        description: "Granular texture effect after Beads by Emilie Gillet: grains, delay and reverb, four recording qualities",
+        clapId: "studio.opendaw.pearls",
+        archive: "build/pearls/pearls.wclap.tar.gz", build: "scripts/build-pearls.sh",
+        credit: "https://github.com/pichenettes/eurorack/tree/master/beads", source: port("pearls"), license: "MIT",
+        bundled: "/bundled/pearls.wclap.tar.gz", panel: true
+    },
+    {
         id: "glitchfest", name: "Glitchfest", kind: "audio-fx",
         description: "Glitch effect: twelve rows of stutter, tape, pitch and more, blocks drawn into patterns on the transport",
         clapId: "studio.opendaw.commons.glitchfest",
