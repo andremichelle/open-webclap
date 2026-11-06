@@ -36,7 +36,9 @@
     .section > .title { position: absolute; left: 0; top: 0; right: 0; height: 16px; background: var(--header);
                         color: var(--header-text); font-size: 9px; font-weight: bold; line-height: 16px;
                         padding-left: 6px; border-radius: 2px 2px 0 0; letter-spacing: .4px; }
-    .label { position: absolute; font-size: 8px; color: var(--ink); white-space: nowrap; }
+    /* SwiftUI's .position(x, y) is the view's CENTER: labels, LED radios and wave grids are centered on (x, y) */
+    .label { position: absolute; font-size: 8px; color: var(--ink); white-space: nowrap;
+             transform: translate(-50%, -50%); }
     .badge { position: absolute; width: 13px; height: 13px; border-radius: 50%; background: var(--header);
              color: var(--header-text); font-size: 8px; font-weight: bold; line-height: 13px; text-align: center; }
     /* knob: svg + label below, the widget's box is centered where SwiftUI's position() puts it */
@@ -59,7 +61,7 @@
             overflow: hidden; }
     /* wave icon grid (osc shapes, lfo types) */
     .waves { position: absolute; display: grid; grid-template-columns: repeat(2, 17px); grid-auto-rows: 13px;
-             gap: 1px; }
+             gap: 1px; transform: translate(-50%, -50%); }
     .waves .cell { position: relative; background: rgba(0,0,0,.12); border: 1px solid rgba(0,0,0,.35);
                    cursor: pointer; }
     .waves .cell.sel { background: rgba(255,255,255,.35); }
@@ -67,7 +69,7 @@
                               border-radius: 50%; background: var(--radio); box-shadow: 0 0 3px var(--radio); }
     .waves svg { display: block; margin: 1px auto 0; }
     /* led radio rows */
-    .leds { position: absolute; }
+    .leds { position: absolute; transform: translate(-50%, -50%); }
     .leds .row { display: flex; align-items: center; height: 13px; cursor: pointer; font-size: 8px;
                  color: var(--ink); white-space: nowrap; }
     .leds.h .row { display: inline-flex; margin-right: 6px; }
@@ -203,7 +205,9 @@ function addKnob(id, label, x, y, size = 24) {
     const w = {id, update() {
         const p = param(id), n = (values[id] - p.min) / (p.max - p.min);
         face.innerHTML = knobSvg(size, n);
-        klabel.textContent = (id >= 79 && id <= 81) ? displayNameOf(id) : label;
+        // the label under the knob is the static one (SynthPanelView passes "ctl1" etc.; the effect type's
+        // names for the effect knobs show in the LCD readout, via displayNameOf there)
+        klabel.textContent = label;
         box.classList.toggle("active", dragging === id);
     }};
     widgets.push(w);
@@ -322,7 +326,7 @@ function addWaves(id, items, x, y) {
 }
 // one wave-icon cell that cycles through the shapes on click (the LFO types; WaveCycle in SynthControls)
 function addWaveCycle(id, shapes, x, y) {
-    const c = el("div", "waves", null, x - 13, y - 8.5, 26, 17);
+    const c = el("div", "waves", null, x, y, 26, 17); // .waves centers on (x, y)
     const cell = el("div", "cell sel", c);
     cell.style.width = "24px"; cell.style.height = "15px";
     c.style.display = "block";
@@ -381,6 +385,7 @@ function addBadge(text, x, y, id = -1) {
     return b;
 }
 function addLabel(text, x, y) {const l = el("div", "label", null, x, y); l.textContent = text; return l;}
+// (el() places at left/top; the .label class centers the text on that point, as SwiftUI's position does)
 
 // a popover menu button (the MIDI ctrl src/assign words)
 const CC_NAMES = {1: "mod wheel", 2: "breath", 4: "foot", 5: "porta time", 7: "volume", 8: "balance", 10: "pan",
@@ -494,15 +499,15 @@ function buildPanel() {
     const lfo = section("LFO", 6, 278, 312, 130);
     addBadge("1", 14, 30, 57);
     addWaveCycle(42, ["sawDown", "tri", "square", "sampleHold", "smooth", "sine"], 42, 30);
-    C(41, "dst", 78, 30, 32);
+    C(41, "dst", 78, 30, 44);
     K(43, "spd", 30, 62); K(44, "amt", 76, 62);
     addLabel("-sync-", 52, 99);
     T(67, "tempo", 30, 114, 46); T(68, "key", 78, 114, 36);
     const dests = ["osc2", "osc1+2", "filter", "amp", "p/w", "FM", "pan"];
     addLeds(41, dests.map((l, i) => ({value: i + 1, label: ""})), 124, 72, false, false);
-    dests.forEach((l, i) => addLabel(l, 156, 72 + i * 13));
+    dests.forEach((l, i) => addLabel(l, 156, 72 + (i - 3) * 13)); // the column is centered on y=72, as SwiftUI's VStack
     addLeds(46, dests.map((l, i) => ({value: i + 1, label: ""})), 188, 72, false, false);
-    C(46, "dst", 234, 30, 32);
+    C(46, "dst", 234, 30, 44);
     addWaveCycle(47, ["sawDown", "tri", "square", "sampleHold", "smooth", "sine"], 270, 30);
     addBadge("2", 298, 30, 58);
     K(48, "spd", 236, 62); K(49, "amt", 282, 62);
