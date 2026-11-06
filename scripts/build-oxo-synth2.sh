@@ -33,6 +33,12 @@ node "$ROOT/ports/oxo-synth2/check.mjs" "$BUNDLE/module.wasm"
 
 # The archive hosts import (openDAW: Import WebCLAP...)
 python3 "$ROOT/scripts/pack-wclap.py" "$BUNDLE" "$BUILD/oxo-synth2.wclap.tar.gz"
+
+# The site serves this bundle itself (pages on forks run it without the openDAW catalogue; the asset host's
+# CORS allows only the studio's own origin)
+mkdir -p "$ROOT/site/public/bundled"
+cp "$BUILD/oxo-synth2.wclap.tar.gz" "$ROOT/site/public/bundled/oxo-synth2.wclap.tar.gz"
+
 echo "Built $BUNDLE — try it in the test host: python3 $ROOT/scripts/serve.py $ROOT, then"
 echo "http://127.0.0.1:8123/test-host/?bundle=/build/oxo-synth2/web/oxo-synth2.wclap"
 echo "or on the site: http://localhost:8130/oxo-synth2?local"

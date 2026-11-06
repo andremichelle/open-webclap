@@ -80,7 +80,8 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         description: "A recreation of Daichi Laboratory's Synth1: same 99 parameters, loads .sy1 patches, same sound",
         clapId: "com.oxo.music.oxosynth2",
         archive: "build/oxo-synth2/oxo-synth2.wclap.tar.gz", build: "scripts/build-oxo-synth2.sh",
-        credit: "https://github.com/chab/oxo_synth2", source: port("oxo-synth2"), license: "MIT"
+        credit: "https://github.com/chab/oxo_synth2", source: port("oxo-synth2"), license: "MIT",
+        bundled: "/bundled/oxo-synth2.wclap.tar.gz"
     },
     {
         id: "droplets", name: "Droplets", kind: "instrument",

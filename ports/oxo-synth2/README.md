@@ -18,8 +18,11 @@ render path — so `oxo_synth2_clap.cpp` is only the wrapper:
   Banks`; third-party `.sy1` banks from the web are not bundled — their designers license them nowhere).
 
 Build: `scripts/build-oxo-synth2.sh` (Emscripten, fetches the pinned engine, runs `check.mjs`, packs
-`build/oxo-synth2/oxo-synth2.wclap.tar.gz`). Test in the test host:
+`build/oxo-synth2/oxo-synth2.wclap.tar.gz`, and copies it to `site/public/bundled/` so the site serves the
+bundle itself). Test in the test host:
 `python3 scripts/serve.py .` then `http://127.0.0.1:8123/test-host/?bundle=/build/oxo-synth2/web/oxo-synth2.wclap`.
+On a Pages deployment (e.g. a fork's), `/oxo-synth2` runs from that bundled copy; the openDAW-hosted
+catalogue route needs an admin upload and its CORS allows only the studio's own origin.
 
 ## Keeping up with oxo_synth2
 
