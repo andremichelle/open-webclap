@@ -1,3 +1,4 @@
+import "./base"
 import "./main.sass"
 import {initializeColors} from "@opendaw/studio-enums"
 import {replaceChildren} from "@opendaw/lib-jsx"
