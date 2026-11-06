@@ -5,8 +5,8 @@
     little endian, the types at the top of oxo_synth2_clap.cpp:
 
     page -> plugin:   1 hello, 2 poll, 3 begin (u32 id@4), 4 set (u32 id@4, f64 value@8), 5 end (u32 id@4),
-                      6 hover (u32 id@4, 0xffffffff none), 8 patch (u16 name length@2, name@4, 99 x i32 values),
-                      9 init patch, 10 all notes off
+                      6 hover (u32 id@4, 0xffffffff none), 8 patch (u16 name length@2, name@4, 99 x i32 values,
+                      optional u16 .sy1 version at the end), 9 init patch, 10 all notes off
     plugin -> page:   0x81 describe (JSON from 4: the parameter table), 0x82 snapshot (State from 4),
                       0x83 values (u16 count@2, then count x (u32 id, u32 0, f64 value)),
                       0x84 activity (u8 gated@1, u64 voice states@8, f32 peak L@16, peak R@20)
@@ -41,7 +41,8 @@
              color: var(--header-text); font-size: 8px; font-weight: bold; line-height: 13px; text-align: center; }
     /* knob: svg + label below, the widget's box is centered where SwiftUI's position() puts it */
     .knob { position: absolute; text-align: center; touch-action: none; cursor: ns-resize; }
-    .knob .klabel { font-size: 8px; color: var(--ink); margin-top: 1px; white-space: nowrap; }
+    .knob .klabel { font-size: 7px; color: var(--ink); margin-top: 1px; white-space: nowrap;
+                    max-width: 44px; overflow: hidden; text-overflow: ellipsis; }
     .knob.active .klabel { color: #000; font-weight: bold; }
     /* toggle / cycler buttons */
     .tbtn { position: absolute; box-sizing: border-box; background: var(--button); border: 1px solid #000;
@@ -85,20 +86,20 @@
     /* bottom bar */
     #bottom { position: absolute; left: 6px; top: 484px; width: 758px; height: 70px; box-sizing: border-box;
               border: 1px solid rgba(0,0,0,.45); border-radius: 3px; }
-    #lcd { position: absolute; left: 64px; top: 8px; width: 560px; height: 54px; background: var(--display);
+    #lcd { position: absolute; left: 64px; top: 8px; width: 500px; height: 54px; background: var(--display);
            border: 1px solid #000; color: var(--display-text); font-family: "Courier New", monospace;
            box-sizing: border-box; padding: 4px 8px; }
     #lcd .line1 { font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; }
     #lcd .line1 .nav { cursor: pointer; padding: 0 4px; }
     #lcd .line2 { font-size: 10px; margin-top: 4px; white-space: nowrap; overflow: hidden; }
-    #meter { position: absolute; right: 96px; top: 10px; width: 60px; height: 50px; }
+    #meter { position: absolute; left: 572px; top: 8px; width: 52px; height: 54px; }
     .bbtn { position: absolute; top: 24px; width: 56px; height: 22px; background: var(--button);
-            border: 1px solid #000; border-radius: 2px; color: var(--ink); font-size: 9px; line-height: 20px;
-            text-align: center; cursor: pointer; }
+            border: 1px solid #000; border-radius: 2px; color: #D8D8C8; font-size: 9px; font-weight: bold;
+            line-height: 20px; text-align: center; cursor: pointer; }
     #title-band { position: absolute; left: 0; top: 4px; width: 770px; height: 26px; }
     #title-band .name { position: absolute; left: 8px; top: 0; font-size: 20px; font-weight: bold;
                         color: var(--ink); }
-    #title-band .sub { position: absolute; left: 78px; top: 8px; font-size: 12px; font-style: italic;
+    #title-band .sub { position: absolute; left: 88px; top: 8px; font-size: 12px; font-style: italic;
                        color: var(--dim-ink); }
     #title-band .ver { position: absolute; right: 8px; top: 3px; background: var(--red); color: #fff;
                        font-size: 11px; font-weight: bold; padding: 1px 10px; border: 1px solid #000; }
@@ -540,7 +541,7 @@ function buildPanel() {
     // Filter
     const fil = section("Filter", 324, 118, 218, 156);
     K(15, "A", 20, 44); K(16, "D", 52, 44); K(17, "S", 84, 44); K(18, "R", 116, 44); K(21, "amt", 150, 44);
-    C(14, "type", 196, 30, 36);
+    C(14, "type", 194, 30, 44);
     addLeds(14, ["LP12", "LP24", "HP12", "BP12", "LPDL"].map((l, i) => ({value: i, label: l})), 196, 82, false, true, 14);
     K(19, "frq", 20, 106); K(20, "res", 52, 106); K(23, "sat", 84, 106); K(22, "trk", 116, 106);
     T(24, "vel", 150, 112, 36);
@@ -548,7 +549,7 @@ function buildPanel() {
     // Arpeggiator
     const arp = section("Arpeggiator", 324, 278, 218, 130);
     T(59, "ON", 22, 30, 32);
-    C(31, "type", 66, 30, 40); C(32, "range", 128, 30, 44);
+    C(31, "type", 66, 30, 52); C(32, "range", 130, 30, 56);
     addLeds(31, ["up&down", "up", "down", "random"].map((l, i) => ({value: i + 1, label: l})), 40, 78, false, true, 14);
     addLeds(32, ["1oct", "2oct", "3oct", "4oct"].map((l, i) => ({value: i, label: l})), 126, 78, false, true, 14);
     K(33, "beat", 190, 36); K(34, "gate", 190, 88);
@@ -609,7 +610,7 @@ function buildPanel() {
     lcdLine2 = el("div", "line2", lcd);
     document.getElementById("prev").addEventListener("click", () => stepPatch(-1));
     document.getElementById("next").addEventListener("click", () => stepPatch(1));
-    const meter = el("canvas", null, bottom); meter.id = "meter"; meter.width = 60; meter.height = 50;
+    const meter = el("canvas", null, bottom); meter.id = "meter"; meter.width = 52; meter.height = 54;
     const menuBtn = el("div", "bbtn", bottom); menuBtn.style.left = "668px"; menuBtn.textContent = "menu";
     menuBtn.addEventListener("click", e => {
         if (e.ctrlKey) {return;}
@@ -630,19 +631,25 @@ function buildPanel() {
     window.updateLcdName = () => {document.getElementById("pname").textContent = patchName;};
 }
 function showPatchBrowser() {
-    showPop(120, 60, 300, 380, pop => {
+    showPop(120, 60, 320, 400, pop => {
         if (patches.length === 0) {
             el("div", "item", pop).textContent = "(no patches.json in the bundle)";
             return;
         }
-        for (let i = 0; i < patches.length; i++) {
+        let lastBank = null, number = 0;
+        patches.forEach((patch, i) => {
+            if (patch.bank !== lastBank) {
+                lastBank = patch.bank;
+                number = 0;
+                el("div", "group", pop).textContent = patch.bank || "";
+            }
             const it = el("div", "item" + (i === patchIndex ? " sel" : ""), pop);
-            it.textContent = (i + 1) + "  " + patches[i].name;
+            it.textContent = `${++number}  ${patch.name}`;
             it.addEventListener("click", ev => {
                 ev.stopPropagation(); closePop();
                 loadPatch(i);
             });
-        }
+        });
     });
 }
 function loadPatch(index) {
@@ -650,7 +657,7 @@ function loadPatch(index) {
     patchIndex = index;
     const patch = patches[index];
     const name = new TextEncoder().encode(patch.name);
-    const buffer = new ArrayBuffer(4 + name.length + PATCH_PARAMS * 4);
+    const buffer = new ArrayBuffer(4 + name.length + PATCH_PARAMS * 4 + 2);
     const view = new DataView(buffer);
     view.setUint8(0, PAGE.PATCH);
     view.setUint16(2, name.length, true);
@@ -658,6 +665,7 @@ function loadPatch(index) {
     for (let i = 0; i < PATCH_PARAMS; i++) {
         view.setInt32(4 + name.length + 4 * i, patch.values[i] ?? param(i).def, true);
     }
+    view.setUint16(4 + name.length + PATCH_PARAMS * 4, patch.ver || 0, true); // .sy1 version for legacy conversion
     post(buffer);
     patchName = patch.name;
     if (window.updateLcdName) {window.updateLcdName();}
@@ -709,7 +717,6 @@ addEventListener("message", e => {
         case PLUGIN.ACTIVITY: {
             meterPeakL = view.getFloat32(16, true);
             meterPeakR = view.getFloat32(20, true);
-            meterVoices = view.getUint8(1);
             drawMeter();
             break;
         }
@@ -717,24 +724,28 @@ addEventListener("message", e => {
 });
 
 // --- output meter -------------------------------------------------------------------------------------------------
-let meterPeakL = 0, meterPeakR = 0, meterVoices = 0, meterHold = 0;
+let meterPeakL = 0, meterPeakR = 0, meterHold = 0;
 function drawMeter() {
     const canvas = document.getElementById("meter");
     if (!canvas) {return;}
+    canvas.width = 52; canvas.height = 54;
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#24272F";
-    ctx.fillRect(0, 0, 60, 50);
+    ctx.fillRect(0, 0, 52, 54);
+    ctx.fillStyle = "#73F2FF";
+    ctx.font = "7px Verdana";
+    ctx.fillText("out", 3, 8);
     const peak = Math.max(meterPeakL, meterPeakR);
     const db = peak <= 0 ? -Infinity : 20 * Math.log10(peak);
     const level = Math.max(0, Math.min(1, (db + 60) / 60));
     meterHold = Math.max(meterHold, level);
     ctx.fillStyle = "#73F2FF";
-    ctx.fillRect(4, 44 - level * 38, 22, level * 38);
+    ctx.fillRect(4, 48 - level * 32, 20, level * 32);
     ctx.fillStyle = "#fff";
-    ctx.fillRect(4, 44 - meterHold * 38, 22, 1);
-    ctx.fillStyle = "#5CF266";
-    ctx.font = "9px monospace";
-    ctx.fillText(meterVoices + "v", 34, 20);
+    ctx.fillRect(4, 48 - meterHold * 32, 20, 1);
+    ctx.fillStyle = "#9aa";
+    ctx.font = "8px monospace";
+    ctx.fillText(db === -Infinity ? "-inf" : db.toFixed(0), 28, 46);
     meterHold = Math.max(0, meterHold - 0.02);
 }
 
@@ -758,8 +769,10 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
-fetch("patches.json").then(r => r.ok ? r.json() : {patches: []}).then(json => {
-    patches = json.patches || [];
+fetch("patches.json").then(r => r.ok ? r.json() : {banks: []}).then(json => {
+    // {"banks": [{"name", "patches": [{"name", "ver", "values"}]}]} — flattened, each patch keeps its bank
+    patches = (json.banks ?? []).flatMap(bank => (bank.patches ?? []).map(p => ({...p, bank: bank.name})));
+    if (patches.length === 0 && Array.isArray(json.patches)) {patches = json.patches;}
 }).catch(() => {patches = [];});
 
 msg(PAGE.HELLO, 4);

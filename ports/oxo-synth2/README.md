@@ -13,8 +13,9 @@ render path — so `oxo_synth2_clap.cpp` is only the wrapper:
   16-sample sub-block grid, all other events are sample-accurate; the plugin sleeps in silence. WASI-only imports.
 - `ui/index.html`: the Synth2 panel redrawn in HTML/SVG on its 770x560 canvas (same sections and widget places as
   `Shared/SynthPanelView.swift`; the SwiftUI editor itself is mac/iOS-only and stays there). Talks to the plugin
-  over binary messages (see the top of `oxo_synth2_clap.cpp`), loads the factory bank from `ui/patches.json`
-  (built from upstream's first-party `Synth2 Factory` by `patches.py`).
+  over binary messages (see the top of `oxo_synth2_clap.cpp`), loads the patch banks from `ui/patches.json`
+  (built by `patches.py` from the banks upstream's own installers ship: `Synth2 Factory` + `Synth2 Starter
+  Banks`; third-party `.sy1` banks from the web are not bundled — their designers license them nowhere).
 
 Build: `scripts/build-oxo-synth2.sh` (Emscripten, fetches the pinned engine, runs `check.mjs`, packs
 `build/oxo-synth2/oxo-synth2.wclap.tar.gz`). Test in the test host:

@@ -92,7 +92,7 @@ enum Page : uint8_t
     pageSet = 4,    // u32 id at 4, f64 value at 8 (the native value)
     pageEnd = 5,    // u32 id at 4
     pageHover = 6,  // u32 id at 4, 0xffffffff for none
-    pagePatch = 8,  // u16 name length at 2, name bytes at 4, then kParamCount x int32 values
+    pagePatch = 8,  // u16 name length at 2, name bytes at 4, then kParamCount x int32 values, optional u16 .sy1 version
     pageInit = 9,   // the INIT patch
     pagePanic = 10  // all notes off
 };
@@ -659,6 +659,13 @@ struct OxoSynth2
                     int32_t v;
                     std::memcpy (&v, at + 4 * i, 4);
                     values[i] = ClampValue (i, v);
+                }
+                // optional u16 .sy1 version after the values: legacy versions convert exactly like the original
+                if (size >= 4 + nameLength + kParamCount * 4 + 2)
+                {
+                    const int version = at[kParamCount * 4] | at[kParamCount * 4 + 1] << 8;
+                    if (version > 0 && version < 112)
+                        ConvertLegacy (values, version);
                 }
                 std::string name (reinterpret_cast<const char*> (data + 4), nameLength);
                 applyPatch (values, name.c_str(), true);

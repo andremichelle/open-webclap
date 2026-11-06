@@ -16,7 +16,7 @@ under its own copyright line below. The bundle contains no JUCE.
 
 | Component | Copyright | License |
 |---|---|---|
-| [oxo_synth2](https://github.com/chab/oxo_synth2) (the `EngineCore` engine, unmodified, and the `Synth2 Factory` bank the page ships as `ui/patches.json`) | 2025-2026 chab | MIT |
+| [oxo_synth2](https://github.com/chab/oxo_synth2) (the `EngineCore` engine, unmodified, and the patch banks its own installers ship — `Synth2 Factory` and `Synth2 Starter Banks` — which the page loads as `ui/patches.json`) | 2025-2026 chab | MIT |
 | WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/oxo-synth2`) | 2026 André Michelle | MIT |
 | WASI shim ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/webclap/wasi_shim.cpp`) | 2026 André Michelle | MIT |
 | [CLAP](https://github.com/free-audio/clap) headers | 2014-2022 Alexandre Bique | MIT |

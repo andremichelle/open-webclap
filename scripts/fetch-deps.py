@@ -251,7 +251,7 @@ def zl_filter(path):
 # and the first-party factory bank the bundle's page ships as loadable patches
 DEPS += [
     ("oxo-synth2", "chab/oxo_synth2", "5bce0fddf930b8bea1d7c9ec09cc08bb8f891e8a",
-     lambda p: p.startswith(("EngineCore/", "Shared/Resources/Synth2 Factory/"))
+     lambda p: p.startswith(("EngineCore/", "Shared/Resources/Synth2 Factory/", "Shared/Resources/Synth2 Starter Banks/"))
      or p in ("LICENSE", "README.md", "Identity.xcconfig")),
 ]
 
