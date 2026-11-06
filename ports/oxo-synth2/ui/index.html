@@ -45,11 +45,11 @@
     .knob.active .klabel { color: #000; font-weight: bold; }
     /* toggle / cycler buttons */
     .tbtn { position: absolute; box-sizing: border-box; background: var(--button); border: 1px solid #000;
-            border-radius: 2px; color: var(--ink); font-size: 8px; line-height: 16px; text-align: center;
+            border-radius: 2px; color: #D8D8C8; font-size: 8px; line-height: 16px; text-align: center;
             cursor: pointer; white-space: nowrap; overflow: hidden; }
     .tbtn .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
                  background: #2A2A26; margin-right: 3px; vertical-align: 1px; }
-    .tbtn.on { color: #111; font-weight: bold; }
+    .tbtn.on { color: #111; font-weight: bold; background: #C8C8B0; }
     .tbtn.on .dot { background: var(--led); box-shadow: 0 0 4px var(--led); }
     /* cyan value display */
     .disp { position: absolute; box-sizing: border-box; background: var(--display); border: 1px solid #000;
@@ -163,13 +163,14 @@ function showReadout(text) {
 }
 
 // --- widgets -----------------------------------------------------------------------------------------------------
+let layer = null; // the section the next widgets belong to (section() sets it; the stage is the default)
 function el(tag, cls, parent, x, y, w, h) {
     const e = document.createElement(tag);
     if (cls) {e.className = cls;}
     e.style.left = x + "px"; e.style.top = y + "px";
     if (w !== undefined) {e.style.width = w + "px";}
     if (h !== undefined) {e.style.height = h + "px";}
-    (parent || stage).appendChild(e);
+    (parent || layer || stage).appendChild(e);
     return e;
 }
 // an SVG arc path, angles in degrees, 0 = up, clockwise
@@ -318,27 +319,27 @@ function addWaves(id, items, x, y) {
     widgets.push({id, update() {for (const c of cells) {c.cell.classList.toggle("sel", values[id] === c.value);}}});
     return g;
 }
-// a row of wave icons cycled by click (lfo types)
+// one wave-icon cell that cycles through the shapes on click (the LFO types; WaveCycle in SynthControls)
 function addWaveCycle(id, shapes, x, y) {
-    const g = el("div", "waves", null, x, y);
-    g.style.gridTemplateColumns = `repeat(${shapes.length}, 15px)`;
-    const cells = shapes.map((shape, i) => {
-        const c = el("div", "cell", g);
-        c.innerHTML = waveSvg(shape);
-        c.addEventListener("click", e => {
-            if (e.ctrlKey) {return;}
-            sendGesture(PAGE.BEGIN, id);
-            setLocal(id, param(id).min + i);
-            sendGesture(PAGE.END, id);
-        });
-        c.addEventListener("pointerenter", () => sendHover(id));
-        c.addEventListener("pointerleave", () => sendHover(0xffffffff));
-        return {index: i, cell: c};
+    const c = el("div", "waves", null, x - 13, y - 8.5, 26, 17);
+    const cell = el("div", "cell sel", c);
+    cell.style.width = "24px"; cell.style.height = "15px";
+    c.style.display = "block";
+    c.addEventListener("click", e => {
+        if (e.ctrlKey) {return;}
+        const p = param(id);
+        const step = e.shiftKey ? -1 : 1;
+        sendGesture(PAGE.BEGIN, id);
+        setLocal(id, ((values[id] - p.min + step) % shapes.length + shapes.length) % shapes.length + p.min);
+        sendGesture(PAGE.END, id);
     });
+    c.addEventListener("pointerenter", () => sendHover(id));
+    c.addEventListener("pointerleave", () => sendHover(0xffffffff));
     widgets.push({id, update() {
-        for (const c of cells) {c.cell.classList.toggle("sel", values[id] === param(id).min + c.index);}
+        const i = Math.max(0, Math.min(shapes.length - 1, values[id] - param(id).min));
+        cell.innerHTML = waveSvg(shapes[i]);
     }});
-    return g;
+    return c;
 }
 // LED radio: options [{value, label}], vertical or horizontal
 function addLeds(id, options, x, y, horizontal = false, showLabels = true, rowHeight = 13) {
@@ -451,6 +452,7 @@ function setLocal(id, v) {
 function section(title, x, y, w, h) {
     const s = el("div", "section", stage, x, y, w, h);
     el("div", "title", s).textContent = title;
+    layer = s; // the following widgets use section-relative coordinates, like SwiftUI's children
     return s;
 }
 const K = (id, label, x, y, size) => addKnob(id, label, x, y, size); // center at (x, y+6.5)
@@ -597,7 +599,8 @@ function buildPanel() {
     D(93, 24, 138, 26); addLabel("num", 24, 155);
     K(75, "det", 68, 136); K(92, "phase", 106, 136); K(84, "sprd", 144, 136); K(85, "pitch", 182, 136);
 
-    // Bottom bar: volume knob, LCD, meter, menu
+    // Bottom bar: volume knob, LCD, meter, menu (stage-level, absolute coordinates)
+    layer = null;
     const bottom = el("div", null, stage); bottom.id = "bottom";
     addKnob(99, "vol", 34, 519, 26);
     const lcd = el("div", null, bottom); lcd.id = "lcd";
