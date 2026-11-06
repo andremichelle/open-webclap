@@ -185,8 +185,8 @@ class Host {
                 view.setInt16(pointer + 28, -1, true)
                 view.setFloat64(pointer + 40, event.value, true)
             } else if (event.type === EVENT.MIDI) {
-                view.setUint32(pointer, 32, true)
-                this.bytes.set(event.data, pointer + 16)
+                view.setUint32(pointer, 24, true) // clap_event_midi: header, port_index @16, data @18
+                this.bytes.set(event.data, pointer + 18)
             } else {
                 view.setUint32(pointer, 40, true)
                 view.setInt32(pointer + 16, -1, true)
@@ -479,12 +479,21 @@ assert.equal(host.hovered >>> 0, 0xffffffff)
     result = host.run([on(start + 10, 64), off(start + 60, 64)], start + 8 * BLOCK)
     assert.ok(rms(result.left) > 1e-4, "a short note sounds")
 
-    // MIDI dialect: note on/off and CC 64 (sustain) through CLAP_EVENT_MIDI
+    // MIDI dialect: note on/off and CC 64 (sustain) through CLAP_EVENT_MIDI; release 0 so the note
+    // survives only while the pedal is down, and the effects off so no tail rings after it
+    // (the earlier legacy-chunk load left every parameter at 64, delay included)
+    host.run([param(host.position, 28, 0), param(host.position, 65, 0), param(host.position, 66, 0),
+              param(host.position, 77, 0)], host.position + BLOCK)
     host.run([midi(host.position, [0x90, 60, 100])], host.position + 2 * BLOCK)
+    result = host.run([], host.position + BLOCK)
+    assert.ok(rms(result.left) > 1e-4, "MIDI note on sounds")
     result = host.run([midi(host.position, [0xb0, 64, 127]), midi(host.position + BLOCK / 2, [0x80, 60, 0])],
                       host.position + 2 * BLOCK)
     assert.ok(rms(result.left) > 1e-5, "sustain holds the note after note off")
-    host.run([midi(host.position, [0xb0, 64, 0]), midi(host.position, [0xb0, 123, 0])], host.position + SAMPLE_RATE)
+    host.run([midi(host.position, [0xb0, 64, 0]), midi(host.position, [0xb0, 123, 0])], host.position + 4 * BLOCK)
+    result = host.run([], host.position + BLOCK)
+    assert.equal(firstSound(result.left), -1, "pedal up and all notes off silence it")
+    host.run([], host.position + SAMPLE_RATE)
 
     // reset silences at once
     host.run([on(host.position, 48), on(host.position, 55)], host.position + 4 * BLOCK)
