@@ -39,7 +39,7 @@
     button.active {color: var(--background); background: var(--blue)}
     button.playing {box-shadow: inset 0 0 0 1px var(--blue)}
     button:disabled {color: var(--shadow); background: rgba(255, 255, 255, 0.02); cursor: default}
-    .choice::after {content: "▾"; margin-left: 0.5em; color: var(--shadow); font-size: 0.8em}
+    body.window .choice::after {content: "▾"; margin-left: 0.5em; color: var(--shadow); font-size: 0.8em}
     .scrub {display: inline-flex; align-items: baseline; justify-content: center; gap: 0.2em; min-width: 4em;
         padding: 0.35em 0.5em; border-radius: 2px; background: rgba(0, 0, 0, 0.18); color: var(--gray);
         cursor: ns-resize; white-space: nowrap;
@@ -62,18 +62,13 @@
     .param {display: flex; flex-direction: column; align-items: stretch; gap: 3px}
     .param > h5 {margin: 0; font-weight: 300; font-size: 9px; letter-spacing: 0.08em; color: var(--cream); text-align: center}
 
-    /* device panel, 352 x 176 */
+    /* device panel: the shared card (modules/opendaw-page, loaded in panel mode), the hex grid its display */
     /* no background of its own: openDAW's device panel shows through */
     html:has(body.panel) {background: transparent}
-    body.panel {display: grid; grid-template-columns: 176px 1fr; font-size: 11px; background: transparent}
-    body.panel canvas.grid {width: 176px; height: 176px; cursor: pointer}
-    .side {display: flex; flex-direction: column; gap: 6px; padding: 8px 8px 8px 2px; min-width: 0}
-    .side .head {display: flex; justify-content: space-between; align-items: baseline}
-    .side .head span:last-child {color: var(--shadow); font-size: 10px}
-    .side .seg > button {padding: 0.45em 0; flex: 1 1 0}
-    .side .info {font-size: 10px}
-    /* as wide as its text, rounded, a bit taller than the pattern buttons */
-    .side .big {align-self: flex-start; padding: 6px 14px; border-radius: 4px; margin-bottom: 10px}
+    body.panel {background: transparent}
+    body.panel .card {background: transparent}
+    body.panel .screen {width: 160px}
+    body.panel canvas.grid {width: 160px; height: 160px; cursor: pointer}
     .grow {flex: 1}
 
     /* window */
@@ -88,7 +83,7 @@
     .stage {position: relative; min-width: 0; min-height: 0; background: var(--panel); border-radius: 3px}
     .stage canvas {position: absolute; inset: 0; width: 100%; height: 100%}
     /* the side panel: the properties scroll, the tile clipboard and the hint stay at the bottom */
-    .column {display: flex; flex-direction: column; gap: 4px; min-height: 0}
+    body.window .column {display: flex; flex-direction: column; gap: 4px; min-height: 0}
     .props {flex: 1; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; min-height: 0; padding-right: 6px;
         scrollbar-gutter: stable}
     /* a light, rounded thumb on a clear track (Chrome uses these only without scrollbar-color / scrollbar-width) */
@@ -133,14 +128,13 @@
     .compass button.keep::after {content: ""; display: block; width: 6px; height: 6px; margin: auto; border-radius: 50%;
         background: currentColor}
 </style>
+<!-- the shared device panel styles, switched on in panel mode -->
+<link rel="stylesheet" href="opendaw-page/panel.css" media="not all" id="panel-css">
 </head>
 <body>
-<canvas class="grid panel-only"></canvas>
-<div class="side panel-only">
-    <div class="head"><span class="logo">HIVE</span></div>
-    <div class="seg patterns"></div>
-    <div class="grow"></div>
-    <button class="big">Edit</button>
+<div class="card panel-only">
+    <div class="screen"><canvas class="grid"></canvas></div>
+    <div class="group"></div>
 </div>
 <div class="bar window-only"></div>
 <div class="stage window-only">
@@ -157,10 +151,13 @@
         <div>Values: drag up and down (<b>⇧</b> fine), double-click types</div>
     </div>
 </div>
+<script src="opendaw-page/panel.js"></script>
 <script>
 // ---------------------------------------------------------------- protocol, see plugin/hive.cpp
-const PAGE_HELLO = 1, PAGE_POLL = 2, PAGE_PARAM_BEGIN = 3, PAGE_PARAM_SET = 4, PAGE_PARAM_END = 5, PAGE_HOVER = 6
-const PAGE_SHOW_WINDOW = 7, PAGE_TILE = 8, PAGE_HEADER = 9, PAGE_PATTERN = 10, PAGE_COMMIT = 11, PAGE_LIVE = 1
+// the shared messages (opendaw_page.h, OpenDAWPanel.PAGE), then Hive's own
+const PAGE_POLL = 1, PAGE_PARAM_BEGIN = 2, PAGE_PARAM_SET = 3, PAGE_PARAM_END = 4, PAGE_HOVER = 7
+const PAGE_HELLO = 8, PAGE_SHOW_WINDOW = 9, PAGE_TILE = 10, PAGE_HEADER = 11, PAGE_PATTERN = 12, PAGE_COMMIT = 13
+const PAGE_LIVE = 1
 const PLUGIN_SNAPSHOT = 1, PLUGIN_DELTA = 2, DELTA_PLAYING = 1, EDIT_TILE = 0
 const PATTERN = 0, GATE = 1, TRANSPOSE = 2, RATE = 3, PARAM_COUNT = 4, INVALID_ID = 0xffffffff
 const POLL_MILLIS = 33
@@ -357,13 +354,13 @@ window.addEventListener("message", event => {
 })
 
 // ---------------------------------------------------------------- drawing (panel and window)
-const grid = document.querySelector(panel ? "body > canvas.grid" : ".stage canvas.grid")
+const grid = document.querySelector(panel ? ".card canvas.grid" : ".stage canvas.grid")
 const layout = canvas => {
     const ratio = devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight
     if (canvas.width !== Math.round(w * ratio) || canvas.height !== Math.round(h * ratio)) {
         canvas.width = Math.round(w * ratio); canvas.height = Math.round(h * ratio)
     }
-    const R = pattern().header.size - 1, pad = panel ? 6 : 14
+    const R = pattern().header.size - 1, pad = panel ? 2 : 14
     const size = Math.min((w - pad * 2) / (Math.sqrt(3) * (2 * R + 1)), (h - pad * 2) / (3 * R + 2))
     return {ratio, w, h, size, cx: w / 2, cy: h / 2}
 }
@@ -900,7 +897,7 @@ const refresh = () => {
     if (dragging) {refreshDue = true; return}
     refreshDue = false
     if (panel) {
-        $(".patterns").replaceWith(patternButtons())
+        panelControls.update()
         return
     }
     if (!inside(cells[selected].q, cells[selected].r)) {selected = cellAt(0, 0)}
@@ -914,7 +911,6 @@ const refresh = () => {
 // editing on the grid: click selects, a drag draws a path (adds directions on a split)
 if (panel) {
     grid.addEventListener("click", () => post(new Uint8Array([PAGE_SHOW_WINDOW])))
-    $(".big").addEventListener("click", () => post(new Uint8Array([PAGE_SHOW_WINDOW])))
 } else {
     let path = null
     grid.addEventListener("pointerdown", e => {
@@ -974,6 +970,41 @@ if (panel) {
             clearTile()
         }
     })
+}
+
+// the device panel's controls (modules/opendaw-page): the pattern as a choice, rate, gate and transpose as knobs; a
+// click on the grid opens the editor
+const PANEL_PARAMS = {
+    pattern: {id: PATTERN, label: "Pattern", kind: "steps", low: 0, high: PATTERN_COUNT - 1,
+        labels: Array.from({length: PATTERN_COUNT}, (_, i) => String(i + 1))},
+    rate: {id: RATE, label: "Rate", kind: "int", low: 0, high: SPEEDS.length - 1},
+    gate: {id: GATE, label: "Gate", kind: "int", low: 5, high: 100},
+    transpose: {id: TRANSPOSE, label: "Transpose", kind: "int", low: -24, high: 24, bipolar: true}
+}
+const panelText = (key, value) => key === "pattern" ? String(value + 1) : key === "rate" ? SPEEDS[value]
+    : key === "gate" ? `${value}%` : `${value > 0 ? "+" : ""}${value} st`
+const panelControls = !panel ? null : OpenDAWPanel.controls({
+    param: key => PANEL_PARAMS[key],
+    get: key => state.values[PANEL_PARAMS[key].id],
+    set: (key, value) => {
+        const id = PANEL_PARAMS[key].id
+        state.values[id] = value
+        postParam(PAGE_PARAM_SET, id, value)
+        refresh()
+    },
+    text: panelText,
+    host: {
+        begin: id => {state.gesture = id; postParam(PAGE_PARAM_BEGIN, id)},
+        end: id => {postParam(PAGE_PARAM_END, id); state.gesture = INVALID_ID},
+        hover: id => hover(id ?? INVALID_ID)
+    }
+})
+if (panel) {
+    document.getElementById("panel-css").media = "all"
+    // the width the plugin declares for its panel (PANEL_WIDTH in hive.cpp)
+    $(".card").style.width = "266px"
+    panelControls.layout([{stack: [["pattern"]]},
+        {knobs: [["rate", "M"], ["gate", "M"], ["transpose", "M"]]}], $(".card .group"))
 }
 
 // frames: poll at most every 33 ms, the plugin answers only when something changed (always while playing)

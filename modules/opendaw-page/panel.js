@@ -2,9 +2,10 @@
 // layout of a card's controls, the drawing kit for displays and the bridge to the plugin. A plain script (no module),
 // so a page opened from file:// works too; it defines `OpenDAWPanel`. A port copies this folder next to its page.
 //
-// Controls work on parameters the page describes: {id, label, kind: "range" | "steps", low, high (steps), labels
-// (steps), bipolar (range)}. A range parameter's value is its knob position 0..1, a stepped one's the step. The page
-// keeps the values; the controls read and write them through the context they are made with.
+// Controls work on parameters the page describes: {id, label, kind, low, high, labels, bipolar}. Kinds: "range" a
+// knob position 0..1; "int" a whole number from low to high, on a knob (Gate 0..100, Transpose -24..24); "steps" a
+// choice from low to high, its labels shown. bipolar: the knob's arc starts at the top. The page keeps the values;
+// the controls read and write them through the context they are made with.
 "use strict"
 var OpenDAWPanel = (() => {
     const SIZES = {L: 44, M: 28, S: 20}
@@ -62,6 +63,12 @@ var OpenDAWPanel = (() => {
         const views = []
         const dragging = new Set()
         const update = () => views.forEach(view => view())
+        // a value as a knob position and back
+        const unitOf = (p, value) => p.kind === "range" ? value : (value - p.low) / (p.high - p.low)
+        const valueOf = (p, unit) => p.kind === "range" ? unit : p.low + Math.round(unit * (p.high - p.low))
+        // every value a parameter can show, for the width of its readout
+        const allValues = p => p.kind === "range" ? Array.from({length: 101}, (_, index) => index / 100)
+            : Array.from({length: Math.min(p.high - p.low, 1000) + 1}, (_, index) => p.low + index)
 
         // a vertical drag on the element changes a range parameter, one gesture; Shift or Alt for fine steps;
         // hovering reports the parameter, so openDAW's menu and value entry work on it
@@ -76,7 +83,7 @@ var OpenDAWPanel = (() => {
                     return
                 }
                 element.setPointerCapture(event.pointerId)
-                drag = {pointerId: event.pointerId, unit: get(key)}
+                drag = {pointerId: event.pointerId, unit: unitOf(p, get(key))}
                 element.classList.add("active")
                 dragging.add(key)
                 host.begin(p.id)
@@ -85,7 +92,8 @@ var OpenDAWPanel = (() => {
                 host.hover(p.id)
                 if (drag === null || event.pointerId !== drag.pointerId) {return}
                 drag.unit = clamp(drag.unit - event.movementY / 128 * (event.altKey || event.shiftKey ? 0.2 : 1.2), 0, 1)
-                set(key, drag.unit)
+                const value = valueOf(p, drag.unit)
+                if (value !== get(key)) {set(key, value)}
             })
             const end = () => {
                 if (drag === null) {return}
@@ -125,7 +133,7 @@ var OpenDAWPanel = (() => {
             const readout = Object.assign(document.createElement("div"), {className: "readout"})
             element.append(view.element, label, readout)
             views.push(() => {
-                view.update(get(key))
+                view.update(unitOf(p, get(key)))
                 readout.textContent = text(key, get(key))
             })
             draggable(element, key)
@@ -163,9 +171,7 @@ var OpenDAWPanel = (() => {
             element.innerHTML = `<span class="name"></span><span class="value"></span>`
             element.querySelector(".name").textContent = p.label
             const value = element.querySelector(".value")
-            const texts = p.kind === "steps"
-                ? Array.from({length: p.high - p.low + 1}, (_, index) => text(key, p.low + index))
-                : Array.from({length: 101}, (_, index) => text(key, index / 100))
+            const texts = allValues(p).map(value => text(key, value))
             value.style.minWidth = `${Math.max(...texts.map(text => text.length))}ch`
             views.push(() => {value.textContent = text(key, get(key))})
             draggable(element, key, () => step(key, get(key) >= p.high ? p.low : get(key) + 1))

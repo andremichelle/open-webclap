@@ -1,11 +1,11 @@
 // Hive: a note sequencer on a hexagonal grid inside a hexagon (CLAP feature "note-effect"). Spawn tiles start cursors
 // on a pulse or on incoming notes, cursors walk the tiles' arrows one step at a time, tiles play notes when a cursor
 // enters, sinks swallow them. Runs on the host's beat position. openDAW shows the page in its device panel (feature
-// "opendaw:device-panel", extension "opendaw.device-panel/1").
+// "opendaw:device-panel", extension "opendaw.device-panel/1"); the panel, the page's shared messages and the gestures
+// come from modules/opendaw-clap/opendaw_page.h, the panel's controls from modules/opendaw-page.
 
 #include <clap/clap.h>
-#include <clap/ext/draft/webview.h>
-#include <clap/ext/draft/param-hovered.h>
+#include "opendaw_page.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -49,34 +49,22 @@ enum : uint8_t {TRIGGER_PULSE = 0, TRIGGER_NOTE = 1, TRIGGER_BOTH = 2, TRIGGER_C
 #define GUI_HEIGHT 640
 #define STATE_VERSION 3
 
-// message types, see page/index.html
-#define PAGE_HELLO 1
-#define PAGE_POLL 2
-#define PAGE_PARAM_BEGIN 3
-#define PAGE_PARAM_SET 4
-#define PAGE_PARAM_END 5
-#define PAGE_HOVER 6
-#define PAGE_SHOW_WINDOW 7
-#define PAGE_TILE 8
-#define PAGE_HEADER 9
-#define PAGE_PATTERN 10
-#define PAGE_COMMIT 11
+// the device panel at 176 px: the hex grid (160 px) and the controls, as page/index.html lays them out
+#define PANEL_WIDTH 266
+
+// Hive's own messages, see page/index.html; the shared ones (poll, parameters, hover) are opendaw_page.h's
+#define PAGE_HELLO 8
+#define PAGE_SHOW_WINDOW 9
+#define PAGE_TILE 10
+#define PAGE_HEADER 11
+#define PAGE_PATTERN 12
+#define PAGE_COMMIT 13
 #define PAGE_LIVE 1
 #define PLUGIN_SNAPSHOT 1
 #define PLUGIN_DELTA 2
 #define DELTA_PLAYING 1
 #define EDIT_TILE 0
 #define EDIT_HEADER 1
-
-#define OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL "opendaw:device-panel"
-// the panel's width at openDAW's 176 px (panel_get_width), read from its cloud index before the plugin loads
-#define OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH "opendaw:device-panel-width:352"
-#define OPENDAW_EXT_DEVICE_PANEL "opendaw.device-panel/1"
-
-typedef struct opendaw_plugin_device_panel {
-    int32_t (*get_uri)(const clap_plugin_t *plugin, char *uri, uint32_t capacity);
-    bool (*get_width)(const clap_plugin_t *plugin, uint32_t height, uint32_t *width);
-} opendaw_plugin_device_panel_t;
 
 // one tile, also its layout in the saved state and in the page's messages (16 bytes)
 struct Tile {
@@ -154,19 +142,10 @@ struct Edit {
     uint16_t index;
 };
 
-struct OutEvent {
-    uint16_t type;
-    clap_id id;
-    double value;
-};
-
 struct Hive {
     clap_plugin_t plugin;
     const clap_host_t *host;
-    const clap_host_params_t *host_params;
-    const clap_host_state_t *host_state;
-    const clap_host_webview_t *host_webview;
-    const clap_host_param_hovered_t *host_hovered;
+    opendaw::PageHost page; // the host's params, state, webview and hovered parameter
     const clap_host_gui_t *host_gui;
     Pattern patterns[PATTERN_COUNT];
     uint8_t pattern, gate, rate; // the parameters
@@ -196,8 +175,7 @@ struct Hive {
     uint32_t changed;
     bool snapshot_due;
     bool status_due;
-    OutEvent out_events[OUT_EVENTS];
-    uint32_t out_read, out_write;
+    opendaw::OutEvents<OUT_EVENTS> out_events; // the page's gestures and values for the host
 };
 
 // cells: axial (q, r) within MAX_R of the centre, an index per cell, a lookup per coordinate
@@ -703,50 +681,13 @@ static void handle_event(Hive *hive, const clap_event_header_t *header) {
     }
 }
 
-// ------------------------------------------------------------------------------------------------ out events (page edits)
-
-static void push_param(const clap_output_events_t *out, clap_id id, double value) {
-    clap_event_param_value_t event = {};
-    event.header = {sizeof(event), 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE, 0};
-    event.param_id = id;
-    event.note_id = -1;
-    event.port_index = -1;
-    event.channel = -1;
-    event.key = -1;
-    event.value = value;
-    out->try_push(out, &event.header);
-}
-
-static void queue_out_event(Hive *hive, uint16_t type, clap_id id, double value) {
-    if (hive->out_write - hive->out_read >= OUT_EVENTS) {return;}
-    hive->out_events[hive->out_write % OUT_EVENTS] = OutEvent{type, id, value};
-    hive->out_write++;
-}
-
-static void drain_out_events(Hive *hive, const clap_output_events_t *out) {
-    while (hive->out_read != hive->out_write) {
-        const OutEvent &event = hive->out_events[hive->out_read % OUT_EVENTS];
-        if (event.type == CLAP_EVENT_PARAM_VALUE) {
-            push_param(out, event.id, event.value);
-        } else {
-            clap_event_param_gesture_t gesture = {};
-            gesture.header = {sizeof(gesture), 0, CLAP_CORE_EVENT_SPACE_ID, event.type, 0};
-            gesture.param_id = event.id;
-            out->try_push(out, &gesture.header);
-        }
-        hive->out_read++;
-    }
-}
 
 // ------------------------------------------------------------------------------------------------ plugin
 
 static bool hive_init(const clap_plugin_t *plugin) {
     Hive *hive = hive_of(plugin);
     const clap_host_t *host = hive->host;
-    hive->host_params = static_cast<const clap_host_params_t *>(host->get_extension(host, CLAP_EXT_PARAMS));
-    hive->host_state = static_cast<const clap_host_state_t *>(host->get_extension(host, CLAP_EXT_STATE));
-    hive->host_webview = static_cast<const clap_host_webview_t *>(host->get_extension(host, CLAP_EXT_WEBVIEW));
-    hive->host_hovered = static_cast<const clap_host_param_hovered_t *>(host->get_extension(host, CLAP_EXT_PARAM_HOVERED));
+    hive->page.init(host);
     hive->host_gui = static_cast<const clap_host_gui_t *>(host->get_extension(host, CLAP_EXT_GUI));
     return true;
 }
@@ -780,7 +721,7 @@ static clap_process_status hive_process(const clap_plugin_t *plugin, const clap_
     const clap_output_events_t *out = process->out_events;
     const clap_input_events_t *in = process->in_events;
     const uint32_t count = in->size(in);
-    drain_out_events(hive, out);
+    hive->out_events.drain(out);
     const clap_event_transport_t *transport = process->transport;
     const uint32_t needed = CLAP_TRANSPORT_IS_PLAYING | CLAP_TRANSPORT_HAS_BEATS_TIMELINE | CLAP_TRANSPORT_HAS_TEMPO;
     const bool playing = transport != nullptr && (transport->flags & needed) == needed && transport->tempo > 0.0;
@@ -916,7 +857,7 @@ static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id, const 
 
 static void params_flush(const clap_plugin_t *plugin, const clap_input_events_t *in, const clap_output_events_t *out) {
     Hive *hive = hive_of(plugin);
-    drain_out_events(hive, out);
+    hive->out_events.drain(out);
     const uint32_t count = in->size(in);
     for (uint32_t index = 0; index < count; index++) {
         const clap_event_header_t *header = in->get(in, index);
@@ -1011,7 +952,7 @@ static void send_snapshot(Hive *hive) {
         std::memcpy(message + 8 + id * 8, &value, 8);
     }
     std::memcpy(message + 8 + PARAM_COUNT * 8, hive->patterns, sizeof(hive->patterns));
-    hive->host_webview->send(hive->host, message, sizeof(message));
+    hive->page.send(message, sizeof(message));
     hive->changed = 0;
     hive->edit_count = 0;
     hive->snapshot_due = false;
@@ -1075,7 +1016,7 @@ static void send_delta(Hive *hive) {
         message[size++] = hit.heading;
         message[size++] = hit.edge;
     }
-    hive->host_webview->send(hive->host, message, size);
+    hive->page.send(message, size);
     hive->changed = 0;
     hive->edit_count = 0;
     hive->edge_hit_count = 0;
@@ -1098,52 +1039,35 @@ static void record_edit(Hive *hive, uint8_t pattern, uint8_t type, uint16_t inde
 // a page edit: live while a drag goes on (the host hears of it with the commit at the end), else at once
 static void edited(Hive *hive, uint8_t flags, uint8_t pattern) {
     if (pattern == hive->active) {hive->spawners_dirty = true;}
-    if ((flags & PAGE_LIVE) == 0 && hive->host_state != nullptr) {hive->host_state->mark_dirty(hive->host);}
+    if ((flags & PAGE_LIVE) == 0 && hive->page.state != nullptr) {hive->page.state->mark_dirty(hive->page.host);}
 }
 
-static void page_param(Hive *hive, uint16_t type, const uint8_t *bytes, uint32_t size) {
-    clap_id id;
-    if (size < 8) {return;}
-    std::memcpy(&id, bytes + 4, 4);
-    if (id >= PARAM_COUNT) {return;}
-    if (type == CLAP_EVENT_PARAM_VALUE) {
-        double value;
-        if (size < 16) {return;}
-        std::memcpy(&value, bytes + 8, 8);
-        set_value(hive, id, value);
-        if (hive->host_state != nullptr) {hive->host_state->mark_dirty(hive->host);}
-    }
-    queue_out_event(hive, type, id, value_of(hive, id));
-    if (hive->host_params != nullptr) {hive->host_params->request_flush(hive->host);}
-}
+// the page's shared messages (opendaw_page.h): parameter gestures and values, the hovered parameter, polls answered
+// with the changes since the last (send_delta)
+struct PageOf {
+    Hive *hive;
+    bool has(clap_id id) const {return id < PARAM_COUNT;}
+    void set(clap_id id, double value) {set_value(hive, id, value);}
+    double value(clap_id id) const {return value_of(hive, id);}
+    void status() {send_delta(hive);}
+};
 
 static bool webview_receive(const clap_plugin_t *plugin, const void *buffer, uint32_t size) {
     Hive *hive = hive_of(plugin);
     const uint8_t *bytes = static_cast<const uint8_t *>(buffer);
-    if (size < 1 || hive->host_webview == nullptr) {return false;}
+    if (size < 1 || hive->page.webview == nullptr) {return false;}
     switch (bytes[0]) {
+        case opendaw::PAGE_POLL:
+        case opendaw::PAGE_PARAM_BEGIN:
+        case opendaw::PAGE_PARAM_SET:
+        case opendaw::PAGE_PARAM_END:
+        case opendaw::PAGE_HOVER: {
+            PageOf page{hive};
+            return opendaw::receive(page, hive->page, hive->out_events, buffer, size);
+        }
         case PAGE_HELLO:
             send_snapshot(hive);
             return true;
-        case PAGE_POLL:
-            send_delta(hive);
-            return true;
-        case PAGE_PARAM_BEGIN:
-            page_param(hive, CLAP_EVENT_PARAM_GESTURE_BEGIN, bytes, size);
-            return true;
-        case PAGE_PARAM_SET:
-            page_param(hive, CLAP_EVENT_PARAM_VALUE, bytes, size);
-            return true;
-        case PAGE_PARAM_END:
-            page_param(hive, CLAP_EVENT_PARAM_GESTURE_END, bytes, size);
-            return true;
-        case PAGE_HOVER: {
-            clap_id id;
-            if (size < 8 || hive->host_hovered == nullptr) {return false;}
-            std::memcpy(&id, bytes + 4, 4);
-            hive->host_hovered->update(hive->host, id < PARAM_COUNT ? id : CLAP_INVALID_ID);
-            return true;
-        }
         case PAGE_SHOW_WINDOW:
             return hive->host_gui != nullptr && hive->host_gui->request_show(hive->host);
         case PAGE_TILE: {
@@ -1178,7 +1102,7 @@ static bool webview_receive(const clap_plugin_t *plugin, const void *buffer, uin
             return true;
         }
         case PAGE_COMMIT:
-            if (hive->host_state != nullptr) {hive->host_state->mark_dirty(hive->host);}
+            if (hive->page.state != nullptr) {hive->page.state->mark_dirty(hive->page.host);}
             return true;
         default:
             return false;
@@ -1186,26 +1110,6 @@ static bool webview_receive(const clap_plugin_t *plugin, const void *buffer, uin
 }
 
 static const clap_plugin_webview_t webview = {webview_get_uri, webview_get_resource, webview_receive};
-
-static bool gui_is_api_supported(const clap_plugin_t *plugin, const char *api, bool is_floating) {
-    (void) plugin; (void) is_floating;
-    return std::strcmp(api, CLAP_WINDOW_API_WEBVIEW) == 0;
-}
-
-static bool gui_get_preferred_api(const clap_plugin_t *plugin, const char **api, bool *is_floating) {
-    (void) plugin;
-    *api = CLAP_WINDOW_API_WEBVIEW;
-    *is_floating = false;
-    return true;
-}
-
-static bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_floating) {
-    return gui_is_api_supported(plugin, api, is_floating);
-}
-
-static void gui_destroy(const clap_plugin_t *plugin) {(void) plugin;}
-
-static bool gui_set_scale(const clap_plugin_t *plugin, double scale) {(void) plugin; (void) scale; return false;}
 
 static bool gui_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) {
     (void) plugin;
@@ -1230,20 +1134,10 @@ static bool gui_set_size(const clap_plugin_t *plugin, uint32_t width, uint32_t h
     return width == GUI_WIDTH && height == GUI_HEIGHT;
 }
 
-static bool gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) {(void) plugin; (void) window; return true;}
-
-static bool gui_set_transient(const clap_plugin_t *plugin, const clap_window_t *window) {(void) plugin; (void) window; return false;}
-
-static void gui_suggest_title(const clap_plugin_t *plugin, const char *title) {(void) plugin; (void) title;}
-
-static bool gui_show(const clap_plugin_t *plugin) {(void) plugin; return true;}
-
-static bool gui_hide(const clap_plugin_t *plugin) {(void) plugin; return true;}
-
 static const clap_plugin_gui_t gui = {
-    gui_is_api_supported, gui_get_preferred_api, gui_create, gui_destroy, gui_set_scale, gui_get_size, gui_can_resize,
-    gui_get_resize_hints, gui_adjust_size, gui_set_size, gui_set_parent, gui_set_transient, gui_suggest_title, gui_show,
-    gui_hide
+    opendaw::gui_is_api_supported, opendaw::gui_get_preferred_api, opendaw::gui_create, opendaw::gui_destroy,
+    opendaw::gui_set_scale, gui_get_size, gui_can_resize, gui_get_resize_hints, gui_adjust_size, gui_set_size,
+    opendaw::gui_set_parent, opendaw::gui_set_transient, opendaw::gui_suggest_title, opendaw::gui_show, opendaw::gui_hide
 };
 
 static int32_t panel_get_uri(const clap_plugin_t *plugin, char *uri, uint32_t capacity) {
@@ -1254,7 +1148,7 @@ static int32_t panel_get_uri(const clap_plugin_t *plugin, char *uri, uint32_t ca
 
 static bool panel_get_width(const clap_plugin_t *plugin, uint32_t height, uint32_t *width) {
     (void) plugin;
-    *width = height * 2;
+    *width = opendaw::panel_width_at(PANEL_WIDTH, height);
     return true;
 }
 
@@ -1275,7 +1169,7 @@ static const void *hive_get_extension(const clap_plugin_t *plugin, const char *i
 static void hive_on_main_thread(const clap_plugin_t *plugin) {(void) plugin;}
 
 static const char *features[] = {
-    CLAP_PLUGIN_FEATURE_NOTE_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH, nullptr
+    CLAP_PLUGIN_FEATURE_NOTE_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH(PANEL_WIDTH), nullptr
 };
 
 static const clap_plugin_descriptor_t descriptor = {

@@ -13,7 +13,8 @@ scripts/build-hive.sh   # builds build/hive/web/hive.wclap, packs it, runs check
 ```
 build.sh        builds module.wasm and copies the page and LICENSE into $OUT (CLAP headers in $CLAP_INCLUDE)
 plugin/         hive.cpp, the whole plugin
-page/           index.html, the device panel (?panel) and the window in one page
+page/           index.html, the device panel (?panel) and the window in one page; opendaw-page links the shared
+                controls (modules/opendaw-page)
 check.mjs       a minimal CLAP host in node with a transport: timing, durations, rate, a groove's shifted ranges,
                 note triggers, pattern changes, stop and jumps, repeatability, state and page traffic
 ```
@@ -39,8 +40,10 @@ sends its tiles live and tells the host once at the end, so a drawn path is one 
 
 ## The page
 
-- `?panel` is openDAW's device panel (352 x 176): the grid with the cursors, the patterns and Edit, which asks the
-  host to open the window. Without the query it is the window, 1000 x 640.
+- `?panel` is openDAW's device panel (266 x 176) in the design of
+  [Device panel design](../../docs/device-panel-design.md), on the shared controls (`modules/opendaw-page`): the grid
+  with the cursors as its display (a click asks the host to open the window), the pattern as a choice, Rate, Gate
+  and Transpose as knobs. Without the query it is the window, 1000 x 640.
 - Traffic: a snapshot on hello (21,728 bytes); then, polled at most every 33 ms, deltas with the changed
   parameters, tile and header edits (20 bytes each), while playing the tiles that played, the cursors (4 bytes each)
   and where cursors reached the edge (4 bytes each). Every page gets every message, so the panel and the window stay

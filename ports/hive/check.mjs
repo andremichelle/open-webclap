@@ -274,7 +274,8 @@ class Host {
 }
 
 const PARAM = {PATTERN: 0, GATE: 1, TRANSPOSE: 2, RATE: 3}
-const PAGE = {HELLO: 1, POLL: 2, BEGIN: 3, SET: 4, END: 5, HOVER: 6, SHOW_WINDOW: 7, TILE: 8, HEADER: 9, PATTERN: 10, COMMIT: 11}
+// the shared messages (opendaw_page.h), then Hive's own
+const PAGE = {POLL: 1, BEGIN: 2, SET: 3, END: 4, HOVER: 7, HELLO: 8, SHOW_WINDOW: 9, TILE: 10, HEADER: 11, PATTERN: 12, COMMIT: 13}
 const TILE_COUNT = 169, PATTERN_BYTES = 8 + TILE_COUNT * 16, STATE_BYTES = 16 + 8 * PATTERN_BYTES
 const BAR = SAMPLE_RATE * 2 // 4 beats at 120 bpm
 const STEP = BAR / 16       // 1/16 = 6000 samples
@@ -353,7 +354,7 @@ const fixtureHost = async () => fixture(await Host.load(process.argv[2]))
 await check("descriptor: a note effect with openDAW's device panel", async host => {
     assert.equal(host.id, "studio.opendaw.hive")
     assert.ok(host.features.includes("note-effect") && host.features.includes("opendaw:device-panel")
-        && host.features.includes("opendaw:device-panel-width:352"))
+        && host.features.includes("opendaw:device-panel-width:266"))
     assert.ok(host.panel && host.webview && host.state && host.params)
 })
 
