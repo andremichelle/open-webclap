@@ -25,7 +25,7 @@ jobs:
         working-directory: site
     env:
       # a fork's Pages serves under /<repo>/; upstream serves at the domain root (custom domain)
-      SITE_BASE: "${{ github.repository == 'andremichelle/open-webclap' ? '/' : format('/{0}/', github.event.repository.name) }}"
+      SITE_BASE: "${{ github.repository == 'andremichelle/open-webclap' && '/' || format('/{0}/', github.event.repository.name) }}"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
