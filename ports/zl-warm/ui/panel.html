@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>ZL Warm</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <link rel="stylesheet" href="opendaw-page/panel.css">
+    <style>
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+    </style>
+</head>
+<body>
+<!--
+    openDAW's device panel for ZL Warm, in the design of docs/device-panel-design.md: the input and output meters
+    (the plugin's meters frame: decaying peak and held maximum per channel), the editor's pairs kept: Input and
+    Output, Warm and Curve; the rest as rows. A click on the meters opens the editor's window.
+-->
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script>
+    const {caption, ink, clamp} = OpenDAWPanel
+    const OFF_ON = ["Off", "On"]
+    const meters = {in: {peak: [-100, -100], max: [-100, -100]}, out: {peak: [-100, -100], max: [-100, -100]}, channels: 2}
+    const LOW = -36
+
+    OpenDAWPanel.kitPanel({
+        width: 334, screen: 120,
+        params: {
+            warm: {param: "warm", label: "Warm", unit: "%"},
+            curve: {param: "curve", label: "Curve", unit: "%"},
+            input: {param: "input_gain", label: "Input", bipolar: true, unit: " dB"},
+            output: {param: "output_gain", label: "Output", bipolar: true, unit: " dB"},
+            wet: {param: "wet", label: "Wet", unit: "%"},
+            split: {param: "band_split", label: "Band Split", kind: "steps", labels: OFF_ON},
+            low: {param: "low_split", label: "Low Split", unit: " Hz"},
+            high: {param: "high_split", label: "High Split", unit: " Hz"},
+            oversample: {param: "over_sample", label: "Oversample", kind: "steps", labels: ["Off", "2x", "4x", "8x", "16x"]}
+        },
+        layout: [{knobs: [["input", "M"], ["output", "M"]], rows: 2}, {knobs: [["warm", "M"], ["curve", "M"]], rows: 2},
+            {labels: ["wet", null, "split", "low", "high", null, "oversample"]}],
+        // the meters frame (zl_warm_frames.h): per side the decaying peak and held maximum of each channel (dB)
+        onFrame: (type, view) => {
+            if (type !== 64 || view.byteLength < 48) {return}
+            const read = at => ({peak: [view.getFloat32(at, true), view.getFloat32(at + 4, true)],
+                max: [view.getFloat32(at + 8, true), view.getFloat32(at + 12, true)]})
+            meters.in = read(4)
+            meters.out = read(24)
+            meters.channels = Math.max(1, Math.min(2, view.getUint32(44, true)))
+        },
+        draw: (context, width, height) => {
+            const top = 10, bottom = height - 12, bar = 12, gap = 3
+            const y = db => top + (bottom - top) * clamp(-db, 0, -LOW) / -LOW
+            const group = (side, left, label) => {
+                for (let channel = 0; channel < 2; channel++) {
+                    const shown = channel < meters.channels ? channel : 0
+                    const x = left + channel * (bar + gap)
+                    const peak = side.peak[shown], max = side.max[shown]
+                    if (peak > LOW) {
+                        const gradient = context.createLinearGradient(0, top, 0, bottom)
+                        gradient.addColorStop(0, ink(0.5))
+                        gradient.addColorStop(1, ink(0.08))
+                        context.fillStyle = gradient
+                        context.fillRect(x, y(peak), bar, bottom - y(peak))
+                    }
+                    if (max > LOW) {
+                        context.fillStyle = ink(0.9)
+                        context.fillRect(x, y(max) - 1, bar, 1)
+                    }
+                }
+                caption(context, label, left + bar + gap / 2, height - 3, "center")
+            }
+            group(meters.in, 4, "In")
+            group(meters.out, 4 + 2 * (bar + gap) + 18, "Out")
+            // a scale's number rests on its value, as if a line carried it
+            for (const db of [0, -12, -24, -36]) {caption(context, `${db}`, width - 2, y(db) - 2, "right")}
+        }
+    })
+</script>
+</body>
+</html>

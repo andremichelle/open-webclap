@@ -15,6 +15,9 @@
         show      UI -> DSP   no payload: the page (a device panel) asks for the plugin's window (clap.gui request_show)
         hover     UI -> DSP   u32 clapId of the parameter under the mouse, 0xffffffff for none (clap.param-hovered):
                               hosts offer their parameter menu (automation, MIDI learn) on a right click there
+        text      UI -> DSP   u32 count, count * (u32 clapId, f64 value): the texts of these values (a page of its
+                              own, such as an HTML device panel, shows values as the plugin writes them)
+                  DSP -> UI   u32 count, count * (u32 clapId, f64 value, u16 length, UTF-8 bytes)
 
     Types from firstPluginType on are the port's own: what an editor needs beyond parameters and state
     (ports/ripplerx, through PageExtension and ProcessorBridge), or a whole protocol for plugins whose editor
@@ -49,7 +52,8 @@ namespace protocol
         resize   = 7,
         midi     = 8,
         show     = 9,
-        hover    = 10
+        hover    = 10,
+        text     = 11
     };
 
     constexpr uint8 firstPluginType = 64;

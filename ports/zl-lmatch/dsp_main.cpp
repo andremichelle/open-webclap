@@ -5,7 +5,8 @@
     matcher's position is its time in samples.
 
     The PageExtension carries what the editor reads from the controller beside parameters and state
-    (zl_lmatch_frames.h).
+    (zl_lmatch_frames.h). openDAW's device panel is a page of its own (ui/panel.html, on the shared controls in
+    modules/opendaw-page), 340 x 176.
 */
 
 #include <juce_webclap/juce_webclap_clap.h>
@@ -48,7 +49,8 @@ std::unique_ptr<juce::webclap::PageExtension> juce::webclap::createPageExtension
 const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
 {
     static const char* const features[] = { CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY,
-                                            CLAP_PLUGIN_FEATURE_STEREO, CLAP_PLUGIN_FEATURE_MONO, nullptr };
+                                            CLAP_PLUGIN_FEATURE_STEREO, CLAP_PLUGIN_FEATURE_MONO,
+                                            "opendaw:device-panel", "opendaw:device-panel-width:340", nullptr };
 
     static const ClapPluginInfo info {
         "com.zlaudio.zllmatch",
@@ -60,7 +62,11 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         features,
         "/ui/index.html",
         276, // the editor's default size
-        173
+        173,
+        true,
+        "/ui/panel.html", // openDAW's device panel, its width at 176 px
+        340,
+        176
     };
 
     return info;

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>ZL Compressor</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <link rel="stylesheet" href="opendaw-page/panel.css">
+    <style>
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+    </style>
+</head>
+<body>
+<!--
+    openDAW's device panel for ZL Compressor, in the design of docs/device-panel-design.md: the transfer curve as the
+    editor's computer panel draws it (the plugin's own computers, dsp/compressor/computer: compress, inflate, expand,
+    shape), the editor's pairs kept: Threshold and Ratio, Attack and Release, Makeup and Wet; the curve's shape and
+    the modes as rows. The side-chain EQ, the clipper and the RMS details stay in the window: a click on the curve
+    opens it. The panel asks for no analyzer: the editor's controls frame carries the window's solo and matcher too.
+-->
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script>
+    const {caption, trace, gridLine, clamp} = OpenDAWPanel
+    const LOW = -60, HIGH = 0
+
+    // CompressionComputer: a quadratic knee, above it the line at the ratio bent towards a curve by Curve (-1..1)
+    const compression = (t, r, w, curve) => {
+        r = Math.max(1, r)
+        w = Math.max(w, 0.01)
+        const low = t - w, high = t + w
+        const a0 = (1 / r - 1) / (w * 4), a1 = -low
+        const mid = [a0, 2 * a0 * a1 + 1, a0 * a1 * a1]
+        const linear = {b: 1 / r, c: t * (1 - 1 / r)}
+        let highCurve
+        if (curve >= 0) {
+            const temp = 0.5 / r, down = {a: temp / Math.min(t + w, -0.0001), b: 0, c: temp * (w - t) + t}
+            highCurve = [curve * down.a, (1 - curve) * linear.b + curve * down.b, (1 - curve) * linear.c + curve * down.c]
+        } else {
+            const temp = 0.5 * (1 - r) / r, up = {a: temp / Math.min(t + w, -0.0001), b: 1, c: temp * (w - t)}
+            const beta = -curve, alpha = 1 + curve
+            highCurve = [beta * up.a, alpha * linear.b + beta * up.b, alpha * linear.c + beta * up.c]
+        }
+        const over = high <= 0 ? [highCurve[1], highCurve[2]] : [linear.b, linear.c]
+        return x => x <= low ? x : x < high ? (mid[0] * x + mid[1]) * x + mid[2]
+            : x < 0 ? (highCurve[0] * x + highCurve[1]) * x + highCurve[2] : over[0] * x + over[1]
+    }
+    // ExpansionComputer and InflationComputer: the knee, below it a cubic down to the floor
+    const belowKnee = (t, r, w, floor) => {
+        w = Math.max(w, 0.01)
+        const low = t - w, high = t + w, cFloor = Math.min(floor, low - 1)
+        const a0 = (1 - r) / (4 * w), a1 = -high
+        const mid = [a0, 2 * a0 * a1 + 1, a0 * a1 * a1]
+        const common = -cFloor + t, denom = common - w
+        const lowCurve = [(r - 1) * (common + w) / (denom * denom * denom), -(r - 1) * (common + 2 * w) / (denom * denom)]
+        return x => {
+            if (x >= high || x <= cFloor) {return x}
+            if (x > low) {return (mid[0] * x + mid[1]) * x + mid[2]}
+            const s = x - cFloor
+            return (lowCurve[0] * s + lowCurve[1]) * s * s + x
+        }
+    }
+
+    OpenDAWPanel.kitPanel({
+        width: 422, screen: 150,
+        params: {
+            threshold: {param: "threshold", label: "Threshold", unit: " dB"},
+            ratio: {param: "ratio", label: "Ratio", unit: ":1"},
+            attack: {param: "attack", label: "Attack", unit: " ms"},
+            release: {param: "release", label: "Release", unit: " ms"},
+            makeup: {param: "makeup", label: "Makeup", bipolar: true, unit: " dB"},
+            wet: {param: "wet", label: "Wet", unit: "%"},
+            knee: {param: "knee_width", label: "Knee", unit: " dB"},
+            curve: {param: "curve", label: "Curve", unit: "%"},
+            floor: {param: "floor", label: "Floor", unit: " dB"},
+            range: {param: "range", label: "Range", unit: " dB"},
+            hold: {param: "hold", label: "Hold", unit: " ms"},
+            style: {param: "comp_style", label: "Style", kind: "steps", labels: ["Clean", "Classic", "Optical", "Vocal"]},
+            direction: {param: "comp_direction", label: "Direction", kind: "steps", labels: ["Compress", "Inflate", "Expand", "Shape"]},
+            lookahead: {param: "lookahead", label: "Lookahead", unit: " ms"},
+            oversample: {param: "oversample", label: "Oversample", kind: "steps", labels: ["Off", "2x", "4x", "8x"]}
+        },
+        layout: [{knobs: [["threshold", "M"], ["ratio", "M"]], rows: 2}, {knobs: [["attack", "M"], ["release", "M"]], rows: 2},
+            {knobs: [["makeup", "M"], ["wet", "M"]], rows: 2},
+            {labels: ["knee", "curve", "floor", "range", "hold", null, "style", "direction", null, "lookahead", "oversample"]}],
+        draw: (context, width, height, panel) => {
+            const left = 2, right = width - 2, top = 2, bottom = height - 12
+            const x = db => left + (right - left) * (db - LOW) / (HIGH - LOW)
+            const y = db => bottom - (bottom - top) * (clamp(db, LOW - 4, HIGH + 2) - LOW) / (HIGH - LOW)
+            gridLine(context, x(LOW), y(LOW), x(HIGH), y(HIGH), true)
+            for (const db of [-48, -24, 0]) {caption(context, `${db}`, x(db), height - 3, db === 0 ? "right" : "center")}
+            const t = panel.plain("threshold"), r = panel.plain("ratio"), w = panel.plain("knee")
+            if (![t, r, w].every(Number.isFinite)) {return}
+            const direction = Math.round(panel.value("direction") * 3)
+            const floor = panel.plain("floor"), curve = panel.value("curve") * 2 - 1
+            // as the editor's computer panel: compress and expand bend down, inflate and shape mirror upwards
+            const computer = direction === 1 ? belowKnee(t, clamp(2 - 1 / Math.max(r, 1), 1, 2), w, floor)
+                : direction === 2 ? belowKnee(t, r, w, floor) : compression(t, r, w, curve)
+            const downward = direction === 0 || direction === 2
+            const points = []
+            for (let i = 0; i <= 160; i++) {
+                const db = LOW + (HIGH - LOW) * i / 160
+                points.push([x(db), y(downward ? computer(db) : 2 * db - computer(db))])
+            }
+            trace(context, points, {fill: bottom})
+        }
+    })
+</script>
+</body>
+</html>

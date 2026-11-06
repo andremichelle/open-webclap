@@ -3,7 +3,8 @@
     (patches/zl-inflator-webclap.patch): no editor. Its oversampling reports the latency (clap.latency).
 
     The PageExtension carries what the editor reads from the processor beside parameters and state: the input and
-    output meters (zl_inflator_frames.h).
+    output meters (zl_inflator_frames.h). openDAW's device panel is a page of its own (ui/panel.html, on the shared
+    controls in modules/opendaw-page), 384 x 176.
 */
 
 #include <juce_webclap/juce_webclap_clap.h>
@@ -58,7 +59,8 @@ std::unique_ptr<juce::webclap::PageExtension> juce::webclap::createPageExtension
 const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
 {
     static const char* const features[] = { CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_DISTORTION,
-                                            CLAP_PLUGIN_FEATURE_STEREO, CLAP_PLUGIN_FEATURE_MONO, nullptr };
+                                            CLAP_PLUGIN_FEATURE_STEREO, CLAP_PLUGIN_FEATURE_MONO,
+                                            "opendaw:device-panel", "opendaw:device-panel-width:384", nullptr };
 
     static const ClapPluginInfo info {
         "com.zlaudio.zlinflator",
@@ -70,7 +72,11 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         features,
         "/ui/index.html",
         511, // the editor's default size
-        213
+        213,
+        true,
+        "/ui/panel.html", // openDAW's device panel, its width at 176 px
+        384,
+        176
     };
 
     return info;

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>ZL Loudness Match</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <link rel="stylesheet" href="opendaw-page/panel.css">
+    <style>
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+    </style>
+</head>
+<body>
+<!--
+    openDAW's device panel for ZL Loudness Match, in the design of docs/device-panel-design.md: the gain the matcher
+    applies over the last seconds (the plugin's gain frame), Strength large, Bound, Target and Gate (the editor's
+    order), the modes as rows. A click on the display opens the editor's window.
+-->
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script>
+    const {caption, trace, dot, gridLine, clamp} = OpenDAWPanel
+    const RANGE = 18
+    const history = new Float32Array(150)
+    const gain = {now: 0, at: 0}
+
+    OpenDAWPanel.kitPanel({
+        width: 340, screen: 140,
+        params: {
+            strength: {param: "strength", label: "Strength", unit: "%"},
+            target: {param: "target", label: "Target", unit: " dB"},
+            bound: {param: "bound", label: "Bound", unit: " dB"},
+            gate: {param: "gate", label: "Gate", unit: " dB"},
+            mode: {param: "mode", label: "Mode", kind: "steps", labels: ["Learn", "Effect", "Envelope"]},
+            measurement: {param: "measurement", label: "Measure", kind: "steps", labels: ["RMS", "LUFS", "RMS-G"]},
+            period: {param: "period", label: "Period", kind: "steps", labels: ["Whole", "Segment"]},
+            side: {param: "side", label: "Side", kind: "steps", labels: ["Value", "Aux"]},
+            ceil: {param: "ceil", label: "Ceil", kind: "steps", labels: ["Off", "On"]},
+            gain: {param: "gain", label: "Gain", unit: " dB"}
+        },
+        layout: [{large: "strength"}, {knobs: [["bound", "M"], ["target", "M"], ["gate", "M"]]},
+            {labels: ["mode", "measurement", "period", "side", null, "ceil", "gain"]}],
+        // the gain frame (zl_lmatch_frames.h): the gain the matcher applies now (dB)
+        onFrame: (type, view) => {
+            if (type === 64 && view.byteLength >= 8) {gain.now = view.getFloat32(4, true)}
+        },
+        draw: (context, width, height, panel) => {
+            // a sample every 1/30 s, the last five seconds
+            if (panel.time - gain.at >= 1 / 30) {
+                gain.at = panel.time
+                history.copyWithin(0, 1)
+                history[history.length - 1] = gain.now
+            }
+            const left = 2, right = width - 22, top = 6, bottom = height - 6
+            const y = db => top + (bottom - top) * (RANGE - clamp(db, -RANGE, RANGE)) / (2 * RANGE)
+            gridLine(context, left, y(0), right, y(0), true)
+            // a scale's number rests on its value, as if a line carried it
+            for (const db of [12, 0, -12]) {caption(context, db === 0 ? "0 dB" : `${db > 0 ? "+" : ""}${db}`, width - 1, y(db) - 2, "right")}
+            const step = (right - left) / (history.length - 1)
+            const points = Array.from(history, (db, index) => [left + index * step, y(db)])
+            trace(context, points)
+            dot(context, right, y(gain.now))
+        }
+    })
+</script>
+</body>
+</html>

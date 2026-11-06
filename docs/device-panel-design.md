@@ -10,7 +10,8 @@ The design is shared code, not only rules: [`modules/opendaw-page`](../modules/o
 columns, the display kit, the messages to the plugin); [`modules/opendaw-clap/opendaw_page.h`](../modules/opendaw-clap/opendaw_page.h)
 is the plugin side for plain CLAP ports (the panel extension and width feature, the page's messages, the gestures,
 the window). A port copies `modules/opendaw-page` next to its page (Basics links it from `page/opendaw-page`, so its
-preview opens from the repository) and builds with `-I modules/opendaw-clap`.
+preview opens from the repository) and builds with `-I modules/opendaw-clap`. A JUCE kit port's panel is a page of its
+own on `OpenDAWPanel.kitPanel` (the ZL ports' `ui/panel.html`).
 
 The idea: nothing is drawn that does not carry information. No backgrounds, borders, outlines, tiles or gaps that
 pretend to be borders. A display is a curve on the panel with room around it; a knob is a thin arc around a dark
@@ -67,6 +68,11 @@ cap; text is small and quiet, and the colour says what it is (a name, a value, s
 - **No lines along the edges** (a baseline, an outer grid line, a 0 dB line on the top edge).
 - **The unit with its numbers**: "… 40 50 ms" on the axis, not "MS" in a corner. Captions that belong together share
   a line (a "GR" label on the line of its "-24").
+- **A scale's number rests on its value**, just above the position, as if the line it would label carried it (the
+  plugins' own editors do so): centred on an undrawn line it reads half a line off. Leave room above the top value
+  for its number.
+- **A fill fades from its line down to the bottom** (the level under a level line); nothing hangs as a filled band
+  from the top.
 - Traces 1.25 px at 85 %, the area under them faded from 16 % to nothing, dots 2 px, bars and tails at 40 to 65 %.
   No glow.
 - Axes hold still: fixed to the parameter's whole range, so turning a knob moves the curve, not the scale.
@@ -91,6 +97,10 @@ Three sizes, on a grid of three 50 px rows (3 px apart), a knob's label 4 px bel
 - **A column with a single knob is suspicious**, not forbidden: the large knob stands alone; a single medium knob
   in a column is usually a layout that wants rethinking (a square, a stack, a parameter row).
 - Group by function (compressor, timing, filters); signal flow is a guide, not a rule worth wasted space.
+- **Keep the original's groups together.** Controls the plugin's own editor groups stay together on the panel, in
+  its order: ZL Limiter's Lookahead and Recovery (its Main group) share a column, Attack and Release (Support)
+  another; Input and Output gain are a pair. A user who knows the plugin finds its controls where they belong, and
+  a pair split over columns reads as unrelated.
 
 ## Parameter rows
 
@@ -122,5 +132,6 @@ blue. Nothing else lights up: no hover backgrounds, no outlines.
 - [ ] values in tabular digits at a fixed width
 - [ ] displays without background or edges, no lines for a scale with numbers, units with their numbers
 - [ ] large knob centred by its circle, rows' labels on one line, levels last
+- [ ] the original editor's groups kept together (a pair in one column)
 - [ ] many parameters: the minor ones as rows; one parameter: a row in the display's corner
 - [ ] a fixed width, declared by the plugin, checked against the content

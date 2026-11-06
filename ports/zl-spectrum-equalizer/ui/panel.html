@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>ZL Spectrum Equalizer</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <link rel="stylesheet" href="opendaw-page/panel.css">
+    <style>
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+    </style>
+</head>
+<body>
+<!--
+    openDAW's device panel for ZL Spectrum Equalizer, in the design of docs/device-panel-design.md: the response of
+    the active bands, computed as the plugin computes it (dsp/filter: the ideal filters' second-order sections, the
+    filter design's orders), scaled by Gain Scale, with the dynamic part the plugin sends while it sends it; Output
+    and Scale (the editor's output pair) and the spectrum settings as rows. The 24 bands are edited in the window: a
+    click on the display opens it. The panel sends no controls frame: it carries the window's solo and matcher.
+-->
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script>
+    const {caption, trace, dot, gridLine, clamp} = OpenDAWPanel
+    const BANDS = 24, PPI = 2 * Math.PI, DB_TO_EXP2_SQRT = 0.16609640474436813 * 0.5
+    const TYPES = ["Peak", "Low Shelf", "Low Pass", "High Shelf", "High Pass", "Notch", "Band Pass", "Tilt Shelf", "Flat Tilt", "Flat Gain"]
+    const ORDERS = [1, 2, 4, 6, 8, 12, 16] // 6 to 96 dB/oct
+    const state = {sampleRate: 48000, dynamic: null}
+
+    // --- the plugin's filters (ideal_coeff.cpp, filter_design.hpp): sections [a1, a0, b2, b1, b0] ----------------
+    const A = g => Math.pow(2, g * DB_TO_EXP2_SQRT)
+    const first = (a1, b2, b1) => [a1, 0, b2, b1, 0] // pack1stOrder
+    const c1 = {
+        lowPass: w0 => first(w0 * PPI, 0, w0 * PPI), highPass: w0 => first(w0 * PPI, 1, 0),
+        tilt: (w0, g) => first(A(g) * w0 * PPI, A(g), w0 * PPI), low: (w0, g) => first(w0 * PPI / A(g), 1, w0 * PPI * A(g)),
+        high: (w0, g) => first(w0 * PPI * A(g), A(g) * A(g), w0 * PPI * A(g))
+    }
+    const c2 = {
+        lowPass: (w0, q) => {const w = w0 * PPI; return [w / q, w * w, 0, 0, w * w]},
+        highPass: (w0, q) => {const w = w0 * PPI; return [w / q, w * w, 1, 0, 0]},
+        bandPass: (w0, q) => {const w = w0 * PPI; return [w / q, w * w, 0, w / q, 0]},
+        notch: (w0, q) => {const w = w0 * PPI; return [w / q, w * w, 1, 0, w * w]},
+        peak: (w0, g, q) => {const w = w0 * PPI, a = A(g); return [w / a / q, w * w, 1, w * a / q, w * w]},
+        tilt: (w0, g, q) => {const w = w0 * PPI, a = A(g), awq = Math.sqrt(a) * w / q; return [awq, a * w * w, a, awq, w * w]},
+        low: (w0, g, q) => {const w = w0 * PPI, a = A(g), awq = Math.sqrt(a) * w / q; return [awq / a, w * w / a, 1, awq, a * w * w]},
+        high: (w0, g, q) => {const w = w0 * PPI, a = A(g), awq = Math.sqrt(a) * w / q; return [awq, a * w * w, a * a, a * awq, a * w * w]}
+    }
+    const qsOf = (n, q0) => {
+        const number = n / 2, theta0 = Math.PI / number / 4, scale = Math.pow(Math.SQRT2 * q0, 1 / number)
+        const base = Math.log10(Math.SQRT2 * q0) / Math.pow(n, 1.5) * 12
+        return Array.from({length: number}, (_, i) => {
+            const rescale = (i - number / 2 + 0.5) * base
+            return 1 / 2 / Math.cos(theta0 * (2 * i + 1)) * scale * Math.pow(2, rescale)
+        })
+    }
+    const pass = (kind, n, w0, q0) => n === 1 ? [c1[kind](w0)] : qsOf(n, q0).map(q => c2[kind](w0, q))
+    const shelf = (kind, n, w0, g, q0) => n === 1 ? [c1[kind](w0, g)] : n === 2 ? [c2[kind](w0, g, q0)]
+        : qsOf(n, q0).map(q => c2[kind](w0, g / (n / 2), q))
+    const narrow = (kind, n, w0, q0) => {
+        if (n < 2) {return []}
+        const halfbw = Math.asinh(0.5 / q0) / Math.log(2), w = w0 / Math.pow(2, halfbw), g = Math.pow(10, -6 / n / 20)
+        const q = kind === "bandPass" ? Math.sqrt(1 - g * g) * w * w0 / g / (w0 * w0 - w * w)
+            : g * w * w0 / Math.sqrt(1 - g * g) / (w0 * w0 - w * w)
+        return new Array(n / 2).fill(c2[kind](w0, q))
+    }
+    const bandShelf = (n, w0, g, q0) => {
+        const halfbw = Math.asinh(0.5 / q0) / Math.log(2), scale = Math.pow(2, halfbw), w1 = w0 / scale, w2 = w0 * scale
+        const f1 = w1 > 1 / 48000, f2 = w2 < 0.99, q = Math.SQRT2 / 2
+        if (f1 && f2) {return [...shelf("low", n, w1, -g, q), ...shelf("low", n, w2, g, q)]}
+        if (f1) {return shelf("high", n, w1, g, q)}
+        if (f2) {return shelf("low", n, w2, g, q)}
+        const linear = Math.pow(2, g * DB_TO_EXP2_SQRT * 2)
+        return [[1, 1, linear, linear, linear]]
+    }
+    const FLAT = [10, 40, 160, 640, 2560, 10240, 40960, 163840, 655360]
+    const flatTilt = (f, fs, g) => {
+        const count = fs < 12500 ? 5 : fs < 50000 ? 6 : fs < 200000 ? 7 : fs < 800000 ? 8 : 9
+        const gs = g * 0.5, linear = Math.pow(10, gs / 20)
+        let total = 1
+        for (let i = 0; i < count; i++) {const w = f * f / (FLAT[i] * FLAT[i]); total *= (linear * linear * w + linear) / (w + linear)}
+        const makeup = 1 / Math.sqrt(total)
+        return FLAT.slice(0, count).map((frequency, i) => {
+            const [a1, b2, b1] = [frequency / fs * PPI * A(gs), A(gs) * A(gs), frequency / fs * PPI * A(gs)]
+            return i === count - 1 ? first(a1, b2 * makeup, b1 * makeup) : first(a1, b2, b1)
+        })
+    }
+    const sectionsOf = (type, n, f, fs, g, q) => {
+        const w0 = f / fs, shelfQ = Math.sqrt(q * Math.SQRT2) / Math.SQRT2
+        switch (TYPES[type]) {
+            case "Peak": return n < 2 ? [] : n === 2 ? [c2.peak(w0, g, q)] : bandShelf(n, w0, g, q)
+            case "Low Shelf": return shelf("low", n, w0, g, shelfQ)
+            case "Low Pass": return pass("lowPass", n, w0, q)
+            case "High Shelf": return shelf("high", n, w0, g, shelfQ)
+            case "High Pass": return pass("highPass", n, w0, q)
+            case "Notch": return narrow("notch", n, w0, q)
+            case "Band Pass": return narrow("bandPass", n, w0, q)
+            case "Tilt Shelf": return shelf("tilt", n, w0, g, shelfQ)
+            case "Flat Tilt": return flatTilt(f, fs, g)
+            case "Flat Gain": {const linear = Math.pow(10, g / 20); return [[1, 1, linear, linear, linear]]}
+            default: return []
+        }
+    }
+    // IdealBase::updateMagnitudeSquare, in dB
+    const sectionDb = ([a1, a0, b2, b1, b0], w) => {
+        const w2 = w * w, t1 = a0 - w2, t2 = b0 - b2 * w2
+        return 10 * Math.log10((b1 * b1 * w2 + t2 * t2) / (a1 * a1 * w2 + t1 * t1))
+    }
+
+    const LOW = Math.log(20), HIGH = Math.log(20000), RANGE = 18
+    OpenDAWPanel.kitPanel({
+        width: 420, screen: 260,
+        params: {
+            output: {param: "total_output_gain", label: "Output", bipolar: true, unit: " dB"},
+            scale: {param: "total_gain_scale", label: "Scale", unit: "%"},
+            resolution: {param: "spec_resolution", label: "Resolution", kind: "steps",
+                labels: ["X Low", "V Low", "Low", "Medium", "High", "V High", "X High"]},
+            smoothType: {param: "spectrum_smooth_type", label: "Smooth By", kind: "steps", labels: ["Octave", "ERB"]},
+            smooth: {param: "spectrum_smooth", label: "Smooth", unit: "%"},
+            tilt: {param: "spectrum_tilt", label: "Tilt", unit: " dB/oct"},
+            gate: {param: "spectrum_gate", label: "Gate", unit: " dB"},
+            static: {param: "total_static_gain", label: "Static Gain", kind: "steps", labels: ["Off", "On"]},
+            stereo: {param: "total_output_stereo", label: "Stereo", kind: "steps", labels: ["Stereo", "Left", "Right", "Mid", "Side"]}
+        },
+        layout: [{knobs: [["output", "M"], ["scale", "M"]], rows: 2},
+            {labels: ["resolution", "smoothType", "smooth", "tilt", "gate", null, "static", "stereo"]}],
+        // meters (65): the sample rate at 12; dynamics (66): the stereo channel's dynamic response, hundredths of dB
+        onFrame: (type, view) => {
+            if (type === 65 && view.byteLength >= 16) {
+                const rate = view.getFloat32(12, true)
+                if (rate > 0) {state.sampleRate = rate}
+            } else if (type === 66 && view.byteLength >= 20) {
+                const bins = view.getUint32(4, true), start = view.getUint32(8, true), end = view.getUint32(12, true)
+                if (view.getUint8(16) !== 0) {return}
+                const delta = new Float32Array(bins)
+                for (let i = start; i < end && 20 + (i - start) * 2 + 2 <= view.byteLength; i++) {
+                    delta[i] = view.getInt16(20 + (i - start) * 2, true) / 100
+                }
+                state.dynamic = end > start ? delta : null
+            }
+        },
+        draw: (context, width, height, panel) => {
+            const left = 2, right = width - 2, top = 10, bottom = height - 12, mid = (top + bottom) / 2
+            const x = hz => left + (right - left) * (Math.log(hz) - LOW) / (HIGH - LOW)
+            const y = db => mid - (mid - top) * clamp(db, -RANGE - 2, RANGE + 2) / RANGE
+            gridLine(context, left, mid, right, mid, true)
+            for (const [hz, text] of [[50, "50"], [100, "100"], [500, "500"], [1000, "1k"], [5000, "5k"], [10000, "10k"]]) {
+                caption(context, text, x(hz), height - 3, "center")
+            }
+            // a scale's number rests on its value, as if a line carried it
+            for (const db of [12, -12]) {caption(context, `${db > 0 ? "+" : ""}${db}`, left + 1, y(db) - 2)}
+            const fs = state.sampleRate, scale = panel.value("scale") * 3 - 1 // -100..200 %
+            const bands = []
+            for (let band = 0; band < BANDS; band++) {
+                if (Math.round(panel.valueOf(`filter_status${band}`) * 2) !== 2) {continue}
+                const f = panel.plainOf(`freq${band}`), g = panel.plainOf(`gain${band}`), q = panel.plainOf(`q${band}`)
+                if (![f, g, q].every(Number.isFinite)) {continue}
+                const type = Math.round(panel.valueOf(`filter_type${band}`) * (TYPES.length - 1))
+                const n = ORDERS[Math.round(panel.valueOf(`order${band}`) * (ORDERS.length - 1))]
+                bands.push({f, g: g * scale, sections: sectionsOf(type, n, f, fs, g * scale, q)})
+            }
+            const respond = hz => {
+                const w = PPI * hz / fs
+                return bands.reduce((sum, band) => sum + band.sections.reduce((s, section) => s + sectionDb(section, w), 0), 0)
+            }
+            const points = []
+            for (let i = 0; i <= 200; i++) {
+                const hz = Math.exp(LOW + (HIGH - LOW) * i / 200)
+                let db = respond(hz)
+                if (state.dynamic !== null) {
+                    const bin = Math.round(hz / (fs / 2) * state.dynamic.length)
+                    if (bin < state.dynamic.length) {db += state.dynamic[bin]}
+                }
+                points.push([x(hz), y(db)])
+            }
+            trace(context, points, {fill: bottom})
+            bands.forEach(band => {if (band.f >= 20 && band.f <= 20000) {dot(context, x(band.f), y(respond(band.f)))}})
+        }
+    })
+</script>
+</body>
+</html>

@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>ZL Limiter</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <link rel="stylesheet" href="opendaw-page/panel.css">
+    <style>
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+    </style>
+</head>
+<body>
+<!--
+    openDAW's device panel for ZL Limiter, in the design of docs/device-panel-design.md: the output level over the
+    last seconds with the gain reduction hanging from 0 dB (the plugin's analyzer audio: pre, gained, limited, post),
+    the editor's groups kept: Input and Ceiling, Lookahead and Recovery (Main), Attack and Release (Support), the
+    rest as rows; then the editor's measurements of the output (true peak, momentary, short-term and integrated
+    loudness, loudness range, correlation), measured here from the same audio as the editor does (ZL's K-weighting,
+    windows and gates), while the transport plays (the status frame). A click on the display opens the window.
+-->
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script src="zl-analyzer.js"></script>
+<script>
+    const {caption, trace, ink, clamp} = OpenDAWPanel
+    const FLOOR = 48
+    // per analyzer frame: the output's peak and the gain reduction (gained minus limited), dB
+    const output = new Float32Array(160).fill(-Infinity), reduction = new Float32Array(160)
+    const ANALYZER = 64, STATUS = 65, CONTROLS = 66
+
+    // --- the measurements, after dsp/loudness (lufs_meter.hpp, k_weighting_filter.hpp) and the stereo statistics:
+    // BS.1770 K-weighting (ZL's high-pass at 38.137 Hz, shelf +4 dB at 1500.687 Hz, bias 1.00516), 100 ms blocks,
+    // momentary over 400 ms, short-term over 3 s, integrated over the 400 ms blocks above -70 LUFS and above their
+    // mean -10 LU, the range from the short-term values above -70 LUFS and their mean -20 LU (10th to 95th
+    // percentile), the true peak 4x oversampled, the correlation over 400 ms
+    const ABSOLUTE_GATE = 1.1724653045822963e-7
+    const biquad = (type, f, q, gainDb, fs) => {
+        const w = 2 * Math.PI * f / fs, cos = Math.cos(w), alpha = Math.sin(w) / (2 * q)
+        if (type === "highpass") {
+            const a0 = 1 + alpha
+            return [(1 + cos) / 2 / a0, -(1 + cos) / a0, (1 + cos) / 2 / a0, -2 * cos / a0, (1 - alpha) / a0]
+        }
+        const A = Math.pow(10, gainDb / 40), sq = 2 * Math.sqrt(A) * alpha
+        const a0 = (A + 1) - (A - 1) * cos + sq
+        return [A * ((A + 1) + (A - 1) * cos + sq) / a0, -2 * A * ((A - 1) + (A + 1) * cos) / a0,
+            A * ((A + 1) + (A - 1) * cos - sq) / a0, 2 * ((A - 1) - (A + 1) * cos) / a0, ((A + 1) - (A - 1) * cos - sq) / a0]
+    }
+    // the true peak estimator's table (dsp/limiter/true_peak/generate_coefficients.py): 16 phases between two
+    // samples, a 64-tap sinc in a Kaiser window (beta 8.6), each phase normalised to 1
+    const TAPS = 64, PHASES = 16, BETA = 8.6
+    const bessel = x => {
+        let sum = 1, term = 1
+        for (let k = 1; k < 32; k++) {
+            term *= (x / (2 * k)) * (x / (2 * k))
+            sum += term
+        }
+        return sum
+    }
+    const SINC = Array.from({length: PHASES}, (_, phase) => {
+        const center = TAPS / 2 - 1 + (phase + 0.5) / PHASES
+        const row = Array.from({length: TAPS}, (_, tap) => {
+            const t = tap - center
+            const sinc = t === 0 ? 1 : Math.sin(Math.PI * t) / (Math.PI * t)
+            return sinc * bessel(BETA * Math.sqrt(Math.max(0, 1 - (t / (TAPS / 2)) ** 2))) / bessel(BETA)
+        })
+        const sum = row.reduce((a, b) => a + b, 0)
+        return Float64Array.from(row, value => value / sum)
+    })
+    // an interpolated peak exceeds its neighbours by a few dB at most: a pair well below the peak is skipped
+    const CANDIDATE = 0.5
+    const meter = {
+        fs: 0, filters: [], history: [[], []], blocks: [], block: {energy: 0, count: 0, cross: 0, left: 0, right: 0},
+        integrated: [], shortTerm: [], peak: 0, values: null,
+        // the loudness starts over (a value reset of the transport, a new rate); the true peak only with a new rate
+        reset(fs) {
+            if (fs !== this.fs) {this.peak = 0}
+            this.fs = fs
+            const shelf = biquad("shelf", 1500.6868667368922, 0.7096433028107384, 3.9993623475151354, fs)
+            const high = biquad("highpass", 38.13713296248405, 0.500242812458813, 0, fs)
+            this.filters = [0, 1].map(() => [shelf, high].map(c => ({c, x1: 0, x2: 0, y1: 0, y2: 0})))
+            if (this.history[0]?.length !== TAPS) {this.history = [new Float64Array(TAPS), new Float64Array(TAPS)]}
+            this.blocks = []
+            this.block = {energy: 0, count: 0, cross: 0, left: 0, right: 0}
+            this.integrated = []
+            this.shortTerm = []
+            this.values = null
+        },
+        // the true peak runs always (the editor's comes from its magnitude analyzer), the loudness while measuring
+        add(channels, fs, measuring) {
+            if (fs !== this.fs) {this.reset(fs)}
+            const left = channels[0], right = channels[1] ?? channels[0]
+            const blockSize = Math.round(fs / 10)
+            for (let i = 0; i < left.length; i++) {
+                let energy = 0
+                for (let channel = 0; channel < 2; channel++) {
+                    const x = channel === 0 ? left[i] : right[i]
+                    // the true peak: the sample and its three interpolated neighbours
+                    const history = this.history[channel]
+                    history.copyWithin(0, 1)
+                    history[TAPS - 1] = x
+                    const a = Math.abs(history[TAPS / 2 - 1]), b = Math.abs(history[TAPS / 2])
+                    this.peak = Math.max(this.peak, a)
+                    if (Math.max(a, b) >= this.peak * CANDIDATE) {
+                        for (const phase of SINC) {
+                            let y = 0
+                            for (let tap = 0; tap < TAPS; tap++) {y += phase[tap] * history[tap]}
+                            this.peak = Math.max(this.peak, Math.abs(y))
+                        }
+                    }
+                    if (!measuring) {continue}
+                    let y = x
+                    for (const f of this.filters[channel]) {
+                        const [b0, b1, b2, a1, a2] = f.c
+                        const out = b0 * y + b1 * f.x1 + b2 * f.x2 - a1 * f.y1 - a2 * f.y2
+                        f.x2 = f.x1; f.x1 = y; f.y2 = f.y1; f.y1 = out
+                        y = out
+                    }
+                    y *= 1.0051643348917434
+                    energy += y * y
+                }
+                if (!measuring) {continue}
+                const block = this.block
+                block.energy += energy
+                block.cross += left[i] * right[i]
+                block.left += left[i] * left[i]
+                block.right += right[i] * right[i]
+                if (++block.count >= blockSize) {this.close()}
+            }
+        },
+        close() {
+            this.blocks.push(this.block)
+            if (this.blocks.length > 30) {this.blocks.shift()}
+            this.block = {energy: 0, count: 0, cross: 0, left: 0, right: 0}
+            const meanOf = blocks => blocks.reduce((sum, b) => sum + b.energy, 0) / blocks.reduce((sum, b) => sum + b.count, 0)
+            const momentary = this.blocks.length >= 4 ? meanOf(this.blocks.slice(-4)) : NaN
+            const short = this.blocks.length >= 30 ? meanOf(this.blocks) : NaN
+            if (momentary > ABSOLUTE_GATE) {this.integrated.push(momentary)}
+            if (short > ABSOLUTE_GATE) {this.shortTerm.push(short)}
+            const recent = this.blocks.slice(-4)
+            const sum = key => recent.reduce((s, b) => s + b[key], 0)
+            this.values = {
+                momentary, short, peak: this.peak,
+                correlation: recent.length === 4 && sum("left") > 0 && sum("right") > 0
+                    ? clamp(sum("cross") / Math.sqrt(sum("left") * sum("right")), -1, 1) : NaN,
+                integrated: this.integratedMean(), range: this.range()
+            }
+        },
+        integratedMean() {
+            if (this.integrated.length === 0) {return NaN}
+            const mean = this.integrated.reduce((a, b) => a + b, 0) / this.integrated.length
+            const gated = this.integrated.filter(e => e > Math.max(ABSOLUTE_GATE, mean * 0.1))
+            return gated.length === 0 ? NaN : gated.reduce((a, b) => a + b, 0) / gated.length
+        },
+        range() {
+            if (this.shortTerm.length < 2) {return NaN}
+            const mean = this.shortTerm.reduce((a, b) => a + b, 0) / this.shortTerm.length
+            const gated = this.shortTerm.filter(e => e > Math.max(ABSOLUTE_GATE, mean * 0.01)).sort((a, b) => a - b)
+            if (gated.length < 2) {return NaN}
+            const rank = p => gated[Math.round((gated.length - 1) * p)]
+            return 10 * Math.log10(rank(0.95) / rank(0.1))
+        }
+    }
+    const loudness = meanSquare => meanSquare > 0 ? -0.691 + 10 * Math.log10(meanSquare) : NaN
+    const status = {active: false, resets: -1}
+    const READOUTS = [
+        ["dBTP", () => meter.peak > 0 ? (20 * Math.log10(meter.peak)).toFixed(1) : NaN],
+        ["LUFS-M", v => loudness(v.momentary).toFixed(1)], ["LUFS-S", v => loudness(v.short).toFixed(1)],
+        ["LUFS-I", v => loudness(v.integrated).toFixed(1)], ["LRA", v => v.range.toFixed(1)],
+        ["Corr", v => v.correlation.toFixed(2)]
+    ]
+    // the readouts: names in the label colour, values grey, as wide as "-100.0" so nothing moves
+    const readouts = document.createElement("div")
+    readouts.className = "column labels"
+    const readoutValues = READOUTS.map(([name]) => {
+        const row = document.createElement("div")
+        row.className = "parameter"
+        row.style.cursor = "default"
+        row.innerHTML = `<span class="name">${name}</span><span class="value" style="min-width: 6ch"></span>`
+        readouts.append(row)
+        return row.querySelector(".value")
+    })
+    const showReadouts = () => {
+        const v = meter.values
+        READOUTS.forEach(([, text], index) => {
+            const shown = v === null && index > 0 ? "NaN" : String(text(v))
+            readoutValues[index].textContent = shown.includes("NaN") || shown === "-Infinity" ? "–" : shown
+        })
+    }
+    // the analyzer runs while a page asks for it (zl_limiter_frames.h Controls), asked again now and then: the
+    // editor's window switches it off when it closes
+    const enable = panel => panel.send(new Uint8Array([CONTROLS, 0, 0, 0, 1]).buffer)
+
+    const panel = OpenDAWPanel.kitPanel({
+        width: 492, screen: 150,
+        params: {
+            input: {param: "input_gain", label: "Input", unit: " dB"},
+            ceiling: {param: "output_ceiling", label: "Ceiling", unit: " dB"},
+            release: {param: "release", label: "Release", unit: " ms"},
+            lookahead: {param: "lookahead", label: "Lookahead", unit: " ms"},
+            attack: {param: "attack", label: "Attack", unit: " ms"},
+            recovery: {param: "recovery", label: "Recovery", unit: " ms"},
+            delta: {param: "channel_delta", label: "Ch Delta", unit: " dB"},
+            oversampling: {param: "oversampling", label: "Oversample", kind: "steps", labels: ["Off", "2x", "4x", "8x", "16x", "32x"]},
+            truepeak: {param: "true_peak", label: "True Peak", kind: "steps", labels: ["Off", "On"]},
+            link: {param: "input_output_link", label: "Link", kind: "steps", labels: ["Input", "Linked"]}
+        },
+        layout: [{knobs: [["input", "M"], ["ceiling", "M"]], rows: 2},
+            {knobs: [["lookahead", "M"], ["recovery", "M"]], rows: 2},
+            {knobs: [["attack", "M"], ["release", "M"]], rows: 2},
+            {labels: ["delta", null, "oversampling", "truepeak", "link"]}],
+        opened: enable,
+        onFrame: (type, view) => {
+            // the status (zl_limiter_frames.h): the transport lets the values measure, a count of their resets
+            if (type === STATUS && view.byteLength >= 17) {
+                const resets = view.getUint32(12, true)
+                if (resets !== status.resets) {
+                    status.resets = resets
+                    meter.reset(meter.fs)
+                    showReadouts()
+                }
+                status.active = view.getUint8(16) !== 0
+                return
+            }
+            if (type !== ANALYZER) {return}
+            const frame = ZLAnalyzer.decode(view)
+            if (frame === null) {return}
+            const [, gained, limited, post] = frame.sources
+            if (post !== null && post.length > 0) {meter.add(post, frame.sampleRate, status.active)}
+            output.copyWithin(0, 1)
+            reduction.copyWithin(0, 1)
+            output[output.length - 1] = ZLAnalyzer.peakDb(post)
+            reduction[reduction.length - 1] = Math.max(0, ZLAnalyzer.peakDb(gained) - ZLAnalyzer.peakDb(limited)) || 0
+        },
+        draw: (context, width, height, panel) => {
+            if (panel.time - (panel.asked ?? 0) > 1) {
+                panel.asked = panel.time
+                enable(panel)
+            }
+            if (panel.time - (panel.shown ?? 0) > 0.1) {
+                panel.shown = panel.time
+                showReadouts()
+            }
+            // room above 0 dB for its number: a scale's number rests on its value, as if a line carried it
+            const left = 2, right = width - 20, top = 10, bottom = height - 2
+            const y = db => top + (bottom - top) * clamp(db, 0, FLOOR) / FLOOR
+            for (const db of [0, 12, 24, 36]) {caption(context, db === 0 ? "0" : `-${db}`, width - 1, y(db) - 2, "right")}
+            const step = (right - left) / (output.length - 1)
+            // the output level, faded from its line to the bottom; the gain reduction as a line from 0 dB
+            trace(context, Array.from(output, (db, index) => [left + index * step, y(Number.isFinite(db) ? -db : FLOOR)]),
+                {fill: bottom})
+            trace(context, Array.from(reduction, (db, index) => [left + index * step, y(db)]), {width: 1})
+            caption(context, "GR", left + 2, top - 2)
+        }
+    })
+    document.querySelector(".card .group").append(readouts)
+    showReadouts()
+</script>
+</body>
+</html>

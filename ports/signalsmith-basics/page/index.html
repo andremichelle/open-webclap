@@ -418,30 +418,19 @@
                 history.copyWithin(0, 1)
                 history[history.length - 1] = clamp(-gainToDb(card.meters.gain), 0, 24)
             }
-            const left = PAD, right = width - PAD - 18, top = PAD + 3, bottom = height - PAD - 2
+            // room above 0 dB for its number: a scale's number rests on its value, as if a line carried it
+            const left = PAD, right = width - PAD - 18, top = PAD + 9, bottom = height - PAD - 2
             const y = db => top + (bottom - top) * db / 24
-            for (const db of [0, 6, 12, 18, 24]) {
-                caption(context, db === 0 ? "0" : `-${db}`, width - PAD, y(db) + 2.5, "right", 0.8)
+            for (const db of [0, 6, 12, 18]) {
+                caption(context, db === 0 ? "0" : `-${db}`, width - PAD, y(db) - 2, "right", 0.8)
             }
             const step = (right - left) / (history.length - 1)
             const points = Array.from(history, (db, index) => [left + index * step, y(db)])
-            // hanging from the top: the fill runs up to 0 dB
-            context.save()
-            context.beginPath()
-            context.moveTo(left, top)
-            for (const [px, py] of points) {context.lineTo(px, py)}
-            context.lineTo(right, top)
-            context.closePath()
-            const gradient = context.createLinearGradient(0, top, 0, bottom)
-            gradient.addColorStop(0, ink(0))
-            gradient.addColorStop(1, ink(0.16))
-            context.fillStyle = gradient
-            context.fill()
-            context.restore()
+            // the reduction as a line from 0 dB, no band hanging from the top
             trace(context, points)
             const now = history[history.length - 1]
             dot(context, right, y(now))
-            caption(context, "GR", left, y(24) + 2.5, "left", 0.8)
+            caption(context, "GR", left, top - 2, "left", 0.8)
         },
         // The impulse response on a fixed logarithmic time axis (2 ms to 30 s): the dry hit at the left edge, the early
         // reflections inside the room time (they move with the room), then the tail decaying by the decay time (RT20,

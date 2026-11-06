@@ -493,11 +493,12 @@ output events, the host's changes back from `on_main_thread` (or from `process`,
 Eight plugins by ZL Audio (zsliu98): ZL Equalizer 2, Compressor, Limiter, Spectrum Equalizer and Splitter (the
 current generation, AGPL-3.0, one code base layout), and the older Inflator, Warm and Loudness Match (GPL-3.0).
 ZLEComp is archived and left out; Loudness Makeup was ported and removed again (its modes record and play back gain
-automation, which made it hard to control in a browser).
+automation, which made it hard to control in a browser). ZL Equalizer 2 and Splitter were removed on 2026-11-06 (the
+Spectrum Equalizer covers the equalizer; the Splitter's second part had no output in a one-output device), with them
+nlopt and KFR; what is said about them below is history.
 
-- **Shared glue** (`ports/zl-common`): `zl_common.cmake` builds Highway (static dispatch, its WASM SIMD128 target),
-  nlopt (its own CMake, Luksan solvers included as upstream) and KFR (sse41 on wasm SIMD, as KFR's CMake does for
-  Emscripten) and splits the sources into processor and editor. `zl_ui_main.h` is the ui.wasm entry every ZL port
+- **Shared glue** (`ports/zl-common`): `zl_common.cmake` builds Highway (static dispatch, its WASM SIMD128 target)
+  and splits the sources into processor and editor. `zl_ui_main.h` is the ui.wasm entry every ZL port
   shares; a port adds `zlPortInit` and `zlPortFrame`. `zl_analyzer_stream.h` moves zldsp's `AnalyzerSenderBase`
   FIFOs across: the DSP side drains them in `PageExtension::update`, the UI side pushes into the stand-in's sender.
 - **Threads.** The current generation's editors run their analyzers and response curves on `juce::Thread`s that
@@ -522,12 +523,20 @@ automation, which made it hard to control in a browser).
   `PageExtension::closed()` (stop what only the page reads: analyzers fill otherwise), and the play head reports
   time in seconds and samples from the seconds timeline or from beats at the current tempo (openDAW sends only
   beats).
-- **Splitter:** two stereo outputs upstream; the bundle has one, carrying the first part, or the second with Swap.
 - **Trimmed editors:** no presets (the preset browser, ZL Equalizer 2's match target files, ZL Splitter's control
   import/export), no colour schemes (the colour tab; the older four's light/dark switch on the logo), no tooltip
   language (English), no resize corner. The credits tab is a one-line legal notice at the bottom of the settings
   panel (copyright, license, no warranty, source links: GPL-3.0 section 5(d) asks a modified version to keep showing
   what the original shows); the third-party credits and references are in each bundle's NOTICES.md.
+- **Device panels** (2026-11-06): each of the six has openDAW's device panel as a page of its own,
+  `ui/panel.html` on the shared controls (`OpenDAWPanel.kitPanel`, docs/device-panel-design.md), beside the
+  editor's page: the kit's protocol without ui.wasm, so the device row loads no 2 MB editor. The kit gained a text
+  request (`protocol::text`: the parameter's own `getText`, so the panel shows values as the plugin writes them and
+  reads numbers from them) and refuses a non-finite or out-of-range value from a page. The displays are the plugin's
+  own math (Inflator's shapers, Compressor's three computers, Spectrum Equalizer's ideal filters and filter design)
+  or its frames (Warm's meters, Loudness Match's gain, Limiter's analyzer audio, decoded by
+  `ports/zl-common/ui/zl-analyzer.js`). Compressor and Spectrum Equalizer send no controls frame from the panel: it
+  carries the window's solo and loudness matcher, so their panels show no analyzer.
 - **Open:** UI settings the editors save to files live in the page's memory, ZL Equalizer 2's match EQ
   fits its curve in one editor frame (the editor stalls while it does), ZL Warm's MiSans font has no license file
   upstream.

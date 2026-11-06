@@ -75,7 +75,8 @@ std::unique_ptr<juce::webclap::PageExtension> juce::webclap::createPageExtension
 const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
 {
     static const char* const features[] = { CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_COMPRESSOR,
-                                            CLAP_PLUGIN_FEATURE_STEREO, CLAP_PLUGIN_FEATURE_MONO, nullptr };
+                                            CLAP_PLUGIN_FEATURE_STEREO, CLAP_PLUGIN_FEATURE_MONO,
+                                            "opendaw:device-panel", "opendaw:device-panel-width:422", nullptr };
 
     static const ClapPluginInfo info {
         "com.zlaudio.zlcompressor",
@@ -87,7 +88,11 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         features,
         "/ui/index.html",
         600, // the editor's default size
-        371
+        371,
+        true,
+        "/ui/panel.html", // openDAW's device panel (ui/panel.html, on modules/opendaw-page), its width at 176 px
+        422,
+        176
     };
 
     return info;

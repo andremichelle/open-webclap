@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>ZL Inflator</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <link rel="stylesheet" href="opendaw-page/panel.css">
+    <style>
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+    </style>
+</head>
+<body>
+<!--
+    openDAW's device panel for ZL Inflator, in the design of docs/device-panel-design.md: the shaper's transfer curve
+    (as the editor plots it: -45 to 0 dB in and out, ShaperFunctions.h) with the input's peak on it, the editor's
+    pairs kept: Input and Output, Wet and Curve, Weight and Curve 2; the styles and the split as rows. A click on the
+    curve opens the editor's window.
+-->
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script>
+    const {caption, trace, dot, gridLine, clamp} = OpenDAWPanel
+    const STYLES = ["Identity", "Quadratic", "Cubic", "Quartic", "SinMOD"]
+    const OVERSAMPLE = ["Off", "2x", "4x", "8x", "16x"]
+    const OFF_ON = ["Off", "On"]
+
+    // the shaper of ShaperFunctions.h: two styles mixed by the weight, each with its curve; compensated by Auto Gain
+    const shaperOf = (style, curve, compensation) => {
+        switch (style) {
+            case 0: return x => x
+            case 1: {
+                const scale = compensation ? 1 / 1.7619606880293588 : 1
+                return x => scale * x * (2 - x)
+            }
+            case 2: {
+                const scale = compensation ? 1 / 1.0982883051371357 : 1
+                return x => scale * x * (1 + x * (1 - x))
+            }
+            case 3: {
+                const c6 = -6 + 6 * curve, a = (4 + c6) / 2, b = -5 - c6, c = (6 + c6) / 2
+                const scale = compensation ? 1 / (0.029832404608718992 * c6 + 1.2211563052435235) : 1
+                return x => scale * x * (1 + x * (c + x * (b + a * x)))
+            }
+            default: {
+                const trueCurve = (Math.pow(curve, 0.427) * 0.999 + 0.001) * Math.PI / 2
+                const basic = x => Math.sin(x * trueCurve)
+                const b = -basic(0), k = 1 / (basic(1) + b)
+                const scale = compensation ? 1 / (0.48339138157922157 * curve + 0.9999698009251106) : 1
+                return x => scale * k * (basic(x) + b)
+            }
+        }
+    }
+
+    const meters = {in: -100}
+    const LOW = -45, HIGH = 0
+    OpenDAWPanel.kitPanel({
+        width: 384, screen: 140,
+        params: {
+            curve1: {param: "curve1", label: "Curve", unit: "%"},
+            input: {param: "input_gain", label: "Input", bipolar: true, unit: " dB"},
+            output: {param: "output_gain", label: "Output", bipolar: true, unit: " dB"},
+            wet: {param: "wet", label: "Wet", unit: "%"},
+            style1: {param: "style1", label: "Style 1", kind: "steps", labels: STYLES},
+            style2: {param: "style2", label: "Style 2", kind: "steps", labels: STYLES},
+            curve2: {param: "curve2", label: "Curve 2", unit: "%"},
+            weight: {param: "weight", label: "Weight", unit: "%"},
+            split: {param: "band_split", label: "Band Split", kind: "steps", labels: OFF_ON},
+            low: {param: "low_split", label: "Low Split", unit: " Hz"},
+            high: {param: "high_split", label: "High Split", unit: " Hz"},
+            oversample: {param: "over_sample", label: "Oversample", kind: "steps", labels: OVERSAMPLE},
+            auto: {param: "auto_gain", label: "Auto Gain", kind: "steps", labels: OFF_ON}
+        },
+        layout: [{knobs: [["input", "M"], ["output", "M"]], rows: 2}, {knobs: [["wet", "M"], ["curve1", "M"]], rows: 2},
+            {knobs: [["weight", "M"], ["curve2", "M"]], rows: 2},
+            {labels: ["style1", "style2", null, "split", "low", "high", null, "oversample", "auto"]}],
+        // the meters frame (zl_inflator_frames.h): input and output RMS and peak per channel (dB), the channel count
+        onFrame: (type, view) => {
+            if (type !== 64 || view.byteLength < 40) {return}
+            const channels = Math.max(1, Math.min(2, view.getUint32(36, true)))
+            let peak = -100
+            for (let channel = 0; channel < channels; channel++) {peak = Math.max(peak, view.getFloat32(12 + channel * 4, true))}
+            meters.in = peak
+        },
+        draw: (context, width, height, panel) => {
+            const left = 2, right = width - 2, top = 2, bottom = height - 12
+            const x = db => left + (right - left) * (db - LOW) / (HIGH - LOW)
+            const y = db => bottom - (bottom - top) * (clamp(db, LOW - 2, HIGH + 2) - LOW) / (HIGH - LOW)
+            gridLine(context, x(LOW), y(LOW), x(HIGH), y(HIGH), true)
+            for (const db of [-30, -15]) {
+                gridLine(context, x(db), top, x(db), bottom, "grid")
+                gridLine(context, left, y(db), right, y(db), "grid")
+            }
+            const value = key => panel.value(key)
+            const compensation = value("auto") >= 0.5
+            const first = shaperOf(Math.round(value("style1") * 4), value("curve1"), compensation)
+            const second = shaperOf(Math.round(value("style2") * 4), value("curve2"), compensation)
+            const weight = value("weight")
+            const shape = gain => first(gain) * (1 - weight) + second(gain) * weight
+            const toDb = gain => 20 * Math.log10(Math.max(gain, 1e-6))
+            const points = []
+            for (let i = 0; i <= 120; i++) {
+                const db = LOW + (HIGH - LOW) * i / 120
+                points.push([x(db), y(toDb(shape(Math.pow(10, db / 20))))])
+            }
+            trace(context, points, {fill: bottom})
+            if (meters.in > LOW) {
+                const db = Math.min(meters.in, HIGH)
+                dot(context, x(db), y(toDb(shape(Math.pow(10, db / 20)))))
+            }
+            for (const db of [-45, -30, -15, 0]) {caption(context, `${db}`, x(db), height - 3, db === -45 ? "left" : db === 0 ? "right" : "center")}
+            caption(context, "dB", left + 1, top + 8)
+        }
+    })
+</script>
+</body>
+</html>

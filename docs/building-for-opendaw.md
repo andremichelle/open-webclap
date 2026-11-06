@@ -197,7 +197,10 @@ page there instead of openDAW's generic knobs:
 
 A plain CLAP port gets all of this from [`modules/opendaw-clap/opendaw_page.h`](../modules/opendaw-clap/opendaw_page.h)
 (the extension, both features, the page's messages and gestures, the window), its page the controls from
-[`modules/opendaw-page`](../modules/opendaw-page); the JUCE ports from `modules/juce_webclap`.
+[`modules/opendaw-page`](../modules/opendaw-page); the JUCE ports from `modules/juce_webclap`. A JUCE port can have
+a panel page of its own beside its editor's (`devicePanelUri`): `OpenDAWPanel.kitPanel` speaks the kit's protocol
+(values, gestures, hover, the plugin's own texts) without loading the editor; the ZL ports' `ui/panel.html` are the
+examples.
 
 1. Add the feature `opendaw:device-panel` to the descriptor. Hosts that do not know it ignore it.
 2. Answer the extension `opendaw.device-panel/1`:

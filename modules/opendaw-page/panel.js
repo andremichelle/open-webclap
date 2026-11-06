@@ -171,9 +171,12 @@ var OpenDAWPanel = (() => {
             element.innerHTML = `<span class="name"></span><span class="value"></span>`
             element.querySelector(".name").textContent = p.label
             const value = element.querySelector(".value")
-            const texts = allValues(p).map(value => text(key, value))
-            value.style.minWidth = `${Math.max(...texts.map(text => text.length))}ch`
-            views.push(() => {value.textContent = text(key, get(key))})
+            // texts may come later (a kit plugin's, see kitHost): the width follows them
+            const widest = () => Math.max(0, ...allValues(p).map(value => text(key, value).length))
+            views.push(() => {
+                value.style.minWidth = `${widest()}ch`
+                value.textContent = text(key, get(key))
+            })
             draggable(element, key, () => step(key, get(key) >= p.high ? p.low : get(key) + 1))
             return element
         }
@@ -334,6 +337,204 @@ var OpenDAWPanel = (() => {
     // a host that sends nothing: previews
     const quietHost = () => ({set: () => {}, begin: () => {}, end: () => {}, hover: () => {}, poll: () => {}})
 
+    // A JUCE kit plugin (modules/juce_webclap), its device panel a page of its own beside the editor's: the kit's
+    // protocol (juce_webclap_protocol.h), values normalised 0..1. Frames: u8 type, u8 flags, u16 reserved, payload.
+    // hello() asks for the snapshot; set, begin, end, hover and show as the editor's page sends them; text(id, value)
+    // is the plugin's own text for a value, cached, asked for in batches (onText when new texts came).
+    // listen: {onSnapshot(values), onValue(id, value), onText(), onFrame(type, view)} (onFrame: streams and the port's
+    // own frames).
+    const KIT = {HELLO: 1, SNAPSHOT: 2, PARAM: 3, GESTURE: 4, STREAM: 6, SHOW: 9, HOVER: 10, TEXT: 11}
+    const kitHost = (listen = {}, post = bytes => window.parent.postMessage(bytes, "*")) => {
+        const values = new Map()
+        const texts = new Map()
+        const asked = new Map()
+        let hovered = NO_PARAM, dragging = 0, due = false
+        const frame = (type, size, write) => {
+            const view = new DataView(new ArrayBuffer(4 + size))
+            view.setUint8(0, type)
+            write?.(view)
+            post(view.buffer)
+        }
+        const key = (id, value) => `${id}:${value}`
+        const flush = () => {
+            due = false
+            const pairs = [...asked.values()]
+            asked.clear()
+            if (pairs.length === 0) {return}
+            frame(KIT.TEXT, 4 + pairs.length * 12, view => {
+                view.setUint32(4, pairs.length, true)
+                pairs.forEach(([id, value], index) => {
+                    view.setUint32(8 + index * 12, id, true)
+                    view.setFloat64(12 + index * 12, value, true)
+                })
+            })
+        }
+        const decoder = new TextDecoder()
+        addEventListener("message", event => {
+            if (!(event.data instanceof ArrayBuffer) || event.data.byteLength < 4) {return}
+            const view = new DataView(event.data)
+            const type = view.getUint8(0)
+            if (type === KIT.SNAPSHOT) {
+                const count = view.getUint32(4, true)
+                for (let index = 0; index < count; index++) {
+                    values.set(view.getUint32(8 + index * 12, true), view.getFloat64(12 + index * 12, true))
+                }
+                listen.onSnapshot?.(values)
+            } else if (type === KIT.PARAM) {
+                const id = view.getUint32(4, true), value = view.getFloat64(8, true)
+                values.set(id, value)
+                listen.onValue?.(id, value)
+            } else if (type === KIT.TEXT) {
+                const count = view.getUint32(4, true)
+                let at = 8
+                for (let index = 0; index < count && at + 14 <= view.byteLength; index++) {
+                    const id = view.getUint32(at, true), value = view.getFloat64(at + 4, true), length = view.getUint16(at + 12, true)
+                    texts.set(key(id, value), decoder.decode(new Uint8Array(event.data, at + 14, length)))
+                    at += 14 + length
+                }
+                listen.onText?.()
+            } else {
+                listen.onFrame?.(type, view)
+            }
+        })
+        return {
+            values,
+            hello: () => frame(KIT.HELLO, 4, view => view.setUint32(4, 1, true)),
+            set: (id, value) => {
+                values.set(id, value)
+                frame(KIT.PARAM, 12, view => {
+                    view.setUint32(4, id, true)
+                    view.setFloat64(8, value, true)
+                })
+            },
+            begin: id => {
+                dragging++
+                frame(KIT.GESTURE, 5, view => {
+                    view.setUint32(4, id, true)
+                    view.setUint8(8, 1)
+                })
+            },
+            end: id => {
+                dragging = Math.max(0, dragging - 1)
+                frame(KIT.GESTURE, 5, view => view.setUint32(4, id, true))
+            },
+            hover: id => {
+                const next = id ?? NO_PARAM
+                if (next === hovered || (next === NO_PARAM && dragging > 0)) {return}
+                hovered = next
+                frame(KIT.HOVER, 4, view => view.setUint32(4, next, true))
+            },
+            show: () => frame(KIT.SHOW, 0),
+            // the text if known, else asked for (with the next batch) and "" meanwhile
+            text: (id, value) => {
+                const known = texts.get(key(id, value))
+                if (known !== undefined) {return known}
+                if (!asked.has(key(id, value))) {
+                    asked.set(key(id, value), [id, value])
+                    if (!due) {
+                        due = true
+                        queueMicrotask(flush)
+                    }
+                }
+                return ""
+            }
+        }
+    }
+
+    // JUCE's String::hashCode, the kit's CLAP id of a parameter (juce_webclap_bridge.h clapIdFor)
+    const juceId = text => {
+        let hash = 0
+        for (const letter of text) {hash = (Math.imul(hash, 31) + letter.codePointAt(0)) >>> 0}
+        return hash
+    }
+
+    // A JUCE kit plugin's device panel page (ports/zl-*/ui/panel.html): the card (a display, then the controls) on
+    // the plugin's values, texts as the plugin writes them, a click on the display opens the plugin's window.
+    //   width        the panel's width at 176 px, as the plugin declares it
+    //   screen       the display's width
+    //   params       {key: {param: the JUCE parameter ID, label, kind "range" | "steps", labels (steps), bipolar,
+    //                unit}}; a choice or a switch is "steps", its JUCE value index / (count - 1); unit follows the
+    //                plugin's text where the plugin writes none (" dB", "%")
+    //   layout       the columns (controls.layout), corner a lone parameter in the display's corner
+    //   draw(context, width, height, panel)   the display, every frame
+    //   onFrame(type, view, panel)            the port's own frames (the kit's streams and the port's types)
+    //   opened(panel)                         after the snapshot: the port's own requests (an analyzer switched on)
+    // panel: value(key) the JUCE value 0..1, plain(key) the plugin's text as a number (NaN until it came),
+    // text(key), valueOf(id) and plainOf(id) the same for any parameter by its JUCE ID (one without a control: an
+    // equalizer's bands), send(bytes) a frame of the port's own, time in seconds.
+    const kitPanel = spec => {
+        const params = new Map(Object.entries(spec.params).map(([key, p]) => [key, {kind: "range", ...p,
+            id: juceId(p.param), ...(p.kind === "steps" ? {low: 0, high: p.labels.length - 1} : {})}]))
+        let controls = null
+        const kit = kitHost({
+            onSnapshot: () => {
+                controls.update()
+                spec.opened?.(panel)
+            },
+            onValue: () => controls.update(),
+            onText: () => controls.update(),
+            onFrame: (type, view) => spec.onFrame?.(type, view, panel)
+        })
+        const norm = key => kit.values.get(params.get(key).id) ?? 0
+        const panel = {
+            time: 0,
+            value: norm,
+            text: key => kit.text(params.get(key).id, norm(key)),
+            plain: key => parseFloat(kit.text(params.get(key).id, norm(key))),
+            valueOf: name => kit.values.get(juceId(name)) ?? 0,
+            plainOf: name => {
+                const id = juceId(name)
+                return parseFloat(kit.text(id, kit.values.get(id) ?? 0))
+            },
+            send: bytes => window.parent.postMessage(bytes, "*")
+        }
+        const card = document.createElement("div")
+        card.className = "card"
+        card.style.width = `${spec.width}px`
+        card.innerHTML = `<div class="screen"><canvas></canvas></div><div class="group"></div>`
+        const screen = card.querySelector(".screen"), canvas = card.querySelector("canvas")
+        screen.style.width = `${spec.screen}px`
+        screen.style.cursor = "pointer"
+        screen.addEventListener("click", event => {if (event.target === canvas) {kit.show()}})
+        controls = OpenDAWPanel.controls({
+            param: key => params.get(key),
+            get: key => {
+                const p = params.get(key)
+                return p.kind === "steps" ? Math.round(norm(key) * p.high) : norm(key)
+            },
+            set: (key, value) => {
+                const p = params.get(key)
+                kit.set(p.id, p.kind === "steps" ? value / Math.max(1, p.high) : value)
+                controls.update()
+            },
+            text: (key, value) => {
+                const p = params.get(key)
+                if (p.kind === "steps") {return p.labels[value]}
+                const text = kit.text(p.id, value)
+                return text === "" || p.unit === undefined ? text : `${text}${p.unit}`
+            },
+            host: kit
+        })
+        controls.layout(spec.layout, card.querySelector(".group"))
+        if (spec.corner !== undefined) {controls.corner(spec.corner, screen)}
+        const stage = document.getElementById("stage")
+        stage.append(card)
+        let zoom = 1
+        zoomToWindow(stage, spec.width, value => {zoom = value})
+        const context = canvas.getContext("2d")
+        const frame = now => {
+            panel.time = now / 1000
+            const {width, height} = fit(canvas, context, zoom)
+            spec.draw?.(context, width, height, panel)
+            requestAnimationFrame(frame)
+        }
+        document.fonts.ready.then(() => {
+            kit.hello()
+            requestAnimationFrame(frame)
+        })
+        return panel
+    }
+
     // the card zoomed to the window (1:1 in the 176 px device panel); answers the zoom
     const zoomToWindow = (stage, width, onZoom) => {
         const resize = () => {
@@ -345,5 +546,6 @@ var OpenDAWPanel = (() => {
         resize()
     }
 
-    return {SIZES, clamp, controls, ink, fit, gridLine, caption, trace, dot, polar, PAGE, pluginHost, quietHost, zoomToWindow}
+    return {SIZES, clamp, controls, ink, fit, gridLine, caption, trace, dot, polar, PAGE, pluginHost, quietHost, kitHost,
+        juceId, kitPanel, zoomToWindow}
 })()

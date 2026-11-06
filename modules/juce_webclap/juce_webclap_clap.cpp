@@ -570,9 +570,10 @@ private:
                 const auto id = r.get<uint32>();
                 const auto value = r.get<double>();
 
-                if (r.ok)
+                // a page's value is normalised: nothing else reaches the processor (a NaN silences most DSP)
+                if (r.ok && std::isfinite (value))
                 {
-                    setParameter (id, value, Origin::page);
+                    setParameter (id, jlimit (0.0, 1.0, value), Origin::page);
                     requestHostFlush();
                 }
 
@@ -620,6 +621,39 @@ private:
                     hostGui->request_show (host);
 
                 break;
+
+            case protocol::text:
+            {
+                // the parameter's own text for each value asked, answered at once to every page
+                const auto count = r.get<uint32>();
+                protocol::Writer w (protocol::text);
+                w.u32 (0);
+                uint32 answered = 0;
+                char display[64];
+
+                for (uint32 index = 0; index < count && r.ok; ++index)
+                {
+                    const auto id = r.get<uint32>();
+                    const auto value = r.get<double>();
+
+                    if (! r.ok || ! valueToText (id, value, display, sizeof (display)))
+                        continue;
+
+                    const auto length = (uint16) std::strlen (display);
+                    w.u32 (id);
+                    w.f64 (value);
+                    w.u16 (length);
+                    w.put (display, length);
+                    ++answered;
+                }
+
+                std::memcpy (w.bytes.data() + 4, &answered, 4);
+
+                if (hostWebview != nullptr && hostWebview->send != nullptr)
+                    hostWebview->send (host, w.bytes.data(), (uint32_t) w.bytes.size());
+
+                break;
+            }
 
             case protocol::resize:
             {

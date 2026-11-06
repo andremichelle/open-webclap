@@ -23,8 +23,11 @@ zl_build() {
 }
 
 zl_bundle() {
-    # The bundle's page (ui/)
+    # The bundle's page (ui/), the device panel's shared controls beside it (ui/opendaw-page)
     cp "$ROOT/modules/juce_webclap/js/"*.js "$ROOT/ports/$PORT/ui/"* "$BUNDLE/ui/"
+    mkdir -p "$BUNDLE/ui/opendaw-page"
+    cp "$ROOT/modules/opendaw-page/panel.css" "$ROOT/modules/opendaw-page/panel.js" "$BUNDLE/ui/opendaw-page/"
+    cp "$ROOT/ports/zl-common/ui/"*.js "$BUNDLE/ui/"
 
     # License and notices (LICENSE, NOTICES.md, licenses/)
     # The plugin's own license by its title (the GPL-3.0 text names the Affero license further down), Inter's OFL
