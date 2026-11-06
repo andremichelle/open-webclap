@@ -247,6 +247,14 @@ def zl_filter(path):
             or path in ("LICENSE", "LICENSE.md", "README.md", "VERSION", "CMakeLists.txt"))
 
 
+# oxo_synth2 (chab, MIT) at main at the time of writing: the header-only C++20 engine (EngineCore/) the port wraps,
+# and the first-party factory bank the bundle's page ships as loadable patches
+DEPS += [
+    ("oxo-synth2", "chab/oxo_synth2", "5bce0fddf930b8bea1d7c9ec09cc08bb8f891e8a",
+     lambda p: p.startswith(("EngineCore/", "Shared/Resources/Synth2 Factory/"))
+     or p in ("LICENSE", "README.md")),
+]
+
 # The ZL Audio plugins (zsliu98) at main at the time of writing, each with the submodules it builds with at its pins:
 # Google Highway, zldsp_fft (on Highway) and friz (ZLWarm's animations). JUCE is the shared one (ZL pins a fork
 # with four small changes, see patches/zl-*.patch).
@@ -343,7 +351,7 @@ PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "
                  ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
                  ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric"), ("oxygen-", "oxygen"),
                  ("obxf-", "OB-Xf"), ("helm-", "helm"), ("signalsmith-basics-", "signalsmith-basics"),
-                 ("stmlib-", "eurorack/stmlib")] + [(d + "-", d) for d, _, _ in ZL]
+                 ("stmlib-", "eurorack/stmlib"), ("oxo-synth2-", "oxo-synth2")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():
