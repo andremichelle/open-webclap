@@ -71,9 +71,19 @@
     const meter = {
         fs: 0, filters: [], history: [[], []], blocks: [], block: {energy: 0, count: 0, cross: 0, left: 0, right: 0},
         integrated: [], shortTerm: [], peak: 0, values: null,
-        // the loudness starts over (a value reset of the transport, a new rate); the true peak only with a new rate
+        // a value reset of the transport (a jump, a loop): the cumulative values start over, integrated loudness and
+        // range; momentary and short-term are sliding windows and keep running, so nothing blinks
+        restart() {
+            this.integrated = []
+            this.shortTerm = []
+            this.warmup = 0
+        },
+        // a new rate: everything starts over
         reset(fs) {
-            if (fs !== this.fs) {this.peak = 0}
+            if (fs !== this.fs) {
+                this.peak = 0
+                lastShown?.fill("–")
+            }
             this.fs = fs
             const shelf = biquad("shelf", 1500.6868667368922, 0.7096433028107384, 3.9993623475151354, fs)
             const high = biquad("highpass", 38.13713296248405, 0.500242812458813, 0, fs)
@@ -83,6 +93,7 @@
             this.block = {energy: 0, count: 0, cross: 0, left: 0, right: 0}
             this.integrated = []
             this.shortTerm = []
+            this.warmup = 0
             this.values = null
         },
         // the true peak runs always (the editor's comes from its magnitude analyzer), the loudness while measuring
@@ -136,6 +147,8 @@
             const short = this.blocks.length >= 30 ? meanOf(this.blocks) : NaN
             if (momentary > ABSOLUTE_GATE) {this.integrated.push(momentary)}
             if (short > ABSOLUTE_GATE) {this.shortTerm.push(short)}
+            // the range is provisional for its first 600 short-term blocks (lufs_meter.hpp kLoudnessRangeWarmupBlocks)
+            if (Number.isFinite(short)) {this.warmup = Math.min((this.warmup ?? 0) + 1, 600)}
             const recent = this.blocks.slice(-4)
             const sum = key => recent.reduce((s, b) => s + b[key], 0)
             this.values = {
@@ -165,7 +178,9 @@
     const READOUTS = [
         ["dBTP", () => meter.peak > 0 ? (20 * Math.log10(meter.peak)).toFixed(1) : NaN],
         ["LUFS-M", v => loudness(v.momentary).toFixed(1)], ["LUFS-S", v => loudness(v.short).toFixed(1)],
-        ["LUFS-I", v => loudness(v.integrated).toFixed(1)], ["LRA", v => v.range.toFixed(1)],
+        // a provisional range in parentheses, as the editor shows it
+        ["LUFS-I", v => loudness(v.integrated).toFixed(1)],
+        ["LRA", v => Number.isFinite(v.range) ? (meter.warmup < 600 ? `(${v.range.toFixed(1)})` : v.range.toFixed(1)) : NaN],
         ["Corr", v => v.correlation.toFixed(2)]
     ]
     // the readouts: names in the label colour, values grey, as wide as "-100.0" so nothing moves
@@ -175,15 +190,19 @@
         const row = document.createElement("div")
         row.className = "parameter"
         row.style.cursor = "default"
-        row.innerHTML = `<span class="name">${name}</span><span class="value" style="min-width: 6ch"></span>`
+        row.innerHTML = `<span class="name">${name}</span><span class="value" style="min-width: 7ch"></span>`
         readouts.append(row)
         return row.querySelector(".value")
     })
+    // a value without a new measurement keeps its last (integrated and range restart with each value reset), "–"
+    // only for what was never measured
+    const lastShown = READOUTS.map(() => "–")
     const showReadouts = () => {
         const v = meter.values
         READOUTS.forEach(([, text], index) => {
             const shown = v === null && index > 0 ? "NaN" : String(text(v))
-            readoutValues[index].textContent = shown.includes("NaN") || shown === "-Infinity" ? "–" : shown
+            if (!shown.includes("NaN") && shown !== "-Infinity") {lastShown[index] = shown}
+            readoutValues[index].textContent = lastShown[index]
         })
     }
     // the analyzer runs while a page asks for it (zl_limiter_frames.h Controls), asked again now and then: the
@@ -191,7 +210,7 @@
     const enable = panel => panel.send(new Uint8Array([CONTROLS, 0, 0, 0, 1]).buffer)
 
     const panel = OpenDAWPanel.kitPanel({
-        width: 492, screen: 150,
+        width: 498, screen: 150,
         params: {
             input: {param: "input_gain", label: "Input", unit: " dB"},
             ceiling: {param: "output_ceiling", label: "Ceiling", unit: " dB"},
@@ -215,8 +234,7 @@
                 const resets = view.getUint32(12, true)
                 if (resets !== status.resets) {
                     status.resets = resets
-                    meter.reset(meter.fs)
-                    showReadouts()
+                    meter.restart()
                 }
                 status.active = view.getUint8(16) !== 0
                 return

@@ -78,7 +78,7 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
 {
     static const char* const features[] = { CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_LIMITER,
                                             CLAP_PLUGIN_FEATURE_STEREO, CLAP_PLUGIN_FEATURE_MONO,
-                                            "opendaw:device-panel", "opendaw:device-panel-width:492", nullptr };
+                                            "opendaw:device-panel", "opendaw:device-panel-width:498", nullptr };
 
     static const ClapPluginInfo info {
         "com.zlaudio.zllimiter",
@@ -93,7 +93,7 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         371,
         true,
         "/ui/panel.html", // openDAW's device panel (ui/panel.html, on modules/opendaw-page), its width at 176 px
-        492,
+        498,
         176
     };
 
