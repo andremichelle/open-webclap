@@ -252,7 +252,7 @@ def zl_filter(path):
 DEPS += [
     ("oxo-synth2", "chab/oxo_synth2", "5bce0fddf930b8bea1d7c9ec09cc08bb8f891e8a",
      lambda p: p.startswith(("EngineCore/", "Shared/Resources/Synth2 Factory/"))
-     or p in ("LICENSE", "README.md")),
+     or p in ("LICENSE", "README.md", "Identity.xcconfig")),
 ]
 
 # The ZL Audio plugins (zsliu98) at main at the time of writing, each with the submodules it builds with at its pins:

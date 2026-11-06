@@ -19,8 +19,12 @@ get_filename_component(KIT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(OXO "${KIT_ROOT}/external/oxo-synth2")
 set(BUNDLE "${CMAKE_BINARY_DIR}/web/oxo-synth2.wclap")
 
-# The pinned upstream commit's MARKETING_VERSION (Identity.xcconfig)
-set(OXO_SYNTH2_VERSION "1.1.1")
+# The descriptor's version follows the pinned upstream commit: MARKETING_VERSION in its Identity.xcconfig
+file(STRINGS "${OXO}/Identity.xcconfig" OXO_VERSION_LINE REGEX "^MARKETING_VERSION")
+string(REGEX REPLACE "^[^=]*=[ \t]*" "" OXO_SYNTH2_VERSION "${OXO_VERSION_LINE}")
+if(NOT OXO_SYNTH2_VERSION)
+    set(OXO_SYNTH2_VERSION "0.0.0")
+endif()
 
 # The flags and link options of the kit's DSP modules (modules/juce_webclap/juce_webclap.cmake), without JUCE: a
 # standalone wasm module exporting clap_entry, malloc and the function table, importing only WASI. The engine needs

@@ -20,6 +20,30 @@ Build: `scripts/build-oxo-synth2.sh` (Emscripten, fetches the pinned engine, run
 `build/oxo-synth2/oxo-synth2.wclap.tar.gz`). Test in the test host:
 `python3 scripts/serve.py .` then `http://127.0.0.1:8123/test-host/?bundle=/build/oxo-synth2/web/oxo-synth2.wclap`.
 
+## Keeping up with oxo_synth2
+
+The port tracks upstream by its pinned commit, one line in `scripts/fetch-deps.py`
+(`("oxo-synth2", "chab/oxo_synth2", "<commit>", …)`). To take an upstream improvement:
+
+1. Bump the commit in that `DEPS` entry and update the commit named in `NOTICES.md.in`. Run
+   `python3 scripts/fetch-deps.py` — the changed dep is refetched (the `.fetched` stamp differs) and any
+   `patches/oxo-synth2-*.patch` are applied (`PATCH_TARGETS` already has the prefix; there are none today).
+   If a patch no longer applies, rebase it. The fetch filter pulls `EngineCore/`, `Identity.xcconfig`,
+   `LICENSE`, `README.md` and `Shared/Resources/Synth2 Factory/` — new factory patches are picked up by
+   `patches.py` automatically, and the descriptor's version is read from the pinned `Identity.xcconfig`
+   `MARKETING_VERSION` in `CMakeLists.txt`, so no other version string needs editing.
+2. Clean build and test: `rm -rf build/oxo-synth2 && scripts/build-oxo-synth2.sh` (runs `check.mjs`: the
+   parameter contract, state layout, note/MIDI behavior, page protocol, DSP timing). If the engine's API or
+   the panel changed, fix the wrapper (`oxo_synth2_clap.cpp`) and the page layout (`ui/index.html` mirrors
+   `Shared/SynthPanelView.swift`) in this repo.
+3. If upstream itself needs a change to build/run as wasm (a new non-portable include, …), put it in a small
+   `patches/oxo-synth2-<name>.patch` with a header comment describing it, per the repo's convention — prefer
+   hooks over rewrites. Ideally propose such changes upstream so the pin eventually needs no patch.
+
+Upstream's own correctness gate (`make -C EngineCoreTests test` in oxo_synth2) covers the engine against the
+original Synth1's reference renders; this repo's `check.mjs` covers the wrapper contract. When intentionally
+bumping the pin, listen for engine sound changes — that is upstream's business, not a port regression.
+
 Known gaps, in priority order:
 
 - No `opendaw:device-panel` page of its own yet (Helm's precedent: openDAW shows its generic parameter panel,
