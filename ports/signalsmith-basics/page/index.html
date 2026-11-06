@@ -6,166 +6,140 @@
     <title>Signalsmith Basics</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Share+Tech+Mono&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,400;0,500;0,700;1,400&display=swap">
     <!--
-        The editor of the Signalsmith Basics effects. One card per effect: the name, a display and the
-        knobs, laid out at 176 px high (openDAW's device panel) and zoomed to the window.
+        The editor of the Signalsmith Basics effects. One card per effect, laid out at 176 px high (openDAW's device
+        panel) and zoomed to the window: the display, then the controls. The design follows docs/device-panel-design.md.
 
         #<effect> shows that effect's card (the plugin's page); without one (or with ?preview) all seven with simulated
         signals.
     -->
     <style>
         :root {
-            /* openDAW Studio's panel-background (classic scheme, hue 197): the device panel behind the card */
+            /* openDAW Studio, classic scheme (hue 197) */
             --page: hsl(197, 14%, 12%);
-            /* the studio's background, around the devices in the preview */
             --studio: hsl(197, 8%, 9%);
-            --title: #e9ecf1;
-            --caption: #7a808b;
-            --label: #6c727d;
-            --label-bright: #9aa1ac;
-            --frame: #15161a;
-            --lcd-text: #d8ecff;
+            --shadow: hsl(197, 10%, 60%);
+            --blue: hsl(189, 100%, 65%);
+            /* names and a knob's value: the studio's cream at 80 % over the panel */
+            --label: #b9bda4;
+            /* values: grey, a choice's current step a little brighter, the others dim */
+            --value: hsl(197, 9%, 54%);
+            --step: hsl(197, 12%, 74%);
+            --step-off: hsl(197, 10%, 30%);
+            /* the knob: a dark cap, a faint grey track */
+            --knob: hsl(197, 11%, 17%);
+            --track: hsl(197, 15%, 84%);
         }
         * {box-sizing: border-box}
         html, body {margin: 0; height: 100%}
         body {
             background: var(--page);
-            font-family: Lato, sans-serif;
-            color: var(--title);
+            font-family: Rubik, sans-serif;
             user-select: none;
             -webkit-user-select: none;
             overflow: hidden;
         }
         body.preview {overflow: auto; background: var(--studio)}
-        body.preview .card {background: var(--page)}
         #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
-        body.preview #stage {position: static; padding: 28px 24px 40px; transform: none}
-        .section {margin: 0 auto 34px; max-width: 1500px}
-        .section > h3 {
-            margin: 0 0 14px;
-            font-size: 11px;
-            font-weight: 900;
-            letter-spacing: 0.12em;
-            color: var(--caption);
-        }
-        .shelf {display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px}
-        .device > .caption {font-size: 9px; color: var(--caption); margin: 0 0 6px 1px; letter-spacing: 0.06em}
+        body.preview #stage {position: static; padding: 20px 24px 40px; transform: none}
+        .shelf {display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px}
+        .device > .caption {font-size: 8px; color: var(--shadow); opacity: 0.6; margin: 0 0 5px 1px; letter-spacing: 0.04em}
 
+        /* openDAW's header names the device: the card is the display and the controls, nothing around them, with
+           the stock devices' padding (8 px top and bottom, 4 px at the sides) and 16 px between groups */
         .card {
             position: relative;
+            display: flex;
             height: 176px;
-            padding: 14px 14px 12px;
+            padding: 8px 4px;
+            gap: 16px;
+            background: var(--page);
         }
-        .header {display: flex; align-items: flex-start; height: 34px; margin-bottom: 8px}
-        .titles {flex: 1; min-width: 0; padding-top: 1px}
-        .titles h1 {margin: 0; font-size: 15px; font-weight: 900; letter-spacing: 0.02em; line-height: 17px; white-space: nowrap}
-        .titles h2 {
-            margin: 2px 0 0;
-            font-size: 8.5px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            color: var(--caption);
-            white-space: nowrap;
-        }
-        .header-controls {display: flex; gap: 6px; margin-top: -4px}
-        .header-controls .control {width: 38px}
-        /* the display centred on a 24 px knob, the label on the knobs' label line */
-        .header-controls .selector {margin-top: 1px; gap: 8px}
+        .screen {position: relative; flex: none; overflow: hidden}
+        .screen canvas {display: block; width: 100%; height: 100%}
 
-        .body {display: flex; gap: 14px; height: 108px}
-        .screen {
-            flex: none;
-            height: 108px;
-            padding: 3px;
-            border-radius: 4px;
-            background: var(--frame);
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.8) inset, 0 1px 0 rgba(255, 255, 255, 0.06);
-        }
-        .screen canvas {display: block; width: 100%; height: 100%; border-radius: 2px}
-        .grid {flex: 1; display: flex; flex-direction: column; justify-content: space-around}
-        .row {display: flex; justify-content: space-between; gap: 2px}
-        .row.center {justify-content: center; gap: 14px}
+        /* the knobs: columns of three 50 px rows, 10 px apart, as wide as their widest control */
+        .group {display: flex; gap: 10px}
+        .group:empty {display: none}
+        .column {display: grid; grid-template-rows: repeat(3, 50px); row-gap: 3px}
+        /* four knobs as a square */
+        .column.rows-2 {grid-template-rows: repeat(2, 50px); align-content: center; row-gap: 12px}
+        /* the large knob centred by its circle: the label hangs below the middle */
+        .column.large {display: flex; align-items: center; justify-content: center; padding-top: 15px}
+        .column.stack {display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 2px 0}
+        /* a row's labels on one line: a cell's content sits on its bottom */
+        .cell {display: grid; justify-items: center; align-items: end}
 
         .control {
             position: relative;
-            width: 44px;
+            min-width: 28px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 3px;
+            gap: 4px;
             cursor: ns-resize;
             touch-action: none;
         }
         .control svg.knob {display: block; overflow: visible}
-        .control .label {
-            font-size: 8px;
-            font-weight: 900;
-            letter-spacing: 0.04em;
-            color: var(--label);
+        .control .label, .control .readout {
+            font-size: 9px;
+            line-height: 11px;
+            height: 11px;
             white-space: nowrap;
-            line-height: 9px;
+            color: var(--label);
         }
-        /* the value over the label while hovered or dragged, inside the card wherever the knob sits */
+        /* the value in the label's place while hovered or dragged, in the studio's colour for a modified control */
         .control .readout {
             position: absolute;
-            bottom: -2px;
+            bottom: 0;
             left: 50%;
             transform: translateX(-50%);
-            padding: 1px 4px;
-            border-radius: 2px;
-            font: 9px "Share Tech Mono", monospace;
-            color: var(--lcd-text);
-            background: #1b3f86;
-            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 6px rgba(70, 150, 255, 0.4);
-            white-space: nowrap;
-            pointer-events: none;
+            color: var(--blue);
+            font-variant-numeric: tabular-nums;
             opacity: 0;
+            pointer-events: none;
         }
         .control.active .readout {opacity: 1}
         .control.active .label {visibility: hidden}
-        .knob .value-arc {filter: drop-shadow(0 0 1.5px var(--accent))}
 
-        .selector {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 3px;
-        }
-        .selector .arrows span {cursor: pointer}
-        .selector .lcd {
-            display: flex;
-            align-items: center;
-            height: 18px;
-            padding: 0 3px 0 6px;
-            border-radius: 3px;
-            background: linear-gradient(#3f86e8, #2258b8);
-            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.35) inset, 0 0 8px rgba(60, 140, 255, 0.25);
-        }
-        /* every choice in one cell, all but the current hidden: as wide as the widest */
-        .selector .text {
-            flex: 1;
-            display: grid;
-            font: 10px "Share Tech Mono", monospace;
-            color: var(--lcd-text);
-            text-shadow: 0 0 4px rgba(200, 230, 255, 0.7);
-            white-space: nowrap;
-            padding-right: 6px;
-        }
-        .selector .text > span {grid-area: 1 / 1}
-        .selector .text > span.hidden {visibility: hidden}
-        .selector .arrows {display: flex; gap: 1px}
-        .selector .arrows span {
-            width: 10px;
-            height: 11px;
+        /* a choice: its steps as words (values, so grey), the name below */
+        .choice {display: flex; flex-direction: column; align-items: center; gap: 4px}
+        .pills {display: flex; flex-direction: column; gap: 1px}
+        .pills span {
+            height: 13px;
+            padding: 0 6px;
+            border-radius: 2px;
             display: grid;
             place-items: center;
-            border-radius: 1px;
-            background: rgba(255, 255, 255, 0.25);
-            color: #10306e;
-            font-size: 6px;
+            font-size: 9px;
+            color: var(--step-off);
+            cursor: pointer;
+            white-space: nowrap;
         }
-        .selector .label {font-size: 8px; font-weight: 900; letter-spacing: 0.04em; color: var(--label); line-height: 9px}
+        .pills span.on {color: var(--step); background: rgba(255, 255, 255, 0.04)}
+        .choice .label {font-size: 9px; line-height: 11px; color: var(--label)}
+
+        /* parameter rows: the minor parameters, a name and a value on one line, groups 6 px apart */
+        .column.labels {display: flex; flex-direction: column; justify-content: center; margin-left: 6px}
+        .column.labels .gap {height: 6px}
+        .parameter {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            height: 13px;
+            line-height: 13px;
+            font-size: 9px;
+            cursor: ns-resize;
+            touch-action: none;
+            white-space: nowrap;
+        }
+        .parameter .name {color: var(--label)}
+        /* as wide as the widest value it can show (set in the script), so a change never moves anything */
+        .parameter .value {color: var(--value); font-variant-numeric: tabular-nums; text-align: right}
+        .parameter.active .value {color: var(--blue)}
+        /* a lone parameter in the display's corner */
+        .parameter.corner {position: absolute; top: 2px; right: 2px; gap: 5px}
     </style>
 </head>
 <body>
@@ -189,91 +163,100 @@
         ({id: id ?? fnv1a(key), key, label, kind: "steps", low, high, value, labels, text: "steps"})
     const dB = db => Math.pow(10, db / 20)
 
+    // Per effect: the display's width, the parameters (as the plugin's, in its order) and the layout of the controls,
+    // left to right. A layout column is the large main knob, knobs in rows (three, or two for a square of four), a
+    // stack (small knobs and a choice, top to bottom) or parameter rows (null: a gap between groups); "corner" puts a
+    // lone parameter in the display's corner. Knob sizes: L the main control, M the rest, S secondary trims.
     const EFFECTS = {
         analyser: {
-            title: "Analyser", subtitle: "BARK SPECTRUM", accent: "#38b6ff", screen: 330,
-            params: [range(2639851652, "barkResolution", "RES", 2, 10, 25, 10, "plain0")],
-            header: [], rows: [["barkResolution"]]
+            title: "Analyser", width: 338, screen: 330,
+            params: [range(2639851652, "barkResolution", "Res", 2, 10, 25, 10, "plain0")],
+            layout: [], corner: "barkResolution"
         },
         chorus: {
-            title: "Chorus", subtitle: "SIX VOICES", accent: "#3d9dff", screen: 150,
+            title: "Chorus", width: 260, screen: 150,
             params: [
-                range(1223226259, "mix", "MIX", 0, 0.5, 1, 0.6, "percent"),
-                range(1841279726, "depthMs", "DEPTH", 2, 15, 50, 15, "ms"),
-                range(2967225864, "detune", "DETUNE", 1, 8, 50, 5, "cents"),
-                range(3972183190, "stereo", "STEREO", 0, 0.5, 1.5, 1, "percent")
+                range(1223226259, "mix", "Mix", 0, 0.5, 1, 0.6, "percent"),
+                range(1841279726, "depthMs", "Depth", 2, 15, 50, 15, "ms"),
+                range(2967225864, "detune", "Detune", 1, 8, 50, 5, "cents"),
+                range(3972183190, "stereo", "Stereo", 0, 0.5, 1.5, 1, "percent")
             ],
-            header: ["mix"], rows: [["depthMs", "detune", "stereo"]]
+            layout: [{large: "depthMs"}, {knobs: [["detune", "M"], ["stereo", "M"], ["mix", "M"]]}]
         },
         crunch: {
-            title: "Crunch", subtitle: "SATURATION", accent: "#ff9824", screen: 140,
+            title: "Crunch", width: 284, screen: 140,
             params: [
-                range(2943184073, "drive", "DRIVE", dB(-12), 4, dB(40), 4, "gain"),
-                range(481700, "fuzz", "FUZZ", 0, 0.5, 1, 0, "percent"),
-                range(4249490896, "toneHz", "TONE", 100, 4000, 20000, 2000, "hz"),
-                range(1100269863, "cutHz", "CUT", 20, 100, 500, 50, "hz"),
-                range(2537258908, "outGain", "OUT", dB(-12), 1, dB(24), 1, "gain")
+                range(2943184073, "drive", "Drive", dB(-12), 4, dB(40), 4, "gain"),
+                range(481700, "fuzz", "Fuzz", 0, 0.5, 1, 0, "percent"),
+                range(4249490896, "toneHz", "Tone", 100, 4000, 20000, 2000, "hz"),
+                range(1100269863, "cutHz", "Cut", 20, 100, 500, 50, "hz"),
+                range(2537258908, "outGain", "Out", dB(-12), 1, dB(24), 1, "gain")
             ],
-            header: ["outGain"], rows: [["drive", "fuzz"], ["toneHz", "cutHz"]]
+            layout: [{large: "drive"}, {knobs: [["fuzz", "M"], ["toneHz", "M"]], rows: 2},
+                {knobs: [["cutHz", "M"], ["outGain", "M"]], rows: 2}]
         },
         dynamics: {
-            title: "Dynamics", subtitle: "COMPRESSOR · EXPANDER · GATE", accent: "#36d45a", screen: 150,
+            title: "Dynamics", width: 374, screen: 150,
             params: [
-                range(null, "compressor/limitDb", "THRESH", -60, -30, 0, -20, "db"),
-                range(null, "compressor/invRatio", "RATIO", 1, 0.5, 0, 0.5, "invratio"),
-                stepped(null, "compressor/autoGain", "AUTO GAIN", 0, 1, 1, ["OFF", "ON"]),
-                range(null, "compressor/makeupDb", "MAKEUP", 0, 6, 20, 0, "dboff"),
-                range(null, "expander/limitDb", "EXPAND", -60, -30, 0, -40, "db"),
-                range(null, "expander/ratio", "RATIO", 1, 2, 10, 1, "ratio"),
-                range(null, "gate/limitDb", "GATE", -80, -40, 0, -80, "db"),
-                range(null, "gate/hysteresis", "HYST", 0, 3, 12, 3, "db"),
-                range(null, "kneeDb", "KNEE", 0, 3, 12, 3, "db"),
-                range(null, "timing/lookaheadMs", "LOOK", 0, 5, 20, 0, "ms"),
-                range(null, "timing/attackMs", "ATTACK", 1, 20, 50, 20, "ms"),
-                range(null, "timing/releaseMs", "RELEASE", 20, 100, 250, 150, "ms"),
-                range(1223226259, "mix", "MIX", 0, 0.5, 1, 1, "percent")
+                range(null, "compressor/limitDb", "Thresh", -60, -30, 0, -20, "db"),
+                range(null, "compressor/invRatio", "Ratio", 1, 0.5, 0, 0.5, "invratio"),
+                stepped(null, "compressor/autoGain", "Auto Gain", 0, 1, 1, ["Off", "On"]),
+                range(null, "compressor/makeupDb", "Makeup", 0, 6, 20, 0, "dboff"),
+                range(null, "expander/limitDb", "Expand", -60, -30, 0, -40, "db"),
+                range(null, "expander/ratio", "Exp Ratio", 1, 2, 10, 1, "ratio"),
+                range(null, "gate/limitDb", "Gate", -80, -40, 0, -80, "db"),
+                range(null, "gate/hysteresis", "Hysteresis", 0, 3, 12, 3, "db"),
+                range(null, "kneeDb", "Knee", 0, 3, 12, 3, "db"),
+                range(null, "timing/lookaheadMs", "Lookahead", 0, 5, 20, 0, "ms"),
+                range(null, "timing/attackMs", "Attack", 1, 20, 50, 20, "ms"),
+                range(null, "timing/releaseMs", "Release", 20, 100, 250, 150, "ms"),
+                range(1223226259, "mix", "Mix", 0, 0.5, 1, 1, "percent")
             ],
-            header: ["compressor/autoGain", "mix"],
-            rows: [["compressor/limitDb", "compressor/invRatio", "kneeDb", "compressor/makeupDb", "timing/lookaheadMs"],
-                ["expander/limitDb", "expander/ratio", "gate/limitDb", "gate/hysteresis", "timing/attackMs", "timing/releaseMs"]]
+            layout: [{large: "compressor/limitDb"},
+                {knobs: [["compressor/invRatio", "M"], ["compressor/makeupDb", "M"], ["mix", "M"]]},
+                {labels: ["kneeDb", "compressor/autoGain", null, "timing/attackMs", "timing/releaseMs", "timing/lookaheadMs",
+                    null, "expander/limitDb", "expander/ratio", "gate/limitDb", "gate/hysteresis"]}]
         },
         "freq-shifter": {
-            title: "Freq Shifter", subtitle: "SINGLE SIDEBAND", accent: "#a874ff", screen: 170,
+            title: "Frequency Shifter", width: 246, screen: 170,
             params: [
-                range(1223226259, "mix", "MIX", 0, 0.5, 1, 1, "percent"),
-                range(2301226280, "shiftHz", "SHIFT", -1000, 0, 1000, 50, "shift", {kind: "shift", bipolar: true}),
-                stepped(3716977271, "reflect", "0 HZ", 0, 3, 0, ["PASS", "REFLECT", "DUPLICATE", "BOTH"])
+                range(1223226259, "mix", "Mix", 0, 0.5, 1, 1, "percent"),
+                range(2301226280, "shiftHz", "Shift", -1000, 0, 1000, 50, "shift", {kind: "shift", bipolar: true}),
+                // its steps say what it does: no name
+                stepped(3716977271, "reflect", "", 0, 3, 0, ["Pass", "Reflect", "Duplicate", "Both"])
             ],
-            header: ["mix"], rows: [["shiftHz", "reflect"]]
+            layout: [{stack: [["shiftHz", "S"], ["reflect"], ["mix", "S"]]}]
         },
         limiter: {
-            title: "Limiter", subtitle: "LOOKAHEAD", accent: "#ff4d4d", screen: 160,
+            title: "Limiter", width: 322, screen: 160,
             params: [
-                range(224108168, "inputGain", "PRE-GAIN", dB(-12), 1, dB(24), 1, "gain"),
-                range(1951529716, "outputLimit", "LIMIT", dB(-24), dB(-12), 1, dB(-3), "gain"),
-                range(274825181, "attackMs", "ATTACK", 1, 10, 50, 20, "ms"),
-                range(1212264141, "holdMs", "HOLD", 0, 10, 50, 0, "ms"),
-                range(1417304825, "releaseMs", "RELEASE", 0, 10, 250, 0, "ms"),
-                stepped(870994041, "smoothingStages", "SMOOTHING", 1, 2, 1, ["RECT", "DOUBLE"]),
-                range(2439531228, "linkChannels", "LINK", 0, 0.5, 1, 0.5, "percent")
+                range(224108168, "inputGain", "Pre-Gain", dB(-12), 1, dB(24), 1, "gain"),
+                range(1951529716, "outputLimit", "Limit", dB(-24), dB(-12), 1, dB(-3), "gain"),
+                range(274825181, "attackMs", "Attack", 1, 10, 50, 20, "ms"),
+                range(1212264141, "holdMs", "Hold", 0, 10, 50, 0, "ms"),
+                range(1417304825, "releaseMs", "Release", 0, 10, 250, 0, "ms"),
+                stepped(870994041, "smoothingStages", "Smooth", 1, 2, 1, ["Rect", "Double"]),
+                range(2439531228, "linkChannels", "Link", 0, 0.5, 1, 0.5, "percent")
             ],
-            header: ["smoothingStages"], rows: [["inputGain", "outputLimit", "linkChannels"], ["attackMs", "holdMs", "releaseMs"]]
+            layout: [{large: "outputLimit"}, {knobs: [["attackMs", "M"], ["holdMs", "M"], ["releaseMs", "M"]]},
+                {knobs: [["inputGain", "M"], ["linkChannels", "S"], ["smoothingStages", "M"]]}]
         },
         reverb: {
-            title: "Reverb", subtitle: "FEEDBACK DELAY NETWORK", accent: "#25cdb9", screen: 170,
+            title: "Reverb", width: 382, screen: 170,
             params: [
-                range(1015595465, "dry", "DRY", 0, 1, 4, 1, "gain"),
-                range(3538153984, "wet", "WET", 0, 1, 4, 0.5, "gain"),
-                range(2974242839, "roomMs", "ROOM", 10, 100, 200, 80, "ms"),
-                range(1506047092, "rt20", "DECAY", 0.01, 2, 30, 1, "sec"),
-                range(867170651, "early", "EARLY", 0, 1, 2.5, 1.5, "percent"),
-                range(2967225864, "detune", "DETUNE", 0, 5, 50, 2, "plain1"),
-                range(2342541086, "lowCutHz", "LOW CUT", 10, 80, 500, 80, "hz"),
-                range(1970510480, "lowDampRate", "LOW DAMP", 1, 2, 10, 1.5, "times"),
-                range(1157094815, "highCutHz", "HIGH CUT", 1000, 5000, 20000, 12000, "hz"),
-                range(2716295038, "highDampRate", "HI DAMP", 1, 2, 10, 2.5, "times")
+                range(1015595465, "dry", "Dry", 0, 1, 4, 1, "gain"),
+                range(3538153984, "wet", "Wet", 0, 1, 4, 0.5, "gain"),
+                range(2974242839, "roomMs", "Room", 10, 100, 200, 80, "ms"),
+                range(1506047092, "rt20", "Decay", 0.01, 2, 30, 1, "sec"),
+                range(867170651, "early", "Early", 0, 1, 2.5, 1.5, "percent"),
+                range(2967225864, "detune", "Detune", 0, 5, 50, 2, "plain1"),
+                range(2342541086, "lowCutHz", "Low Cut", 10, 80, 500, 80, "hz"),
+                range(1970510480, "lowDampRate", "Low Damp", 1, 2, 10, 1.5, "times"),
+                range(1157094815, "highCutHz", "High Cut", 1000, 5000, 20000, 12000, "hz"),
+                range(2716295038, "highDampRate", "High Damp", 1, 2, 10, 2.5, "times")
             ],
-            header: ["dry", "wet"], rows: [["roomMs", "rt20", "early", "detune"], ["lowCutHz", "lowDampRate", "highCutHz", "highDampRate"]]
+            layout: [{large: "rt20"}, {knobs: [["roomMs", "M"], ["dry", "M"], ["wet", "M"]]},
+                {labels: ["early", "detune", null, "lowCutHz", "lowDampRate", null, "highCutHz", "highDampRate"]}]
         }
     }
     const ORDER = ["chorus", "crunch", "dynamics", "freq-shifter", "limiter", "reverb", "analyser"]
@@ -359,32 +342,17 @@
         const large = Math.abs(to - from) > 180 ? 1 : 0
         return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${radius} ${radius} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`
     }
-    let gradientCount = 0
     const knobView = (size, bipolar) => {
-        const c = size / 2, ring = c - 1.5, cap = c - 5
+        // the studio's proportions: a 1.5 px track, faint grey, the value over it and the pointer in the label colour,
+        // a dark cap inside
+        const c = size / 2, ring = c - 0.75, cap = c - 4
         const root = svg("svg", {class: "knob", width: size, height: size, viewBox: `0 0 ${size} ${size}`})
-        const id = `cap${gradientCount++}`
-        const defs = svg("defs", {}, root)
-        const gradient = svg("radialGradient", {id, cx: "40%", cy: "30%", r: "75%"}, defs)
-        svg("stop", {offset: "0%", "stop-color": "#4a4e57"}, gradient)
-        svg("stop", {offset: "60%", "stop-color": "#2c2f35"}, gradient)
-        svg("stop", {offset: "100%", "stop-color": "#1d1f23"}, gradient)
-        svg("path", {d: arc(c, c, ring, START, START + SWEEP), fill: "none", stroke: "#16181b", "stroke-width": 2.6, "stroke-linecap": "round"}, root)
-        const value = svg("path", {class: "value-arc", fill: "none", stroke: "var(--accent)", "stroke-width": 2.2, "stroke-linecap": "round"}, root)
-        // the cap: a knurled edge, its shadow and the face
-        svg("circle", {cx: c, cy: c + 1, r: cap + 0.6, fill: "rgba(0,0,0,0.5)"}, root)
-        const knurl = svg("g", {}, root)
-        for (let index = 0; index < 20; index++) {
-            const [x0, y0] = polar(c, c, cap - 0.2, index * 18)
-            const [x1, y1] = polar(c, c, cap - 1.8, index * 18)
-            svg("line", {x1: x0, y1: y0, x2: x1, y2: y1, stroke: "#141518", "stroke-width": 1.2}, knurl)
-        }
-        svg("circle", {cx: c, cy: c, r: cap, fill: `url(#${id})`, stroke: "#17181c", "stroke-width": 0.8}, root)
-        svg("circle", {cx: c, cy: c, r: cap - 2.2, fill: "none", stroke: "rgba(255,255,255,0.07)", "stroke-width": 0.8}, root)
-        const pointer = svg("line", {x1: c, y1: c - cap * 0.25, x2: c, y2: c - cap + 1.6, stroke: "#f2f4f7",
-            "stroke-width": 1.8, "stroke-linecap": "round"}, root)
-        const tick = svg("circle", {cx: c, cy: -1.5, r: 0.9, fill: "#5b616b"}, root)
-        tick.setAttribute("cy", 0.4)
+        svg("path", {d: arc(c, c, ring, START, START + SWEEP), fill: "none", stroke: "var(--track)", "stroke-opacity": 0.14,
+            "stroke-width": 1.5}, root)
+        const value = svg("path", {fill: "none", stroke: "var(--label)", "stroke-width": 1.5}, root)
+        svg("circle", {cx: c, cy: c, r: cap, fill: "var(--knob)"}, root)
+        const pointer = svg("line", {x1: c, y1: c - cap * 0.35, x2: c, y2: c - cap + 1.25, stroke: "var(--label)",
+            "stroke-width": 1.25, "stroke-linecap": "round"}, root)
         return {
             element: root,
             update: unit => {
@@ -396,28 +364,19 @@
     }
 
     // --- displays -----------------------------------------------------------------------------------------------
-    // drawn into a blue LCD: a gradient with faint columns, a grid, white traces with a glow
+    // On the panel itself, no background: traces in the studio's display blue (DisplayPaint) with a fill fading
+    // downwards, captions faint.
 
-    const lcd = (context, width, height) => {
-        const background = context.createLinearGradient(0, 0, 0, height)
-        background.addColorStop(0, "#3d86ea")
-        background.addColorStop(0.55, "#2a64c8")
-        background.addColorStop(1, "#1f4da6")
-        context.fillStyle = background
-        context.fillRect(0, 0, width, height)
-        context.fillStyle = "rgba(255, 255, 255, 0.035)"
-        const column = width / 9
-        for (let index = 0; index < 9; index += 2) {context.fillRect(index * column, 0, column, height)}
-        const gloss = context.createLinearGradient(0, 0, 0, height * 0.5)
-        gloss.addColorStop(0, "rgba(255, 255, 255, 0.16)")
-        gloss.addColorStop(1, "rgba(255, 255, 255, 0)")
-        context.fillStyle = gloss
-        context.fillRect(0, 0, width, height * 0.5)
-    }
+    const ink = alpha => `hsla(200, 83%, 60%, ${alpha})`
+    const lcd = (context, width, height) => context.clearRect(0, 0, width, height)
+    // A scale with numbers needs no lines, the numbers place it; nothing along a display's edges either. Drawn are
+    // references (dashed: unity, 0 Hz, the depth) and the grid of a display without numbers ("grid").
     const gridLine = (context, x0, y0, x1, y1, dashed) => {
+        if (!dashed) {return}
+        dashed = dashed === true
         context.save()
-        context.strokeStyle = dashed ? "rgba(255, 255, 255, 0.35)" : "rgba(255, 255, 255, 0.14)"
-        context.lineWidth = 0.6
+        context.strokeStyle = dashed ? "rgba(200, 225, 240, 0.12)" : "rgba(200, 225, 240, 0.045)"
+        context.lineWidth = 1
         if (dashed) {context.setLineDash([2, 2])}
         context.beginPath()
         context.moveTo(x0, y0)
@@ -427,53 +386,50 @@
     }
     const caption = (context, text, x, y, align = "left", alpha = 0.85) => {
         context.save()
-        context.font = "700 6.5px Lato, sans-serif"
+        context.font = "400 7px Rubik, sans-serif"
         context.textAlign = align
-        context.fillStyle = `rgba(255, 255, 255, ${alpha})`
+        context.fillStyle = `hsla(197, 10%, 60%, ${alpha * 0.6})`
         context.fillText(text, x, y)
         context.restore()
     }
-    const trace = (context, points, {fill = null, width = 1.4, color = "#ffffff", alpha = 1} = {}) => {
+    const trace = (context, points, {fill = null, width = 1.25, alpha = 0.85} = {}) => {
         if (points.length < 2) {return}
         context.save()
         context.globalAlpha = alpha
         context.lineJoin = "round"
         context.lineCap = "round"
         if (fill !== null) {
+            const top = Math.min(...points.map(([, y]) => y))
             context.beginPath()
             context.moveTo(points[0][0], fill)
             for (const [x, y] of points) {context.lineTo(x, y)}
             context.lineTo(points[points.length - 1][0], fill)
             context.closePath()
-            const gradient = context.createLinearGradient(0, 0, 0, fill)
-            gradient.addColorStop(0, "rgba(255, 255, 255, 0.28)")
-            gradient.addColorStop(1, "rgba(255, 255, 255, 0.04)")
+            const gradient = context.createLinearGradient(0, top, 0, fill)
+            gradient.addColorStop(0, ink(0.16))
+            gradient.addColorStop(1, ink(0))
             context.fillStyle = gradient
             context.fill()
         }
         context.beginPath()
         points.forEach(([x, y], index) => index === 0 ? context.moveTo(x, y) : context.lineTo(x, y))
-        context.shadowColor = "rgba(210, 235, 255, 0.9)"
-        context.shadowBlur = 4
-        context.strokeStyle = color
+        context.strokeStyle = ink(1)
         context.lineWidth = width
         context.stroke()
         context.restore()
     }
-    const dot = (context, x, y, radius = 2.2) => {
+    const dot = (context, x, y, radius = 2) => {
         context.save()
-        context.shadowColor = "rgba(255, 255, 255, 1)"
-        context.shadowBlur = 6
-        context.fillStyle = "#ffffff"
+        context.fillStyle = ink(0.95)
         context.beginPath()
-        context.arc(x, y, radius, 0, Math.PI * 2)
+        context.arc(x, y, Math.min(radius, 2), 0, Math.PI * 2)
         context.fill()
         context.restore()
     }
     const gainToDb = gain => 20 * Math.log10(Math.max(gain, 1e-12))
     const dbToGain = db => Math.pow(10, db / 20)
 
-    const PAD = 7
+    const PAD = 2
     const DISPLAYS = {
         // the six delay taps sweeping across the depth, one lane each, wet voices fanning out with stereo
         chorus: (context, width, height, card) => {
@@ -481,14 +437,14 @@
             const depth = card.value("depthMs")
             // the whole depth range, so the taps move and the axis stays
             const max = 50, tick = 10
-            const left = PAD, right = width - PAD, top = PAD + 2, bottom = height - 14
+            const left = PAD + 3, right = width - PAD - 18, top = PAD + 2, bottom = height - 14
             const x = ms => left + (right - left) * ms / max
             for (let ms = 0; ms <= max; ms += tick) {
                 gridLine(context, x(ms), top, x(ms), bottom)
-                caption(context, `${ms}`, x(ms), height - 5, "center", 0.7)
+                caption(context, ms === max ? `${ms}` : `${ms}`, x(ms), height - 5, "center", 0.7)
+                if (ms === max) {caption(context, "ms", x(ms) + 6, height - 5, "left", 0.7)}
             }
             gridLine(context, x(depth), top, x(depth), bottom, true)
-            caption(context, "MS", right, top + 5, "right", 0.6)
             const offsets = [[-0.267409, 0.195109], [-0.680406, -0.363478], [0.802226, 0.551654],
                 [0.188176, -0.980498], [0.973565, -0.204023], [-0.742801, 0.669512]]
             const lane = (bottom - top) / 6
@@ -499,14 +455,14 @@
                     return x(depth * 0.5 * (1 + osc))
                 }
                 // the lane's sweep (0 to the depth), then a fading tail behind the tap
-                context.fillStyle = "rgba(10, 30, 80, 0.35)"
+                context.fillStyle = "transparent"
                 context.fillRect(x(0), y - 1.5, x(depth) - x(0), 3)
                 context.save()
-                context.shadowColor = "white"
-                context.shadowBlur = 3
+                context.shadowColor = ink(0.65)
+                context.shadowBlur = 0
                 for (let step = 18; step >= 1; step--) {
                     context.globalAlpha = 0.5 * (1 - step / 19)
-                    context.fillStyle = "white"
+                    context.fillStyle = ink(0.65)
                     context.beginPath()
                     context.arc(at(card.meters.phase - step * 0.004), y, 1.3, 0, Math.PI * 2)
                     context.fill()
@@ -528,9 +484,9 @@
                 return out * x * (x >= 0 ? positive : negative) / Math.sqrt(1 + x * x) / norm
             }
             const cx = width / 2, cy = height / 2, sx = (width - 2 * PAD) / 2, sy = (height - 2 * PAD) / 2
-            for (let index = -2; index <= 2; index++) {
-                gridLine(context, cx + index * sx / 2, PAD, cx + index * sx / 2, height - PAD, index === 0)
-                gridLine(context, PAD, cy + index * sy / 2, width - PAD, cy + index * sy / 2, index === 0)
+            for (let index = -1; index <= 1; index++) {
+                gridLine(context, cx + index * sx / 2, PAD, cx + index * sx / 2, height - PAD, index === 0 || "grid")
+                gridLine(context, PAD, cy + index * sy / 2, width - PAD, cy + index * sy / 2, index === 0 || "grid")
             }
             const peak = Math.max(Math.abs(shape(1.25)), Math.abs(shape(-1.25)), 0.02) * 1.15
             const y = value => cy - clamp(value / peak, -1.08, 1.08) * sy
@@ -542,8 +498,8 @@
             trace(context, points)
             const level = clamp(card.meters.input, 0, 1)
             dot(context, cx + level * sx, y(shape(level * 1.25)))
-            caption(context, "IN", width - PAD - 1, cy - 2, "right", 0.6)
-            caption(context, "OUT", cx + 3, PAD + 6, "left", 0.6)
+            caption(context, "In", width - PAD - 1, cy - 2, "right", 0.6)
+            caption(context, "Out", cx + 3, PAD + 6, "left", 0.6)
         },
         // input level to output level in dB: threshold, ratio, knee, expander and gate; the detector's level as a dot,
         // the gain reduction as a bar at the right
@@ -588,13 +544,13 @@
             caption(context, "-48", x(-48) - 1, bottom - 2, "right", 0.6)
             // gain reduction, 0 at the top, -24 dB at the bottom
             const meterLeft = width - PAD - meterWidth
-            context.fillStyle = "rgba(10, 30, 80, 0.45)"
+            context.fillStyle = "transparent"
             context.fillRect(meterLeft, top, meterWidth, bottom - top)
             const reduction = clamp(-gainToDb(card.meters.gain) / 24, 0, 1)
             context.save()
-            context.shadowColor = "white"
-            context.shadowBlur = 5
-            context.fillStyle = "rgba(255, 255, 255, 0.9)"
+            context.shadowColor = ink(0.65)
+            context.shadowBlur = 0
+            context.fillStyle = ink(0.45)
             context.fillRect(meterLeft + 1, top + 1, meterWidth - 2, (bottom - top - 2) * reduction)
             context.restore()
             caption(context, "GR", meterLeft + meterWidth / 2, bottom + 0, "center", 0)
@@ -617,7 +573,7 @@
             for (let hz = -2500; hz <= 2500; hz += 500) {gridLine(context, x(hz), PAD, x(hz), base, hz === 0)}
             gridLine(context, left, base, right, base)
             for (const hz of [-2000, -1000, 0, 1000, 2000]) {
-                caption(context, hz === 0 ? "0" : `${hz / 1000}K`, x(hz), height - PAD + 1, "center", 0.7)
+                caption(context, hz === 0 ? "0" : `${hz / 1000}k`, x(hz), height - PAD + 1, "center", 0.7)
             }
             const tall = base - top
             const bar = (hz, level, alpha, outline) => {
@@ -625,13 +581,13 @@
                 context.save()
                 context.globalAlpha = alpha
                 if (outline) {
-                    context.strokeStyle = "rgba(255, 255, 255, 0.55)"
+                    context.strokeStyle = ink(0.5)
                     context.lineWidth = 0.8
                     context.strokeRect(x(hz) - 1.5, base - level * tall, 3, level * tall)
                 } else {
-                    context.shadowColor = "white"
-                    context.shadowBlur = 4
-                    context.fillStyle = "white"
+                    context.shadowColor = ink(0.65)
+                    context.shadowBlur = 0
+                    context.fillStyle = ink(0.65)
                     context.fillRect(x(hz) - 1, base - level * tall, 2, level * tall)
                 }
                 context.restore()
@@ -652,11 +608,11 @@
             // the shift, from 0 Hz to where 0 Hz goes
             const y = PAD + 6, from = x(0), to = x(clamp(shift, -range, range))
             context.save()
-            context.strokeStyle = "white"
-            context.fillStyle = "white"
-            context.shadowColor = "white"
-            context.shadowBlur = 3
-            context.lineWidth = 1.2
+            context.strokeStyle = ink(0.65)
+            context.fillStyle = ink(0.65)
+            context.shadowColor = ink(0.65)
+            context.shadowBlur = 0
+            context.lineWidth = 1
             context.beginPath()
             context.moveTo(from, y)
             context.lineTo(to, y)
@@ -669,8 +625,8 @@
             context.fill()
             context.restore()
             // the value beyond the arrow's tip, or before it where it would leave the screen
-            const text = format({text: "shift"}, shift).toUpperCase()
-            context.font = "700 6.5px Lato, sans-serif"
+            const text = format({text: "shift"}, shift)
+            context.font = "400 6.5px Rubik, sans-serif"
             const textWidth = context.measureText(text).width
             const ahead = shift >= 0 ? to + 6 + textWidth <= right - 1 : to - 6 - textWidth >= left + 1
             const forward = (shift >= 0) === ahead
@@ -678,111 +634,39 @@
                 forward ? "left" : "right", 0.9)
             context.restore()
         },
-        // an analogue meter of the gain reduction, lit from above
+        // the gain reduction over the last seconds, hanging from 0 dB, the limit's reach at -20 dB
         limiter: (context, width, height, card) => {
-            const face = context.createLinearGradient(0, 0, 0, height)
-            face.addColorStop(0, "#f4f1e8")
-            face.addColorStop(1, "#d6d3cb")
-            context.fillStyle = face
-            context.fillRect(0, 0, width, height)
-            for (const lx of [0.3, 0.7]) {
-                const light = context.createRadialGradient(width * lx, -6, 2, width * lx, -6, height * 0.75)
-                light.addColorStop(0, "rgba(255, 214, 130, 0.85)")
-                light.addColorStop(0.4, "rgba(255, 228, 170, 0.25)")
-                light.addColorStop(1, "rgba(255, 240, 210, 0)")
-                context.fillStyle = light
-                context.fillRect(0, 0, width, height)
+            lcd(context, width, height)
+            const history = card.history ?? (card.history = new Float32Array(160))
+            if (card.historyTime !== card.time) {
+                card.historyTime = card.time
+                history.copyWithin(0, 1)
+                history[history.length - 1] = clamp(-gainToDb(card.meters.gain), 0, 24)
             }
-            // the needle turns on the cap's centre, just below the bottom edge
-            const cx = width / 2, cy = height + 3, radius = height * 0.74
-            const scale = [0, 1, 2, 3, 5, 7, 10, 15, 20]
-            const angleOf = db => 48 - 96 * Math.sqrt(clamp(db, 0, 20) / 20)
+            const left = PAD, right = width - PAD - 18, top = PAD + 3, bottom = height - PAD - 2
+            const y = db => top + (bottom - top) * db / 24
+            for (const db of [0, 6, 12, 18, 24]) {
+                caption(context, db === 0 ? "0" : `-${db}`, width - PAD, y(db) + 2.5, "right", 0.8)
+            }
+            const step = (right - left) / (history.length - 1)
+            const points = Array.from(history, (db, index) => [left + index * step, y(db)])
+            // hanging from the top: the fill runs up to 0 dB
             context.save()
-            context.lineCap = "butt"
-            context.strokeStyle = "#3b3a37"
-            context.lineWidth = 1
             context.beginPath()
-            const [ax, ay] = polar(cx, cy, radius, angleOf(20))
-            context.moveTo(ax, ay)
-            for (let db = 0; db <= 20; db += 0.25) {
-                const [px, py] = polar(cx, cy, radius, angleOf(20 - db))
-                context.lineTo(px, py)
-            }
-            context.stroke()
-            context.strokeStyle = "#d8322d"
-            context.lineWidth = 3
-            context.beginPath()
-            for (let db = 10; db <= 20; db += 0.25) {
-                const [px, py] = polar(cx, cy, radius + 2, angleOf(db))
-                db === 10 ? context.moveTo(px, py) : context.lineTo(px, py)
-            }
-            context.stroke()
-            context.font = "700 7px Lato, sans-serif"
-            context.textAlign = "center"
-            for (const db of scale) {
-                const [x0, y0] = polar(cx, cy, radius, angleOf(db))
-                const [x1, y1] = polar(cx, cy, radius - (db % 5 === 0 || db < 4 ? 5 : 3), angleOf(db))
-                context.strokeStyle = db >= 10 ? "#d8322d" : "#3b3a37"
-                context.lineWidth = 1
-                context.beginPath()
-                context.moveTo(x0, y0)
-                context.lineTo(x1, y1)
-                context.stroke()
-                if (db === 0 || db === 3 || db === 5 || db === 10 || db === 20 || db === 1) {
-                    const [tx, ty] = polar(cx, cy, radius + 9, angleOf(db))
-                    context.fillStyle = db >= 10 ? "#d8322d" : "#3b3a37"
-                    context.textBaseline = "middle"
-                    context.fillText(`${db === 0 ? "0" : -db}`, tx, ty)
-                    context.textBaseline = "alphabetic"
-                }
-            }
-            context.font = "900 11px Lato, sans-serif"
-            context.fillStyle = "rgba(60, 58, 54, 0.75)"
-            context.fillText("GR", cx, height * 0.66)
-            context.font = "700 5.5px Lato, sans-serif"
-            context.fillText("dB", cx, height * 0.66 + 7)
-            // the needle and its pivot
-            const reduction = clamp(-gainToDb(card.meters.gain), 0, 20)
-            const angle = angleOf(reduction)
-            const [nx, ny] = polar(cx, cy, radius + 3, angle)
-            context.strokeStyle = "rgba(0, 0, 0, 0.18)"
-            context.lineWidth = 2
-            context.beginPath()
-            context.moveTo(cx + 2, cy)
-            context.lineTo(nx + 2, ny + 1)
-            context.stroke()
-            context.strokeStyle = "#2a2a2a"
-            context.lineWidth = 1.2
-            context.beginPath()
-            context.moveTo(cx, cy)
-            context.lineTo(nx, ny)
-            context.stroke()
-            context.fillStyle = "#3a3a3a"
-            context.beginPath()
-            context.arc(cx, cy, 9, Math.PI, 0)
+            context.moveTo(left, top)
+            for (const [px, py] of points) {context.lineTo(px, py)}
+            context.lineTo(right, top)
+            context.closePath()
+            const gradient = context.createLinearGradient(0, top, 0, bottom)
+            gradient.addColorStop(0, ink(0))
+            gradient.addColorStop(1, ink(0.16))
+            context.fillStyle = gradient
             context.fill()
             context.restore()
-            // PEAK: lit while it limits
-            const lit = reduction > 0.3
-            const lx = 12, ly = height - 11
-            context.font = "900 6.5px Lato, sans-serif"
-            context.textAlign = "left"
-            context.fillStyle = "#3b3a37"
-            context.fillText("LIMIT", lx + 6, ly + 2.5)
-            context.save()
-            context.shadowColor = lit ? "#ff5050" : "transparent"
-            context.shadowBlur = lit ? 8 : 0
-            context.fillStyle = lit ? "#ff4040" : "#7a2d2a"
-            context.beginPath()
-            context.arc(lx, ly, 3.2, 0, Math.PI * 2)
-            context.fill()
-            context.restore()
-            // the frame's inner shadow
-            const shade = context.createLinearGradient(0, 0, 0, 10)
-            shade.addColorStop(0, "rgba(0, 0, 0, 0.3)")
-            shade.addColorStop(1, "rgba(0, 0, 0, 0)")
-            context.fillStyle = shade
-            context.fillRect(0, 0, width, 10)
+            trace(context, points)
+            const now = history[history.length - 1]
+            dot(context, right, y(now))
+            caption(context, "GR", left, y(24) + 2.5, "left", 0.8)
         },
         // The impulse response on a fixed logarithmic time axis (2 ms to 30 s): the dry hit at the left edge, the early
         // reflections inside the room time (they move with the room), then the tail decaying by the decay time (RT20,
@@ -795,7 +679,7 @@
             const left = PAD + 3, right = width - PAD, centre = (PAD + height - 13) / 2, half = centre - PAD - 1
             const x = seconds => left + (right - left) * Math.log(Math.max(seconds, FIRST) / FIRST) / Math.log(LAST / FIRST)
             const scale = gain => clamp(1 + gainToDb(gain) / 60, 0, 1)
-            for (const [seconds, text] of [[0.01, "10 MS"], [0.1, "100 MS"], [1, "1 S"], [10, "10 S"]]) {
+            for (const [seconds, text] of [[0.01, "10 ms"], [0.1, "100 ms"], [1, "1 s"], [10, "10 s"]]) {
                 gridLine(context, x(seconds), PAD, x(seconds), height - 13)
                 caption(context, text, x(seconds), height - 5, "center", 0.7)
             }
@@ -813,7 +697,7 @@
             }
             const rate = 20 / rt20
             context.save()
-            context.strokeStyle = "rgba(255, 255, 255, 0.85)"
+            context.strokeStyle = ink(0.4)
             context.lineWidth = 0.7
             context.beginPath()
             const columns = Math.round((right - left) * 1.5)
@@ -835,10 +719,10 @@
                 if (amplitude <= 0) {return}
                 context.save()
                 context.globalAlpha = alpha
-                context.strokeStyle = "white"
-                context.shadowColor = "white"
-                context.shadowBlur = 4
-                context.lineWidth = 1.4
+                context.strokeStyle = ink(0.65)
+                context.shadowColor = ink(0.65)
+                context.shadowBlur = 0
+                context.lineWidth = 1
                 context.beginPath()
                 context.moveTo(at, centre - amplitude)
                 context.lineTo(at, centre + amplitude)
@@ -850,7 +734,7 @@
                 spike(x(seconds), wet * early * 0.5 / (1 + index * 0.5), 0.9)
             }
             spike(left - 1, dry, 1)
-            caption(context, "DRY", left + 3, PAD + 6, "left", dry > 0 ? 0.7 : 0.3)
+            caption(context, "Dry", left + 3, PAD + 6, "left", dry > 0 ? 0.7 : 0.3)
         },
         // the Bark-scale spectrum, both channels
         analyser: (context, width, height, card) => {
@@ -866,7 +750,7 @@
                 }
             }
             for (let db = -24; db >= -96; db -= 24) {gridLine(context, left, y(db), right, y(db))}
-            for (const [hz, text] of [[50, "50"], [100, "100"], [200, "200"], [500, "500"], [1000, "1K"], [2000, "2K"], [5000, "5K"], [10000, "10K"]]) {
+            for (const [hz, text] of [[50, "50"], [100, "100"], [200, "200"], [500, "500"], [1000, "1k"], [2000, "2k"], [5000, "5k"], [10000, "10k"]]) {
                 caption(context, text, x(hz), height - 4, "center", 0.75)
             }
             for (let db = -24; db >= -72; db -= 24) {caption(context, `${db}`, left + 1, y(db) - 2, "left", 0.55)}
@@ -894,7 +778,8 @@
 
     // --- cards --------------------------------------------------------------------------------------------------
 
-    const CONTROL = 44, KNOB = 30, HEADER_KNOB = 24
+    // three knob sizes: the main control, the rest, secondary trims
+    const SIZES = {L: 44, M: 28, S: 20}
 
     const makeCard = (name, host) => {
         const effect = EFFECTS[name]
@@ -911,16 +796,9 @@
         }
         const element = document.createElement("div")
         element.className = "card"
-        element.style.setProperty("--accent", effect.accent)
-        const columns = Math.max(...effect.rows.map(row => row.reduce((sum, key) =>
-            sum + (params.get(key).kind === "steps" ? 2 : 1), 0)))
-        const single = effect.rows.length === 1
-        const gridWidth = single ? columns * CONTROL + (columns - 1) * 14 : columns * CONTROL + (columns - 1) * 2
-        element.style.width = `${14 + effect.screen + 14 + gridWidth + 14}px`
-        element.innerHTML = `<div class="header"><div class="titles">
-            <h1>${effect.title.toUpperCase()}</h1><h2>SIGNALSMITH · ${effect.subtitle}</h2></div>
-            <div class="header-controls"></div></div><div class="body"><div class="screen"><canvas></canvas></div>
-            <div class="grid"></div></div>`
+        element.innerHTML = `<div class="screen"><canvas></canvas></div><div class="group grid"></div>`
+        // the width the plugin declares for its panel (basics.cpp): fixed, not whatever the fonts make of it
+        element.style.width = `${effect.width}px`
         card.element = element
         const screen = element.querySelector(".screen")
         screen.style.width = `${effect.screen}px`
@@ -991,46 +869,118 @@
         const selector = key => {
             const p = params.get(key)
             const element = document.createElement("div")
-            element.className = "selector"
-            element.innerHTML = `<div class="lcd"><span class="text"></span><span class="arrows"><span>◀</span>
-                <span>▶</span></span></div><div class="label">${p.label}</div>`
-            const text = element.querySelector(".text")
-            const [previous, next] = element.querySelectorAll(".arrows span")
-            const step = direction => {
-                const count = p.high - p.low + 1
-                const value = p.low + ((values[p.index] - p.low + direction + count) % count)
-                host.begin(card, p.id)
-                setValue(p, value)
-                host.end(card, p.id)
-            }
-            previous.addEventListener("pointerdown", event => {if (event.button === 0 && !event.ctrlKey) {step(-1)}})
-            next.addEventListener("pointerdown", event => {if (event.button === 0 && !event.ctrlKey) {step(1)}})
-            // only the arrows step: a double-click on the display is openDAW's value entry
+            element.className = "choice"
+            element.innerHTML = `<div class="pills"></div><div class="label">${p.label}</div>`
+            const pills = p.labels.map((label, index) => {
+                const pill = document.createElement("span")
+                pill.textContent = label
+                pill.addEventListener("pointerdown", event => {
+                    if (event.button !== 0 || event.ctrlKey) {return}
+                    host.begin(card, p.id)
+                    setValue(p, p.low + index)
+                    host.end(card, p.id)
+                })
+                element.querySelector(".pills").append(pill)
+                return pill
+            })
             element.addEventListener("pointerdown", () => host.hover(card, p.id), {capture: true})
             element.addEventListener("pointermove", () => host.hover(card, p.id))
             element.addEventListener("pointerleave", () => host.hover(card, null))
-            const choices = p.labels.map(label => {
-                const span = document.createElement("span")
-                span.textContent = label
-                text.append(span)
-                return span
+            card.views.push({update: () => pills.forEach((pill, index) =>
+                pill.classList.toggle("on", index === Math.round(values[p.index] - p.low)))})
+            if (p.label === "") {element.querySelector(".label").remove()}
+            return element
+        }
+
+        // A parameter as its name and value on one line: dragged like a knob, a choice steps on a click. The minor
+        // parameters of an effect with more than fit as knobs.
+        const parameterLabel = key => {
+            const p = params.get(key)
+            const element = document.createElement("div")
+            element.className = "parameter"
+            element.innerHTML = `<span class="name">${p.label}</span><span class="value"></span>`
+            const value = element.querySelector(".value")
+            const texts = p.kind === "steps" ? p.labels
+                : Array.from({length: 101}, (_, step) => format(p, toEffect(p, step / 100)))
+            value.style.minWidth = `${Math.max(...texts.map(text => text.length))}ch`
+            card.views.push({update: () => {
+                const text = format(p, toEffect(p, values[p.index]))
+                value.textContent = text
+            }})
+            let drag = null
+            element.addEventListener("pointerdown", () => host.hover(card, p.id), {capture: true})
+            element.addEventListener("pointerdown", event => {
+                if (event.button !== 0 || event.ctrlKey || drag !== null) {return}
+                if (p.kind === "steps") {
+                    host.begin(card, p.id)
+                    setValue(p, values[p.index] >= p.high ? p.low : values[p.index] + 1)
+                    host.end(card, p.id)
+                    return
+                }
+                element.setPointerCapture(event.pointerId)
+                drag = {pointerId: event.pointerId, unit: values[p.index]}
+                element.classList.add("active")
+                card.dragging.add(p.index)
+                host.begin(card, p.id)
             })
-            card.views.push({update: () => choices.forEach((span, index) =>
-                span.classList.toggle("hidden", index !== Math.round(values[p.index] - p.low)))})
+            element.addEventListener("pointermove", event => {
+                host.hover(card, p.id)
+                if (drag === null || event.pointerId !== drag.pointerId) {return}
+                drag.unit = clamp(drag.unit - event.movementY / 128 * (event.altKey || event.shiftKey ? 0.2 : 1.2), 0, 1)
+                setValue(p, drag.unit)
+            })
+            const end = () => {
+                if (drag === null) {return}
+                drag = null
+                element.classList.remove("active")
+                card.dragging.delete(p.index)
+                host.end(card, p.id)
+            }
+            element.addEventListener("pointerup", end)
+            element.addEventListener("lostpointercapture", end)
+            element.addEventListener("pointerenter", () => {
+                host.hover(card, p.id)
+                element.classList.add("active")
+            })
+            element.addEventListener("pointerleave", () => {
+                if (drag === null) {
+                    element.classList.remove("active")
+                    host.hover(card, null)
+                }
+            })
             return element
         }
 
         const control = (key, size) => params.get(key).kind === "steps" ? selector(key) : knob(key, size)
-        const headerControls = element.querySelector(".header-controls")
-        for (const key of effect.header) {
-            headerControls.append(control(key, HEADER_KNOB))
-        }
         const grid = element.querySelector(".grid")
-        for (const keys of effect.rows) {
-            const row = document.createElement("div")
-            row.className = keys.length < columns || effect.rows.length === 1 ? "row center" : "row"
-            for (const key of keys) {row.append(control(key, effect.rows.length === 1 ? 38 : KNOB))}
-            grid.append(row)
+        for (const column of effect.layout) {
+            const cells = document.createElement("div")
+            if (column.large !== undefined) {
+                cells.className = "column large"
+                cells.append(control(column.large, SIZES.L))
+            } else if (column.knobs !== undefined) {
+                cells.className = `column rows-${column.rows ?? 3}`
+                for (const cell of column.knobs) {
+                    const slot = document.createElement("div")
+                    slot.className = "cell"
+                    if (cell !== null) {slot.append(control(cell[0], SIZES[cell[1]]))}
+                    cells.append(slot)
+                }
+            } else if (column.stack !== undefined) {
+                cells.className = "column stack"
+                for (const [key, size] of column.stack) {cells.append(control(key, SIZES[size]))}
+            } else {
+                cells.className = "column labels"
+                for (const key of column.labels) {
+                    cells.append(key === null ? Object.assign(document.createElement("div"), {className: "gap"}) : parameterLabel(key))
+                }
+            }
+            grid.append(cells)
+        }
+        if (effect.corner !== undefined) {
+            const corner = parameterLabel(effect.corner)
+            corner.classList.add("corner")
+            element.querySelector(".screen").append(corner)
         }
         card.views.forEach(view => view.update())
 
@@ -1142,31 +1092,26 @@
 
     if (preview) {
         document.body.classList.add("preview")
-        const zoom = Number(new URL(location).searchParams.get("zoom") ?? 1.5)
-        const section = title => {
-            const element = document.createElement("div")
-            element.className = "section"
-            element.innerHTML = `<h3>${title}</h3><div class="shelf"></div>`
-            stage.append(element)
-            return element.querySelector(".shelf")
-        }
-        const panels = section("DEVICE PANEL · 176 PX, ACTUAL SIZE")
+        const shelf = document.createElement("div")
+        shelf.className = "shelf"
+        stage.append(shelf)
         for (const name of ORDER) {
             const card = makeCard(name, quietHost)
             const device = document.createElement("div")
             device.className = "device"
-            device.innerHTML = `<div class="caption">${EFFECTS[name].title} · ${card.element.style.width.replace("px", "")} × 176</div>`
+            device.innerHTML = `<div class="caption">${EFFECTS[name].title} · ${EFFECTS[name].width} × 176</div>`
             device.append(card.element)
-            panels.append(device)
+            shelf.append(device)
             cards.push({card, zoom: 1})
         }
-        const windows = section(`WINDOW · ${Math.round(zoom * 100)} %`)
-        for (const name of ORDER) {
-            const card = makeCard(name, quietHost)
-            card.element.style.zoom = zoom
-            windows.append(card.element)
-            cards.push({card, zoom})
-        }
+        // the content's own width against the width the plugin declares (EFFECTS[...].width, basics.cpp)
+        document.fonts.ready.then(() => cards.forEach(({card}) => {
+            card.element.style.width = "max-content"
+            const content = card.element.offsetWidth
+            card.element.style.width = `${card.effect.width}px`
+            card.element.dataset.content = content
+            if (content > card.effect.width) {console.warn(`${card.name}: content ${content} px, declared ${card.effect.width} px`)}
+        }))
         let last = performance.now()
         const frame = now => {
             const delta = Math.min(0.1, (now - last) / 1000)
@@ -1185,7 +1130,7 @@
         stage.append(card.element)
         let zoom = 1
         const resize = () => {
-            zoom = Math.max(0.25, Math.min(innerWidth / card.element.offsetWidth, innerHeight / 176))
+            zoom = Math.max(0.25, Math.min(innerWidth / card.effect.width, innerHeight / 176))
             stage.style.transform = `scale(${zoom})`
         }
         addEventListener("resize", resize)

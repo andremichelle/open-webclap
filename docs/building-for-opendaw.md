@@ -107,8 +107,11 @@ The panel sits in a row with openDAW's own devices. A plugin that looks like one
   of your own (opacity, hover states, outlines). The studio has colour schemes the page cannot read; the classic
   values are the safe default.
 
-A skin of its own is fine too (Signalsmith Basics has one: cards with LCD displays). Then still keep the rules above
-that are not about looks: no surface, the panel's colour, 176 px, the studio's gestures.
+For a page of your own design, [Device panel design](device-panel-design.md) is how ours look: flat and quiet, no
+name (openDAW's header has it), displays on the panel, three knob sizes on three rows, parameter rows for the minor
+parameters, names and values in their own colours. Signalsmith Basics is its reference. A different skin is fine
+too; then still keep the rules above that are not about looks: no surface, the panel's colour, 176 px, the studio's
+gestures.
 
 ## Parameters
 
@@ -222,8 +225,9 @@ Designing for 176 px:
 - Fill the panel edge to edge: no outer margin, shadow or rounded corners, openDAW draws the device frame around
   it.
 - Text below 8 px is hard to read; keep labels at 8 to 9 px and values in a readout or openDAW's value entry.
-- At 176 px there is room for a header (about 34 px), a display and two rows of knobs about 30 px across. More
-  controls than that want a wider panel, not a taller one.
+- At 176 px there is room for a display and three rows of knobs 28 px across (or a large one of 44 px), see
+  [Device panel design](device-panel-design.md). More controls than that want parameter rows or a wider panel, not
+  a taller one.
 - **Displays that hold still.** A display whose axes rescale with a parameter makes everything jump while the user
   turns the knob. Fix the axes to the parameter's whole range (a log axis covers a wide one) and let only the
   content move. Labels and selectors keep their width for every value (size a selector by its longest choice).
@@ -260,7 +264,7 @@ shows the device as failed; build with `-g` and without `-O3` for function names
 - [ ] WASI imports only, no allocation in `process`, parameter events at their sample
 - [ ] the device panel: `opendaw:device-panel`, `opendaw:device-panel-width:<width>`, `opendaw.device-panel/1`, laid
   out at 176 px
-- [ ] no surface of its own, the panel's colour, the studio's type (or a skin that keeps the rules)
+- [ ] no surface of its own, the panel's colour, [our design](device-panel-design.md) (or a skin that keeps the rules)
 - [ ] hover reported; no double-click, right-click or wheel of its own; no pointer lock
 - [ ] a drag is one gesture and one undo step
 - [ ] parameters in the units the editor shows (or the old bundle's), texts both ways

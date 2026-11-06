@@ -37,8 +37,11 @@ the dynamics detector level and gain, the limiter gain). Then it builds, packs a
 
 ## The page
 
-A card per effect, 176 px high: openDAW's device panel shows it 1:1 (`opendaw.device-panel/1`, the width per effect
-from 272 to 466 px), the window zoomed (100 to 300 %, opening at 200 %). Each has a display:
+A card per effect, 176 px high, in the design of [Device panel design](../../docs/device-panel-design.md) (this
+page is its reference): openDAW's device panel shows it 1:1 (`opendaw.device-panel/1`, the width per effect from 246
+to 382 px, declared as `opendaw:device-panel-width`), the window zoomed (100 to 300 %, opening at 200 %). The display
+first, then the knobs (the main control large), Dynamics' and Reverb's minor parameters as rows, the Analyser's
+resolution in its display's corner. Each has a display:
 
 | Effect | Display |
 |---|---|
@@ -46,7 +49,7 @@ from 272 to 466 px), the window zoomed (100 to 300 %, opening at 200 %). Each ha
 | Crunch | the shaper's transfer curve at the drive and fuzz, the input peak on it |
 | Dynamics | input to output level (threshold, ratio, knee, expander, gate), the detector level, the gain reduction |
 | Frequency Shifter | the partials of a harmonic series and where the shift puts them, 0 Hz in the centre |
-| Limiter | an analogue meter of the gain reduction |
+| Limiter | the gain reduction over the last seconds, hanging from 0 dB |
 | Reverb | the impulse response on a fixed log time axis (2 ms to 30 s): dry, early reflections by the room, the tail by the decay time |
 | Analyser | the Bark-scale spectrum of both channels |
 

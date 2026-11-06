@@ -23,6 +23,8 @@ plugin gets there depends on what it is written with, so the ports here come fro
 What every bundle needs in openDAW, which ports target first: the 176 px device panel, the gestures openDAW owns (no
 wheel or double-click of the page's own), looking like a stock device, parameters, state, the data between page and
 plugin, SIMD and speed, updating an existing bundle: [building a WebCLAP for openDAW](docs/building-for-opendaw.md).
+How our device panels look (flat, displays on the panel, three knob sizes, names and values in their own colours):
+[device panel design](docs/device-panel-design.md).
 
 ## Plugins
 
