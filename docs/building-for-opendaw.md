@@ -195,6 +195,10 @@ openDAW runs every device in one worklet with a few milliseconds per block for a
 openDAW shows an effect's or instrument's controls in the device panel of its track. A plugin can put its own
 page there instead of openDAW's generic knobs:
 
+A plain CLAP port gets all of this from [`modules/opendaw-clap/opendaw_page.h`](../modules/opendaw-clap/opendaw_page.h)
+(the extension, both features, the page's messages and gestures, the window), its page the controls from
+[`modules/opendaw-page`](../modules/opendaw-page); the JUCE ports from `modules/juce_webclap`.
+
 1. Add the feature `opendaw:device-panel` to the descriptor. Hosts that do not know it ignore it.
 2. Answer the extension `opendaw.device-panel/1`:
 

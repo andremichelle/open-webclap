@@ -5,6 +5,13 @@ standing out. Signalsmith Basics is the reference (`ports/signalsmith-basics/pag
 seven effects). [Building a WebCLAP for openDAW](building-for-opendaw.md) has the panel's mechanics (176 px,
 `opendaw.device-panel/1`, the width feature); this is about the look.
 
+The design is shared code, not only rules: [`modules/opendaw-page`](../modules/opendaw-page) has the styles
+(`panel.css`, the values below) and the controls (`panel.js`: knobs, choices, parameter rows, the layout of a card's
+columns, the display kit, the messages to the plugin); [`modules/opendaw-clap/opendaw_page.h`](../modules/opendaw-clap/opendaw_page.h)
+is the plugin side for plain CLAP ports (the panel extension and width feature, the page's messages, the gestures,
+the window). A port copies `modules/opendaw-page` next to its page (Basics links it from `page/opendaw-page`, so its
+preview opens from the repository) and builds with `-I modules/opendaw-clap`.
+
 The idea: nothing is drawn that does not carry information. No backgrounds, borders, outlines, tiles or gaps that
 pretend to be borders. A display is a curve on the panel with room around it; a knob is a thin arc around a dark
 cap; text is small and quiet, and the colour says what it is (a name, a value, something being changed).

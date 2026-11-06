@@ -24,9 +24,10 @@ second after, otherwise the main input.
 ## Layout
 
 ```
-build.sh        builds module.wasm and copies the page and LICENSE into $OUT
-plugin/         basics.cpp, the seven CLAP plugins around the effects
-page/           index.html, the cards: #<effect> in a host, without one (or ?preview) all seven with made-up signals
+build.sh        builds module.wasm, copies the page (with modules/opendaw-page) and LICENSE into $OUT
+plugin/         basics.cpp, the seven CLAP plugins around the effects (on modules/opendaw-clap/opendaw_page.h)
+page/           index.html, the cards: #<effect> in a host, without one (or ?preview) all seven with made-up signals;
+                opendaw-page links the shared controls (modules/opendaw-page)
 check.mjs       node checks against Signalsmith's build: ids, defaults, state bytes, loading, traffic (26)
 LICENSE         MIT (Signalsmith's and this port's)
 ```

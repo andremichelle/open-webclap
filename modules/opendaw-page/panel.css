@@ -1,0 +1,124 @@
+/*
+    openDAW device panel styles, after docs/device-panel-design.md: the colours, the card, the knobs on their grid,
+    choices and parameter rows. Used with panel.js; a port copies this folder next to its page.
+*/
+:root {
+    /* openDAW Studio, classic scheme (hue 197) */
+    --page: hsl(197, 14%, 12%);
+    --studio: hsl(197, 8%, 9%);
+    --shadow: hsl(197, 10%, 60%);
+    --blue: hsl(189, 100%, 65%);
+    /* names and a knob's value: the studio's cream at 80 % over the panel */
+    --label: #b9bda4;
+    /* values: grey, a choice's current step a little brighter, the others dim */
+    --value: hsl(197, 9%, 54%);
+    --step: hsl(197, 12%, 74%);
+    --step-off: hsl(197, 10%, 30%);
+    /* the knob: a dark cap, a faint grey track */
+    --knob: hsl(197, 11%, 17%);
+    --track: hsl(197, 15%, 84%);
+}
+* {box-sizing: border-box}
+html, body {margin: 0; height: 100%}
+body {
+    background: var(--page);
+    font-family: Rubik, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow: hidden;
+}
+
+/* openDAW's header names the device: the card is the display and the controls, nothing around them, with the stock
+   devices' padding (8 px top and bottom, 4 px at the sides) and 16 px between groups */
+.card {
+    position: relative;
+    display: flex;
+    height: 176px;
+    padding: 8px 4px;
+    gap: 16px;
+    background: var(--page);
+}
+.screen {position: relative; flex: none; overflow: hidden}
+.screen canvas {display: block; width: 100%; height: 100%}
+
+/* the knobs: columns of three 50 px rows, 10 px apart, as wide as their widest control */
+.group {display: flex; gap: 10px}
+.group:empty {display: none}
+.column {display: grid; grid-template-rows: repeat(3, 50px); row-gap: 3px}
+/* four knobs as a square */
+.column.rows-2 {grid-template-rows: repeat(2, 50px); align-content: center; row-gap: 12px}
+/* the large knob centred by its circle: the label hangs below the middle */
+.column.large {display: flex; align-items: center; justify-content: center; padding-top: 15px}
+.column.stack {display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 2px 0}
+/* a row's labels on one line: a cell's content sits on its bottom */
+.cell {display: grid; justify-items: center; align-items: end}
+
+.control {
+    position: relative;
+    min-width: 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: ns-resize;
+    touch-action: none;
+}
+.control svg.knob {display: block; overflow: visible}
+.control .label, .control .readout {
+    font-size: 9px;
+    line-height: 11px;
+    height: 11px;
+    white-space: nowrap;
+    color: var(--label);
+}
+/* the value in the label's place while hovered or dragged, in the studio's colour for a modified control */
+.control .readout {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--blue);
+    font-variant-numeric: tabular-nums;
+    opacity: 0;
+    pointer-events: none;
+}
+.control.active .readout {opacity: 1}
+.control.active .label {visibility: hidden}
+
+/* a choice: its steps as words (values, so grey), the name below */
+.choice {display: flex; flex-direction: column; align-items: center; gap: 4px}
+.pills {display: flex; flex-direction: column; gap: 1px}
+.pills span {
+    height: 13px;
+    padding: 0 6px;
+    border-radius: 2px;
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    color: var(--step-off);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.pills span.on {color: var(--step); background: rgba(255, 255, 255, 0.04)}
+.choice .label {font-size: 9px; line-height: 11px; color: var(--label)}
+
+/* parameter rows: the minor parameters, a name and a value on one line, groups 6 px apart */
+.column.labels {display: flex; flex-direction: column; justify-content: center; margin-left: 6px}
+.column.labels .gap {height: 6px}
+.parameter {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    height: 13px;
+    line-height: 13px;
+    font-size: 9px;
+    cursor: ns-resize;
+    touch-action: none;
+    white-space: nowrap;
+}
+.parameter .name {color: var(--label)}
+/* as wide as the widest value it can show (set by panel.js), so a change never moves anything */
+.parameter .value {color: var(--value); font-variant-numeric: tabular-nums; text-align: right}
+.parameter.active .value {color: var(--blue)}
+/* a lone parameter in the display's corner */
+.parameter.corner {position: absolute; top: 2px; right: 2px; gap: 5px}

@@ -4,11 +4,12 @@
 // so openDAW offers this build as their update and projects keep their settings. Dynamics is new.
 //
 // openDAW shows each effect's card in its device panel (feature "opendaw:device-panel", extension
-// "opendaw.device-panel/1"), every host in the window. The page is page/index.html#<effect>.
+// "opendaw.device-panel/1"), every host in the window. The page is page/index.html#<effect>, built on the shared
+// controls in modules/opendaw-page; the panel, the page's messages and the window come from
+// modules/opendaw-clap/opendaw_page.h.
 
 #include <clap/clap.h>
-#include <clap/ext/draft/webview.h>
-#include <clap/ext/draft/param-hovered.h>
+#include "opendaw_page.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -29,27 +30,10 @@ namespace basics = signalsmith::basics;
 
 #define MAX_PARAMS 16
 #define OUT_EVENTS 128
-#define PANEL_HEIGHT 176
 #define GUI_ZOOM 2.0
 #define GUI_MIN_ZOOM 1.0
 #define GUI_MAX_ZOOM 3.0
 #define MAX_BANDS 1024
-
-// messages, see page/index.html
-#define PAGE_POLL 1
-#define PAGE_PARAM_BEGIN 2
-#define PAGE_PARAM_SET 3
-#define PAGE_PARAM_END 4
-#define PAGE_HOVER 7
-#define PLUGIN_STATUS 1
-
-#define OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL "opendaw:device-panel"
-#define OPENDAW_EXT_DEVICE_PANEL "opendaw.device-panel/1"
-
-typedef struct opendaw_plugin_device_panel {
-    int32_t (*get_uri)(const clap_plugin_t *plugin, char *uri, uint32_t capacity);
-    bool (*get_width)(const clap_plugin_t *plugin, uint32_t height, uint32_t *width);
-} opendaw_plugin_device_panel_t;
 
 // --- parameters -------------------------------------------------------------------------------------------------
 // A range parameter's host value is its knob position (0..1), mapped to the effect's value through STFX's three
@@ -359,7 +343,7 @@ template<class T> static Engine *create_engine() {return new(std::nothrow) T();}
 // the card's width at openDAW's 176 px as "opendaw:device-panel-width:<width>", read from its cloud index before the
 // plugin loads; it is the effect's width below
 #define FEATURES(width, ...) \
-    (const char *[]) {__VA_ARGS__, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, "opendaw:device-panel-width:" #width, nullptr}
+    (const char *[]) {__VA_ARGS__, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH(width), nullptr}
 #define DESCRIPTOR(id, name, description, features) \
     {CLAP_VERSION_INIT, id, name, "Signalsmith Audio", "https://signalsmith-audio.co.uk/code/basics/", \
      "https://github.com/andremichelle/open-webclap/tree/main/ports/signalsmith-basics", "", "1.1.0", description, \
@@ -395,20 +379,11 @@ static const Effect EFFECTS[] = {
 
 // --- the plugin ---------------------------------------------------------------------------------------------------
 
-struct OutEvent {
-    uint16_t type;
-    clap_id id;
-    double value;
-};
-
 struct Basics {
     clap_plugin_t plugin;
     const clap_host_t *host;
-    const clap_host_params_t *host_params;
-    const clap_host_state_t *host_state;
+    opendaw::PageHost page; // the host's params, state, webview and hovered parameter
     const clap_host_latency_t *host_latency;
-    const clap_host_webview_t *host_webview;
-    const clap_host_param_hovered_t *host_hovered;
     const Effect *effect;
     Engine *engine;
     double values[MAX_PARAMS]; // host values
@@ -423,8 +398,7 @@ struct Basics {
     uint32_t sidechain_hold; // frames the sidechain stays the detector's after its last sound
     uint32_t sidechain_frames;
     uint32_t gui_width, gui_height;
-    OutEvent out_events[OUT_EVENTS];
-    uint32_t out_read, out_write;
+    opendaw::OutEvents<OUT_EVENTS> out_events; // the page's gestures and values for the host
     Readings readings;
     uint8_t message[16 + MAX_PARAMS * 8 + 24 + MAX_BANDS * 12];
 };
@@ -467,35 +441,6 @@ static void check_latency(Basics *self) {
     if (self->host_latency != nullptr) {self->host_latency->changed(self->host);}
 }
 
-static void push_out_event(Basics *self, uint16_t type, clap_id id, double value) {
-    if (self->out_write - self->out_read >= OUT_EVENTS) {return;}
-    self->out_events[self->out_write % OUT_EVENTS] = OutEvent{type, id, value};
-    self->out_write++;
-}
-
-static void drain_out_events(Basics *self, const clap_output_events_t *out) {
-    while (self->out_read != self->out_write) {
-        const OutEvent &event = self->out_events[self->out_read % OUT_EVENTS];
-        if (event.type == CLAP_EVENT_PARAM_VALUE) {
-            clap_event_param_value_t value = {};
-            value.header = {sizeof(value), 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE, 0};
-            value.param_id = event.id;
-            value.note_id = -1;
-            value.port_index = -1;
-            value.channel = -1;
-            value.key = -1;
-            value.value = event.value;
-            out->try_push(out, &value.header);
-        } else {
-            clap_event_param_gesture_t gesture = {};
-            gesture.header = {sizeof(gesture), 0, CLAP_CORE_EVENT_SPACE_ID, event.type, 0};
-            gesture.param_id = event.id;
-            out->try_push(out, &gesture.header);
-        }
-        self->out_read++;
-    }
-}
-
 static void handle_event(Basics *self, const clap_event_header_t *header) {
     if (header->space_id != CLAP_CORE_EVENT_SPACE_ID || header->type != CLAP_EVENT_PARAM_VALUE) {return;}
     const clap_event_param_value_t *event = reinterpret_cast<const clap_event_param_value_t *>(header);
@@ -506,11 +451,8 @@ static void handle_event(Basics *self, const clap_event_header_t *header) {
 static bool basics_init(const clap_plugin_t *plugin) {
     Basics *self = basics_of(plugin);
     const clap_host_t *host = self->host;
-    self->host_params = static_cast<const clap_host_params_t *>(host->get_extension(host, CLAP_EXT_PARAMS));
-    self->host_state = static_cast<const clap_host_state_t *>(host->get_extension(host, CLAP_EXT_STATE));
+    self->page.init(host);
     self->host_latency = static_cast<const clap_host_latency_t *>(host->get_extension(host, CLAP_EXT_LATENCY));
-    self->host_webview = static_cast<const clap_host_webview_t *>(host->get_extension(host, CLAP_EXT_WEBVIEW));
-    self->host_hovered = static_cast<const clap_host_param_hovered_t *>(host->get_extension(host, CLAP_EXT_PARAM_HOVERED));
     return true;
 }
 
@@ -637,7 +579,7 @@ static clap_process_status basics_process(const clap_plugin_t *plugin, const cla
     }
     apply_values(self);
     render(self, process, position, frames);
-    drain_out_events(self, process->out_events);
+    self->out_events.drain(process->out_events);
     check_latency(self);
     return CLAP_PROCESS_CONTINUE;
 }
@@ -805,7 +747,7 @@ static void params_flush(const clap_plugin_t *plugin, const clap_input_events_t 
     const uint32_t count = in->size(in);
     for (uint32_t index = 0; index < count; index++) {handle_event(self, in->get(in, index));}
     apply_values(self);
-    drain_out_events(self, out);
+    self->out_events.drain(out);
     check_latency(self);
 }
 
@@ -1066,7 +1008,7 @@ static void send_status(Basics *self) {
     if (self->engine != nullptr && self->active) {self->engine->read(self->readings);}
     uint8_t *message = self->message;
     const uint32_t bands = self->readings.bands;
-    message[0] = PLUGIN_STATUS;
+    message[0] = opendaw::PLUGIN_STATUS;
     message[1] = static_cast<uint8_t>(count);
     message[2] = static_cast<uint8_t>(bands & 0xff);
     message[3] = static_cast<uint8_t>(bands >> 8);
@@ -1084,78 +1026,27 @@ static void send_status(Basics *self) {
     std::memcpy(at + bands * 8, self->readings.energy[1], bands * 4);
     at += bands * 12;
     self->peak_in = self->peak_out = 0.0f;
-    self->host_webview->send(self->host, message, static_cast<uint32_t>(at - message));
+    self->page.send(message, static_cast<uint32_t>(at - message));
 }
 
-static void page_param(Basics *self, uint16_t type, const uint8_t *bytes, uint32_t size) {
-    clap_id id;
-    if (size < 8) {return;}
-    std::memcpy(&id, bytes + 4, 4);
-    const int32_t index = index_of(self, id);
-    if (index < 0) {return;}
-    if (type == CLAP_EVENT_PARAM_VALUE) {
-        double value;
-        if (size < 16) {return;}
-        std::memcpy(&value, bytes + 8, 8);
-        set_value(self, static_cast<uint32_t>(index), value);
-    }
-    if (type == CLAP_EVENT_PARAM_GESTURE_END && self->host_state != nullptr) {self->host_state->mark_dirty(self->host);}
-    push_out_event(self, type, id, self->values[index]);
-    if (self->host_params != nullptr) {self->host_params->request_flush(self->host);}
-}
+// the page's messages (opendaw_page.h): its values and gestures, the hovered parameter, polls answered by the status
+struct PageOf {
+    Basics *self;
+    bool has(clap_id id) const {return index_of(self, id) >= 0;}
+    void set(clap_id id, double value) {set_value(self, static_cast<uint32_t>(index_of(self, id)), value);}
+    double value(clap_id id) const {return self->values[index_of(self, id)];}
+    void status() {send_status(self);}
+};
 
 static bool webview_receive(const clap_plugin_t *plugin, const void *buffer, uint32_t size) {
     Basics *self = basics_of(plugin);
-    const uint8_t *bytes = static_cast<const uint8_t *>(buffer);
-    if (size < 1 || self->host_webview == nullptr) {return false;}
-    switch (bytes[0]) {
-        case PAGE_POLL:
-            send_status(self);
-            return true;
-        case PAGE_PARAM_BEGIN:
-            page_param(self, CLAP_EVENT_PARAM_GESTURE_BEGIN, bytes, size);
-            return true;
-        case PAGE_PARAM_SET:
-            page_param(self, CLAP_EVENT_PARAM_VALUE, bytes, size);
-            return true;
-        case PAGE_PARAM_END:
-            page_param(self, CLAP_EVENT_PARAM_GESTURE_END, bytes, size);
-            return true;
-        case PAGE_HOVER: {
-            clap_id id;
-            if (size < 8 || self->host_hovered == nullptr) {return false;}
-            std::memcpy(&id, bytes + 4, 4);
-            self->host_hovered->update(self->host, index_of(self, id) >= 0 ? id : CLAP_INVALID_ID);
-            return true;
-        }
-        default:
-            return false;
-    }
+    PageOf page{self};
+    return opendaw::receive(page, self->page, self->out_events, buffer, size);
 }
 
 static const clap_plugin_webview_t webview = {page_uri, webview_get_resource, webview_receive};
 
 // gui: the webview, the card at its aspect ratio, 100 to 300 %, opening at 200 %
-static bool gui_is_api_supported(const clap_plugin_t *plugin, const char *api, bool is_floating) {
-    (void) plugin; (void) is_floating;
-    return std::strcmp(api, CLAP_WINDOW_API_WEBVIEW) == 0;
-}
-
-static bool gui_get_preferred_api(const clap_plugin_t *plugin, const char **api, bool *is_floating) {
-    (void) plugin;
-    *api = CLAP_WINDOW_API_WEBVIEW;
-    *is_floating = false;
-    return true;
-}
-
-static bool gui_create(const clap_plugin_t *plugin, const char *api, bool is_floating) {
-    return gui_is_api_supported(plugin, api, is_floating);
-}
-
-static void gui_destroy(const clap_plugin_t *plugin) {(void) plugin;}
-
-static bool gui_set_scale(const clap_plugin_t *plugin, double scale) {(void) plugin; (void) scale; return false;}
-
 static bool gui_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) {
     const Basics *self = basics_of(plugin);
     *width = self->gui_width;
@@ -1163,23 +1054,13 @@ static bool gui_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t 
     return true;
 }
 
-static bool gui_can_resize(const clap_plugin_t *plugin) {(void) plugin; return true;}
-
 static bool gui_get_resize_hints(const clap_plugin_t *plugin, clap_gui_resize_hints_t *hints) {
-    hints->can_resize_horizontally = true;
-    hints->can_resize_vertically = true;
-    hints->preserve_aspect_ratio = true;
-    hints->aspect_ratio_width = basics_of(plugin)->effect->width;
-    hints->aspect_ratio_height = PANEL_HEIGHT;
+    opendaw::window_hints(basics_of(plugin)->effect->width, hints);
     return true;
 }
 
 static bool gui_adjust_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) {
-    const double card = basics_of(plugin)->effect->width;
-    const double wanted = std::fmin(*width / card, static_cast<double>(*height) / PANEL_HEIGHT);
-    const double zoom = std::fmin(GUI_MAX_ZOOM, std::fmax(GUI_MIN_ZOOM, wanted));
-    *width = static_cast<uint32_t>(std::lround(card * zoom));
-    *height = static_cast<uint32_t>(std::lround(PANEL_HEIGHT * zoom));
+    opendaw::window_fit(basics_of(plugin)->effect->width, GUI_MIN_ZOOM, GUI_MAX_ZOOM, width, height);
     return true;
 }
 
@@ -1191,25 +1072,15 @@ static bool gui_set_size(const clap_plugin_t *plugin, uint32_t width, uint32_t h
     return true;
 }
 
-static bool gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) {(void) plugin; (void) window; return true;}
-
-static bool gui_set_transient(const clap_plugin_t *plugin, const clap_window_t *window) {(void) plugin; (void) window; return false;}
-
-static void gui_suggest_title(const clap_plugin_t *plugin, const char *title) {(void) plugin; (void) title;}
-
-static bool gui_show(const clap_plugin_t *plugin) {(void) plugin; return true;}
-
-static bool gui_hide(const clap_plugin_t *plugin) {(void) plugin; return true;}
-
 static const clap_plugin_gui_t gui = {
-    gui_is_api_supported, gui_get_preferred_api, gui_create, gui_destroy, gui_set_scale, gui_get_size, gui_can_resize,
-    gui_get_resize_hints, gui_adjust_size, gui_set_size, gui_set_parent, gui_set_transient, gui_suggest_title, gui_show,
-    gui_hide
+    opendaw::gui_is_api_supported, opendaw::gui_get_preferred_api, opendaw::gui_create, opendaw::gui_destroy,
+    opendaw::gui_set_scale, gui_get_size, opendaw::gui_can_resize, gui_get_resize_hints, gui_adjust_size, gui_set_size,
+    opendaw::gui_set_parent, opendaw::gui_set_transient, opendaw::gui_suggest_title, opendaw::gui_show, opendaw::gui_hide
 };
 
 // device panel: the same page, the card at 1:1 for the panel's 176 px
 static bool panel_get_width(const clap_plugin_t *plugin, uint32_t height, uint32_t *width) {
-    *width = static_cast<uint32_t>(std::lround(static_cast<double>(height) * basics_of(plugin)->effect->width / PANEL_HEIGHT));
+    *width = opendaw::panel_width_at(basics_of(plugin)->effect->width, height);
     return true;
 }
 
@@ -1249,7 +1120,7 @@ static const clap_plugin_t *create(const clap_plugin_factory_t *factory, const c
         self->effect_values[index] = effect->params[index].value;
     }
     self->gui_width = static_cast<uint32_t>(std::lround(effect->width * GUI_ZOOM));
-    self->gui_height = static_cast<uint32_t>(std::lround(PANEL_HEIGHT * GUI_ZOOM));
+    self->gui_height = static_cast<uint32_t>(std::lround(OPENDAW_PANEL_HEIGHT * GUI_ZOOM));
     self->plugin.desc = &effect->descriptor;
     self->plugin.plugin_data = self;
     self->plugin.init = basics_init;
