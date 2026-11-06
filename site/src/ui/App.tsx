@@ -1,6 +1,6 @@
 import {Terminator} from "@opendaw/lib-std"
 import {createElement, Frag, Router} from "@opendaw/lib-jsx"
-import {Plugins} from "@/plugins"
+import {Available} from "@/opendaw/Available"
 import {Header} from "@/ui/Header"
 import {HomePage} from "@/ui/pages/HomePage"
 import {ImportedPage, PluginPage} from "@/ui/pages/PluginPage"
@@ -17,7 +17,7 @@ export const App = () => {
                 fallback={NotFoundPage}
                 routes={[
                     {path: "/", factory: HomePage},
-                    ...Plugins.map(plugin => ({path: `/${plugin.id}`, factory: PluginPage(plugin)})),
+                    ...Available.list().map(plugin => ({path: `/${plugin.id}`, factory: PluginPage(plugin)})),
                     {path: "/imported/*", factory: ImportedPage}
                 ]}
             />

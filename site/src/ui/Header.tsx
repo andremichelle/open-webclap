@@ -2,7 +2,8 @@ import css from "./Header.sass?inline"
 import {Lifecycle} from "@opendaw/lib-std"
 import {createElement, JsxValue, LocalLink, replaceChildren, RouteLocation} from "@opendaw/lib-jsx"
 import {Html} from "@opendaw/lib-dom"
-import {PluginKind, Plugins} from "@/plugins"
+import {PluginKind} from "@/plugins"
+import {Available} from "@/opendaw/Available"
 import {NavMenu} from "@/ui/components/NavMenu"
 import {Colors} from "@opendaw/studio-enums"
 import {Presentation} from "@/ui/Presentation"
@@ -11,7 +12,7 @@ import {Imports} from "@/opendaw/Imports"
 
 const className = Html.adoptStyleSheet(css, "Header")
 
-const linksOf = (kind: PluginKind) => Plugins
+const linksOf = (kind: PluginKind) => Available.list()
     .filter(plugin => plugin.kind === kind)
     .map(plugin => ({href: `/${plugin.id}`, label: plugin.name}))
 

@@ -28,13 +28,17 @@ export namespace HostedIndex {
         return map
     }
 
+    const loaded = (): Promise<ReadonlyMap<string, string>> => bundles ??= load().catch(reason => {
+        bundles = null // a failed fetch is tried again next time
+        throw reason
+    })
+
+    // the clap ids openDAW hosts a bundle for
+    export const clapIds = async (): Promise<ReadonlySet<string>> => new Set((await loaded()).keys())
+
     // The url of the hosted bundle holding this plugin, null while openDAW hosts none
     export const bundleUrl = async (clapId: string): Promise<string | null> => {
-        bundles ??= load().catch(reason => {
-            bundles = null // a failed fetch is tried again next time
-            throw reason
-        })
-        const uuid = (await bundles).get(clapId)
+        const uuid = (await loaded()).get(clapId)
         return uuid === undefined ? null : `${HostedRoot}/${uuid}.wclap`
     }
 }

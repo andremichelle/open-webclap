@@ -1,7 +1,8 @@
 import css from "./HomePage.sass?inline"
 import {createElement, LocalLink, PageFactory} from "@opendaw/lib-jsx"
 import {Html} from "@opendaw/lib-dom"
-import {bundleFileName, PluginEntry, Plugins} from "@/plugins"
+import {bundleFileName, PluginEntry} from "@/plugins"
+import {Available} from "@/opendaw/Available"
 import {PluginSession} from "@/opendaw/PluginSession"
 
 const className = Html.adoptStyleSheet(css, "HomePage")
@@ -61,7 +62,7 @@ export const HomePage: PageFactory<null> = () => (
             studio's WebCLAP catalog.
         </p>
         <div className="grid">
-            {Plugins.map(plugin => <PluginCard plugin={plugin}/>)}
+            {Available.list().map(plugin => <PluginCard plugin={plugin}/>)}
         </div>
     </div>
 )
