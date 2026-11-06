@@ -76,6 +76,7 @@ const spaFallback = (): Plugin => ({
 export default defineConfig({
     resolve: {alias: {"@": resolve(__dirname, "./src")}},
     // "/" at the domain root (upstream, webclap.opendaw.studio); a fork's GitHub Pages builds with SITE_BASE=/<repo>/
+// (set by deploy-site.yml from the repo name)
     base: process.env.SITE_BASE ?? "/",
     build: {target: "esnext", sourcemap: true},
     esbuild: {target: "esnext"},
