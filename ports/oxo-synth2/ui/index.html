@@ -150,7 +150,10 @@ function labelOf(id, v) {
     return String(v);
 }
 function displayNameOf(id) {
-    if (id >= 79 && id <= 81 && describe) {return describe.effectKnobNames[values[78]][id - 79];}
+    if (id >= 79 && id <= 81 && describe) {
+        const t = Math.max(0, Math.min(9, values[78]));
+        return describe.effectKnobNames[t][id - 79];
+    }
     return param(id).displayName;
 }
 function showReadout(text) {
@@ -206,7 +209,7 @@ function addKnob(id, label, x, y, size = 24) {
     box.addEventListener("pointerdown", e => {
         if (e.ctrlKey) {return;} // macOS right-click is the host's menu
         e.preventDefault();
-        box.setPointerCapture(e.pointerId);
+        if (e.pointerId !== undefined && box.setPointerCapture) {box.setPointerCapture(e.pointerId);}
         dragging = id; startY = e.clientY; startValue = values[id];
         sendGesture(PAGE.BEGIN, id); sendHover(id);
         w.update();
@@ -267,11 +270,10 @@ function addCycler(id, title, x, y, w = 40) {
     b.addEventListener("pointerleave", () => sendHover(0xffffffff));
     return widget;
 }
-// a cyan display showing the value's label; cycles=true: a click steps the value
+// a cyan display showing the value's label; cycles=true: a click steps the value. Returns the element.
 function addDisplay(id, x, y, w = 30, cycles = false) {
     const d = el("div", "disp", null, x - w / 2, y - 8, w, 16);
-    const widget = {id, update() {d.textContent = labelOf(id, values[id]);}};
-    widgets.push(widget);
+    widgets.push({id, update() {d.textContent = labelOf(id, values[id]);}});
     if (cycles) {
         d.addEventListener("click", e => {
             if (e.ctrlKey) {return;}
@@ -283,7 +285,7 @@ function addDisplay(id, x, y, w = 30, cycles = false) {
     }
     d.addEventListener("pointerenter", () => sendHover(id));
     d.addEventListener("pointerleave", () => sendHover(0xffffffff));
-    return widget;
+    return d;
 }
 // wave icon shapes, drawn as small SVG paths
 const WAVE_PATHS = {
