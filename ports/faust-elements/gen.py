@@ -77,6 +77,31 @@ def main():
     voice_json = json.load(open(os.path.join(out, "voice.json")))
     body_json = json.load(open(os.path.join(out, "body.json")))
 
+    # --- orbit.json: the ui descriptor for the editor's Orbit tab (faust-orbit-ui), mirroring upstream
+    # web/orbit.js's descriptor(): the voice's and the body's groups side by side in one vgroup, minus the
+    # note controls and the pitch offset (the keyboard and the bend own those) ---------------------------
+    excluded = {"/elements_poly/freq", "/elements_poly/gain", "/elements_poly/gate",
+                "/elements_poly/performance/modulation"}
+
+    def keep(items):
+        kept = []
+        for item in items or []:
+            if isinstance(item, dict) and "items" in item:
+                kids = keep(item["items"])
+                if kids:
+                    kept.append({**item, "items": kids})
+            elif item.get("address") and item["address"] not in excluded:
+                kept.append(item)
+        return kept
+
+    def top(dsp_json):
+        kept = keep(dsp_json["ui"])
+        return [kid for g in kept for kid in (g["items"] if isinstance(g, dict) and "items" in g else [g])]
+
+    orbit_descriptor = [{"type": "vgroup", "label": "elements", "items": [*top(voice_json), *top(body_json)]}]
+    with open(os.path.join(out, "orbit.json"), "w") as handle:
+        json.dump(orbit_descriptor, handle)
+
     # --- the parameter table: the voice's panel controls (minus the note controls), in panel order, then the
     # body's -----------------------------------------------------------------------------------------------------
     params = []

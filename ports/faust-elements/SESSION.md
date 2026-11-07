@@ -84,7 +84,11 @@ Both live in upstream's `web/` and both are now partly in the port's editor:
 The port's Atlas tab renders `web/atlas.json` directly: the 2,024 points at their PC coordinates, coloured by
 model, presets labelled, hover tooltip with the eight descriptors, wheel-zoom/drag-pan, and click loads the
 point's 20 control values as a patch (and plays A3). No live measurement of the current sound (that needs the
-wasm + a worker in the page).
+wasm + a worker in the page). **Update, same session:** the Orbit tab is now ported too — the vendored
+faust-orbit-ui component (fetched with `web/vendor/faust-orbit-ui/`, MIT) with a `ui/orbit.json` descriptor
+that `gen.py` derives from the compiler's JSON (voice + body groups, note controls and pitch offset excluded),
+the 24 presets as its library (localStorage-persisted); a moved dot sends the same `set` message as a slider.
+The reference for all of this is written down in `ports/faust-elements/ATLAS.md`.
 
 ## How the port is built
 
@@ -149,7 +153,7 @@ name, and only the `faust_wrap_*` helpers are unguarded, so the wrapper `#define
 | `ports/faust-elements/CMakeLists.txt` | emcmake build of `module.wasm` (~885 KB) |
 | `ports/faust-elements/ui/index.html` | editor page (presets, tabs, keyboard, atlas), adapted from upstream `web/` |
 | `ports/faust-elements/check.mjs` | node CLAP host test suite |
-| `ports/faust-elements/{README.md,NOTICES.md.in,SESSION.md}` | port doc, license notices, this log |
+| `ports/faust-elements/{README.md,ATLAS.md,NOTICES.md.in,SESSION.md}` | port doc, atlas/orbit reference, license notices, this log |
 | `scripts/build-faust-elements.sh` | faust-rs pin/build, fetch → gen → build → check → license → pack → site copy |
 | `scripts/fetch-deps.py` | the `faust-elements` pin (sletz/faust-elements @ `651cf94a…`) |
 | `site/src/plugins.ts`, `README.md`, `site/public/bundled/faust-elements.wclap.tar.gz` | site entry (`bundled:`), table row, the self-served bundle |

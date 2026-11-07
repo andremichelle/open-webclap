@@ -64,11 +64,14 @@ emcmake cmake -S "$ROOT/ports/faust-elements" -B "$BUILD" -DCMAKE_BUILD_TYPE=Rel
     -DGEN_DIR="$GEN" "$@"
 cmake --build "$BUILD" -j "$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 
-# The bundle's page (ui/), the presets and the sound atlas as the page loads them from
-mkdir -p "$BUNDLE/ui"
+# The bundle's page (ui/), the presets, the sound atlas and the orbit component (faust-orbit-ui, MIT, vendored
+# upstream) with its ui descriptor, as the page loads them from
+mkdir -p "$BUNDLE/ui/vendor"
 cp "$ROOT/ports/faust-elements/ui/"* "$BUNDLE/ui/"
 cp "$GEN/patches.json" "$BUNDLE/ui/patches.json"
+cp "$GEN/orbit.json" "$BUNDLE/ui/orbit.json"
 cp "$ROOT/external/faust-elements/web/atlas.json" "$BUNDLE/ui/atlas.json"
+cp -r "$ROOT/external/faust-elements/web/vendor/faust-orbit-ui" "$BUNDLE/ui/vendor/"
 
 # License and notices (LICENSE, NOTICES.md): MIT upstream (Elements' firmware and the model); the Faust standard
 # libraries the generated code embeds are LGPL-2.1-or-later with the Faust exception (see NOTICES.md.in)

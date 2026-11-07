@@ -23,9 +23,10 @@ around them, the same split upstream's web AudioWorklet uses:
 - `ui/index.html`: the editor page, adapted from upstream's own `web/` page (same MIT project): the 24 web
   presets as a library (`ui/patches.json`, built by `gen.py` from upstream's `web/controls.js` via
   `extract-presets.mjs`), one tab per panel group, a playable on-screen keyboard (page note messages), output
-  meter and voice count, and an **Atlas** tab rendering upstream's `web/atlas.json` (the sound atlas of the
-  web page — see SESSION.md for how the projection is made): 2,024 sounds laid out by their measured
-  descriptors, click a dot to load its patch and hear it.
+  meter and voice count, an **Orbit** tab (the vendored faust-orbit-ui component with `ui/orbit.json`: every
+  control a dot, the presets as its projected library), and an **Atlas** tab rendering upstream's
+  `web/atlas.json` (the sound atlas of the web page — see ATLAS.md for how the features and the projection are
+  made): 2,024 sounds laid out by their measured descriptors, click a dot to load its patch and hear it.
 
 Build: `scripts/build-faust-elements.sh` (needs Emscripten, a Rust toolchain for the one-time faust-rs build
 cached in `external/faust-rs`, and the Faust 2.88.0 release at `~/faust` for its standard libraries —
@@ -74,9 +75,9 @@ Known gaps, in priority order:
   grouped by module; the window has the full editor).
 - No Web MIDI button in the page: notes come from the host, or the page's on-screen keyboard. Upstream's web
   page has Web MIDI and a hold pedal.
-- The Orbit tab (faust-orbit-ui control-space explorer) and the timbre orbit are not ported; the Atlas tab is
-  (static projection, click-to-load; no live measurement of the current sound, which upstream's page does in
-  a Web Worker).
+- The Atlas tab is a static projection (click-to-load; no live measurement of the current sound, which
+  upstream's page does in a Web Worker), and the timbre orbit (descriptors-as-dots) is not ported; the Orbit
+  tab is (faust-orbit-ui, presets as its library). See ATLAS.md.
 - Polyphony is fixed at 8 (the web version offers 1..16); a compile-time constant in `elements_clap.cpp`.
 - The state saves the 21 parameters only, not the DSP internals (same as the Aether port); the reverb tail is
   declared infinite (`CLAP_EXT_TAIL` = UINT32_MAX).
