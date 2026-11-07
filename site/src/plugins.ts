@@ -92,6 +92,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         bundled: "/bundled/faust-aether.wclap.tar.gz"
     },
     {
+        id: "faust-elements", name: "Elements", kind: "instrument",
+        description: "Mutable Instruments Elements in Faust: bow/blow/strike exciters, 52-mode resonator or strings, stereo reverb; web presets and sound atlas in the editor",
+        clapId: "org.faust.elements",
+        archive: "build/faust-elements/faust-elements.wclap.tar.gz", build: "scripts/build-faust-elements.sh",
+        credit: "https://github.com/sletz/faust-elements", source: port("faust-elements"), license: "MIT",
+        bundled: "/bundled/faust-elements.wclap.tar.gz"
+    },
+    {
         id: "droplets", name: "Droplets", kind: "instrument",
         description: "Stochastic water bubble synth after xoxos' Water: drips, splashes and rivers from a physical droplet model",
         clapId: "com.aquanodemusic.droplets",
