@@ -76,6 +76,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         credit: "https://github.com/peterc/coopiano", source: port("coopiano"), license: "MIT"
     },
     {
+        id: "oxo-synth2", name: "Oxo Synth2", kind: "instrument",
+        description: "A recreation of Daichi Laboratory's Synth1: same 99 parameters, loads .sy1 patches, same sound",
+        clapId: "com.oxo.music.oxosynth2",
+        archive: "build/oxo-synth2/oxo-synth2.wclap.tar.gz", build: "scripts/build-oxo-synth2.sh",
+        credit: "https://github.com/chab/oxo_synth2", source: port("oxo-synth2"), license: "MIT",
+        bundled: "/bundled/oxo-synth2.wclap.tar.gz"
+    },
+    {
         id: "droplets", name: "Droplets", kind: "instrument",
         description: "Stochastic water bubble synth after xoxos' Water: drips, splashes and rivers from a physical droplet model",
         clapId: "com.aquanodemusic.droplets",

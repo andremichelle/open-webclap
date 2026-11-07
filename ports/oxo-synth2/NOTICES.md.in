@@ -1,0 +1,42 @@
+# Oxo Synth2 for WebCLAP
+
+Oxo Synth2 by chab, a free recreation of Daichi Laboratory's Synth1 (same 99 parameters, loads `.sy1` patches and
+banks, same sound), ported to WebCLAP. This is not an official oxo_synth2 release.
+
+- oxo_synth2: https://github.com/chab/oxo_synth2 (commit 5bce0fddf930b8bea1d7c9ec09cc08bb8f891e8a)
+- This port, and the complete source of this bundle: @SOURCE_URL@
+  Build it with `scripts/build-oxo-synth2.sh`, which fetches every dependency below at the commit named here.
+
+## License
+
+The bundle is licensed under the **MIT License** (`LICENSE`, oxo_synth2's), and every component in it is MIT, each
+under its own copyright line below. The bundle contains no JUCE.
+
+## Components
+
+| Component | Copyright | License |
+|---|---|---|
+| [oxo_synth2](https://github.com/chab/oxo_synth2) (the `EngineCore` engine, unmodified, and the patch banks its own installers ship — `Synth2 Factory` and `Synth2 Starter Banks` — which the page loads as `ui/patches.json`) | 2025-2026 chab | MIT |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/oxo-synth2`) | 2026 André Michelle | MIT |
+| WASI shim ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/webclap/wasi_shim.cpp`) | 2026 André Michelle | MIT |
+| [CLAP](https://github.com/free-audio/clap) headers | 2014-2022 Alexandre Bique | MIT |
+
+Oxo Synth2 is an independent recreation of Synth1 by Daichi Laboratory; it is not affiliated with or endorsed by
+Daichi Laboratory, and no Synth1 code, binaries or artwork are used. Synth1 is a trademark of its respective owner;
+`.sy1` patches load for compatibility only.
+
+## License text
+
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+> documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+> to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+> the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+> THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+> CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+> IN THE SOFTWARE.

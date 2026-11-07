@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<!--
+    Oxo Synth2's editor page (the bundle's ui/index.html): the Synth2 panel redrawn in HTML/SVG on its 770 x 560
+    design canvas, scaled to the window. Talks to module.wasm over ArrayBuffers (window.parent.postMessage), binary
+    little endian, the types at the top of oxo_synth2_clap.cpp:
+
+    page -> plugin:   1 hello, 2 poll, 3 begin (u32 id@4), 4 set (u32 id@4, f64 value@8), 5 end (u32 id@4),
+                      6 hover (u32 id@4, 0xffffffff none), 8 patch (u16 name length@2, name@4, 99 x i32 values,
+                      optional u16 .sy1 version at the end), 9 init patch, 10 all notes off
+    plugin -> page:   0x81 describe (JSON from 4: the parameter table), 0x82 snapshot (State from 4),
+                      0x83 values (u16 count@2, then count x (u32 id, u32 0, f64 value)),
+                      0x84 activity (u8 gated@1, u64 voice states@8, f32 peak L@16, peak R@20)
+
+    The page says hello, gets the table and a snapshot, then polls at most every 33 ms. A drag is one gesture
+    (begin, values, end); the hovered parameter is reported so the host's menu and value entry work. openDAW owns
+    double-click, right-click and the wheel: no handlers for them here, no preventDefault on presses, no pointer
+    lock. Factory patches ship as patches.json (the first-party Synth2 Factory bank, see patches.py).
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Oxo Synth2</title>
+<style>
+    :root {
+        --panel: #B7B79B; --header: #3B3B38; --header-text: #B7B79B; --ink: #2E2E29; --dim-ink: #6B6B5E;
+        --knob: #171717; --knob-rim: #000000; --dial: #FFFFFF; --button: #363630;
+        --led: #5CF266; --radio: #FF331A; --display: #24272F; --display-text: #73F2FF; --red: #FF2D2D;
+    }
+    html, body { margin: 0; height: 100%; background: var(--panel); overflow: hidden; }
+    body { display: flex; align-items: center; justify-content: center;
+           font-family: Verdana, Geneva, sans-serif; user-select: none; -webkit-user-select: none; }
+    #stage { position: relative; width: 770px; height: 560px; background: var(--panel); flex: none;
+             transform-origin: center center; }
+    .section { position: absolute; border: 1px solid rgba(0,0,0,.45); border-radius: 3px;
+               background: rgba(255,255,255,.06); box-sizing: border-box; }
+    .section > .title { position: absolute; left: 0; top: 0; right: 0; height: 16px; background: var(--header);
+                        color: var(--header-text); font-size: 9px; font-weight: bold; line-height: 16px;
+                        padding-left: 6px; border-radius: 2px 2px 0 0; letter-spacing: .4px; }
+    /* SwiftUI's .position(x, y) is the view's CENTER: labels, LED radios and wave grids are centered on (x, y) */
+    .label { position: absolute; font-size: 8px; color: var(--ink); white-space: nowrap;
+             transform: translate(-50%, -50%); }
+    .badge { position: absolute; width: 13px; height: 13px; border-radius: 50%; background: var(--header);
+             color: var(--header-text); font-size: 8px; font-weight: bold; line-height: 13px; text-align: center; }
+    /* knob: svg + label below, the widget's box is centered where SwiftUI's position() puts it */
+    .knob { position: absolute; text-align: center; touch-action: none; cursor: ns-resize; }
+    .knob .klabel { font-size: 7px; color: var(--ink); margin-top: 1px; white-space: nowrap;
+                    max-width: 44px; overflow: hidden; text-overflow: ellipsis; }
+    .knob.active .klabel { color: #000; font-weight: bold; }
+    /* toggle / cycler buttons */
+    .tbtn { position: absolute; box-sizing: border-box; background: var(--button); border: 1px solid #000;
+            border-radius: 2px; color: #D8D8C8; font-size: 8px; line-height: 16px; text-align: center;
+            cursor: pointer; white-space: nowrap; overflow: hidden; }
+    .tbtn .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+                 background: #2A2A26; margin-right: 3px; vertical-align: 1px; }
+    .tbtn.on { color: #111; font-weight: bold; background: #C8C8B0; }
+    .tbtn.on .dot { background: var(--led); box-shadow: 0 0 4px var(--led); }
+    /* cyan value display */
+    .disp { position: absolute; box-sizing: border-box; background: var(--display); border: 1px solid #000;
+            color: var(--display-text); font-family: "Courier New", ui-monospace, monospace; font-size: 10px;
+            font-weight: bold; line-height: 16px; text-align: center; cursor: pointer; white-space: nowrap;
+            overflow: hidden; }
+    /* wave icon grid (osc shapes, lfo types) */
+    .waves { position: absolute; display: grid; grid-template-columns: repeat(2, 17px); grid-auto-rows: 13px;
+             gap: 1px; transform: translate(-50%, -50%); }
+    .waves .cell { position: relative; background: rgba(0,0,0,.12); border: 1px solid rgba(0,0,0,.35);
+                   cursor: pointer; }
+    .waves .cell.sel { background: rgba(255,255,255,.35); }
+    .waves .cell.sel::after { content: ""; position: absolute; right: 1px; top: 1px; width: 4px; height: 4px;
+                              border-radius: 50%; background: var(--radio); box-shadow: 0 0 3px var(--radio); }
+    .waves svg { display: block; margin: 1px auto 0; }
+    /* led radio rows */
+    .leds { position: absolute; transform: translate(-50%, -50%); }
+    .leds .row { display: flex; align-items: center; height: 13px; cursor: pointer; font-size: 8px;
+                 color: var(--ink); white-space: nowrap; }
+    .leds.h .row { display: inline-flex; margin-right: 6px; }
+    .leds .row .dot { width: 5px; height: 5px; border-radius: 50%; background: #2A2A26; margin-right: 3px;
+                      flex: none; }
+    .leds .row.sel .dot { background: var(--radio); box-shadow: 0 0 3px var(--radio); }
+    /* popover menus (ctrl src/assign, effect type, patch browser, main menu) */
+    .pop { position: absolute; z-index: 30; background: var(--display); border: 1px solid #000;
+           color: var(--display-text); font-size: 9px; box-sizing: border-box; overflow-y: auto; }
+    .pop .item { padding: 2px 6px; cursor: pointer; white-space: nowrap; font-family: "Courier New", monospace; }
+    .pop .item:hover { background: rgba(115,242,255,.25); }
+    .pop .item.sel { background: var(--display-text); color: #000; }
+    .pop .group { color: #9aa; padding: 2px 6px 0; font-size: 8px; }
+    .grid2x5 { display: grid; grid-template-columns: repeat(2, 46px); }
+    .grid2x5 .item { padding: 1px 4px; font-size: 9px; text-align: center; }
+    /* bottom bar */
+    #bottom { position: absolute; left: 6px; top: 484px; width: 758px; height: 70px; box-sizing: border-box;
+              border: 1px solid rgba(0,0,0,.45); border-radius: 3px; }
+    #lcd { position: absolute; left: 64px; top: 8px; width: 500px; height: 54px; background: var(--display);
+           border: 1px solid #000; color: var(--display-text); font-family: "Courier New", monospace;
+           box-sizing: border-box; padding: 4px 8px; }
+    #lcd .line1 { font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; }
+    #lcd .line1 .nav { cursor: pointer; padding: 0 4px; }
+    #lcd .line2 { font-size: 10px; margin-top: 4px; white-space: nowrap; overflow: hidden; }
+    #meter { position: absolute; left: 572px; top: 8px; width: 52px; height: 54px; }
+    .bbtn { position: absolute; top: 24px; width: 56px; height: 22px; background: var(--button);
+            border: 1px solid #000; border-radius: 2px; color: #D8D8C8; font-size: 9px; font-weight: bold;
+            line-height: 20px; text-align: center; cursor: pointer; }
+    #title-band { position: absolute; left: 0; top: 4px; width: 770px; height: 26px; }
+    #title-band .name { position: absolute; left: 8px; top: 0; font-size: 20px; font-weight: bold;
+                        color: var(--ink); }
+    #title-band .sub { position: absolute; left: 88px; top: 8px; font-size: 12px; font-style: italic;
+                       color: var(--dim-ink); }
+    #title-band .ver { position: absolute; right: 8px; top: 3px; background: var(--red); color: #fff;
+                       font-size: 11px; font-weight: bold; padding: 1px 10px; border: 1px solid #000; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+"use strict";
+// --- protocol ----------------------------------------------------------------------------------------------------
+const PAGE = {HELLO: 1, POLL: 2, BEGIN: 3, SET: 4, END: 5, HOVER: 6, PATCH: 8, INIT: 9, PANIC: 10};
+const PLUGIN = {DESCRIBE: 0x81, SNAPSHOT: 0x82, VALUES: 0x83, ACTIVITY: 0x84};
+const PARAMS = 100, PATCH_PARAMS = 99;
+const post = bytes => window.parent.postMessage(bytes, "*");
+function msg(type, size, fill) {
+    const buffer = new ArrayBuffer(size);
+    const view = new DataView(buffer);
+    view.setUint8(0, type);
+    if (fill) {fill(view);}
+    post(buffer);
+}
+const sendSet = (id, value) => msg(PAGE.SET, 16, v => {v.setUint32(4, id, true); v.setFloat64(8, value, true);});
+const sendGesture = (type, id) => msg(type, 8, v => v.setUint32(4, id, true));
+const sendHover = id => msg(PAGE.HOVER, 8, v => v.setUint32(4, id, true));
+
+// --- state -------------------------------------------------------------------------------------------------------
+let describe = null;                 // {params: [...], init: [...], effectKnobNames: [[...]]}
+let params = [];                     // per id: {id, key, name, displayName, module, min, max, def, labels, syncLabels, enum}
+const values = new Int32Array(PARAMS);
+let patchName = "INIT";
+let patches = [];                    // factory bank from patches.json
+let patchIndex = -1;
+let dragging = -1;                   // the param id being dragged
+const widgets = [];                  // {id, update}
+const readoutTimer = {t: 0};
+
+const stage = document.getElementById("stage");
+const param = id => params[id];
+const clampv = (id, v) => Math.max(param(id).min, Math.min(param(id).max, Math.round(v)));
+// the label for a value, as the engine's ParamFormat gives it (tempo-synced LFO speeds, phaser level in %)
+function labelOf(id, v) {
+    const p = param(id);
+    if (p.labels && id !== 43 && id !== 48) {return p.labels[v - p.min];}
+    if ((id === 43 || id === 48) && values[id === 43 ? 67 : 69] !== 0 && p.syncLabels) {return p.syncLabels[v - p.min];}
+    if (id === 81 && values[78] >= 6) { // phasers: level = feedback in %
+        const s = Math.round((v - 64) * 100 / (v >= 64 ? 63 : 64));
+        return (s > 0 ? "+" : "") + s + "%";
+    }
+    return String(v);
+}
+function displayNameOf(id) {
+    if (id >= 79 && id <= 81 && describe) {
+        const t = Math.max(0, Math.min(9, values[78]));
+        return describe.effectKnobNames[t][id - 79];
+    }
+    return param(id).displayName;
+}
+function showReadout(text) {
+    lcdLine2.textContent = text;
+    clearTimeout(readoutTimer.t);
+    readoutTimer.t = setTimeout(() => {lcdLine2.textContent = "";}, 1500);
+}
+
+// --- widgets -----------------------------------------------------------------------------------------------------
+let layer = null; // the section the next widgets belong to (section() sets it; the stage is the default)
+function el(tag, cls, parent, x, y, w, h) {
+    const e = document.createElement(tag);
+    if (cls) {e.className = cls;}
+    e.style.left = x + "px"; e.style.top = y + "px";
+    if (w !== undefined) {e.style.width = w + "px";}
+    if (h !== undefined) {e.style.height = h + "px";}
+    (parent || layer || stage).appendChild(e);
+    return e;
+}
+// an SVG arc path, angles in degrees, 0 = up, clockwise
+function arc(cx, cy, r, a0, a1) {
+    const rad = a => (a - 90) * Math.PI / 180;
+    const x0 = cx + r * Math.cos(rad(a0)), y0 = cy + r * Math.sin(rad(a0));
+    const x1 = cx + r * Math.cos(rad(a1)), y1 = cy + r * Math.sin(rad(a1));
+    return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+}
+const knobSvg = (size, n) => {
+    const c = size / 2, r = size / 2 - 1;
+    const a = -135 + 270 * n;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+        `<circle cx="${c}" cy="${c}" r="${r}" fill="#171717" stroke="#000" stroke-width="1"/>` +
+        `<path d="${arc(c, c, r - 3.5, -135, 135)}" fill="none" stroke="#3A3A34" stroke-width="2"/>` +
+        `<path d="${arc(c, c, r - 3.5, -135, a)}" fill="none" stroke="#C8C8B8" stroke-width="2"/>` +
+        `<line x1="${c}" y1="${c}" x2="${(c + (r - 4) * Math.cos((a - 90) * Math.PI / 180)).toFixed(2)}" ` +
+        `y2="${(c + (r - 4) * Math.sin((a - 90) * Math.PI / 180)).toFixed(2)}" stroke="#FFF" stroke-width="1.6"/>` +
+        `</svg>`;
+};
+const knobLabels = {}; // id -> {el, base}; the effect knobs' labels follow the effect type
+// a knob; SwiftUI's knob() places the widget's center at (x, y + 6.5)
+function addKnob(id, label, x, y, size = 24) {
+    const box = el("div", "knob", null, x - size / 2, y + 6.5 - size / 2 - 8, size, size + 10);
+    const face = el("div", null, box);
+    const klabel = el("div", "klabel", box, 0, size, size, 10);
+    klabel.textContent = label;
+    knobLabels[id] = {el: klabel, base: label};
+    const w = {id, update() {
+        const p = param(id), n = (values[id] - p.min) / (p.max - p.min);
+        face.innerHTML = knobSvg(size, n);
+        // the label under the knob is the static one (SynthPanelView passes "ctl1" etc.; the effect type's
+        // names for the effect knobs show in the LCD readout, via displayNameOf there)
+        klabel.textContent = label;
+        box.classList.toggle("active", dragging === id);
+    }};
+    widgets.push(w);
+    let startY = 0, startValue = 0;
+    box.addEventListener("pointerdown", e => {
+        if (e.ctrlKey) {return;} // macOS right-click is the host's menu
+        e.preventDefault();
+        if (e.pointerId !== undefined && box.setPointerCapture) {box.setPointerCapture(e.pointerId);}
+        dragging = id; startY = e.clientY; startValue = values[id];
+        sendGesture(PAGE.BEGIN, id); sendHover(id);
+        w.update();
+    });
+    box.addEventListener("pointermove", e => {
+        sendHover(id);
+        if (dragging !== id) {return;}
+        const p = param(id), scale = currentScale();
+        const dy = (startY - e.clientY) / scale / (e.shiftKey ? 750 : 150);
+        const v = clampv(id, startValue + dy * (p.max - p.min));
+        if (v !== values[id]) {setLocal(id, v);}
+    });
+    const finish = e => {
+        if (dragging !== id) {return;}
+        dragging = -1;
+        sendGesture(PAGE.END, id);
+        w.update();
+    };
+    box.addEventListener("pointerup", finish);
+    box.addEventListener("pointercancel", finish);
+    box.addEventListener("pointerenter", () => sendHover(id));
+    box.addEventListener("pointerleave", () => {if (dragging !== id) {sendHover(0xffffffff);}});
+    return w;
+}
+function addToggle(id, title, x, y, w = 40) {
+    const b = el("div", "tbtn", null, x - w / 2, y - 9, w, 18);
+    b.innerHTML = `<span class="dot"></span>${title}`;
+    const widget = {id, update() {b.classList.toggle("on", values[id] !== 0);}};
+    widgets.push(widget);
+    b.addEventListener("pointerdown", e => {if (!e.ctrlKey) {e.preventDefault();}});
+    b.addEventListener("click", e => {
+        if (e.ctrlKey) {return;}
+        sendGesture(PAGE.BEGIN, id);
+        setLocal(id, values[id] === 0 ? 1 : 0);
+        sendGesture(PAGE.END, id);
+    });
+    b.addEventListener("pointerenter", () => sendHover(id));
+    b.addEventListener("pointerleave", () => sendHover(0xffffffff));
+    return widget;
+}
+// a button that steps through the parameter's choices (type / dst buttons)
+function addCycler(id, title, x, y, w = 40) {
+    const b = el("div", "tbtn", null, x - w / 2, y - 9, w, 18);
+    const widget = {id, update() {
+        const p = param(id);
+        b.textContent = (p.labels ? labelOf(id, values[id]) : values[id]) + " " + title;
+    }};
+    widgets.push(widget);
+    b.addEventListener("click", e => {
+        if (e.ctrlKey) {return;}
+        const p = param(id);
+        const step = e.shiftKey ? -1 : 1;
+        sendGesture(PAGE.BEGIN, id);
+        setLocal(id, clampv(id, values[id] + step));
+        sendGesture(PAGE.END, id);
+    });
+    b.addEventListener("pointerenter", () => sendHover(id));
+    b.addEventListener("pointerleave", () => sendHover(0xffffffff));
+    return widget;
+}
+// a cyan display showing the value's label; cycles=true: a click steps the value. Returns the element.
+function addDisplay(id, x, y, w = 30, cycles = false) {
+    const d = el("div", "disp", null, x - w / 2, y - 8, w, 16);
+    widgets.push({id, update() {d.textContent = labelOf(id, values[id]);}});
+    if (cycles) {
+        d.addEventListener("click", e => {
+            if (e.ctrlKey) {return;}
+            const p = param(id);
+            sendGesture(PAGE.BEGIN, id);
+            setLocal(id, values[id] >= p.max ? p.min : values[id] + 1);
+            sendGesture(PAGE.END, id);
+        });
+    }
+    d.addEventListener("pointerenter", () => sendHover(id));
+    d.addEventListener("pointerleave", () => sendHover(0xffffffff));
+    return d;
+}
+// wave icon shapes, drawn as small SVG paths
+const WAVE_PATHS = {
+    sine: "M1 7 Q4 1 7 7 T13 7", saw: "M1 11 L6 3 L6 11 L11 3 L11 11 L13 3",
+    pulse: "M1 3 L8 3 L8 11 L13 11", tri: "M1 11 L5 3 L9 11 L13 3",
+    noise: "M1 8 L3 4 L5 10 L7 2 L9 9 L11 5 L13 8", square: "M1 3 L9 3 L9 11 L13 11",
+    sawDown: "M1 3 L6 11 L6 3 L11 11 L11 3 L13 11", sampleHold: "M1 9 L4 9 L4 4 L8 4 L8 8 L13 8",
+    smooth: "M1 7 C4 1 6 1 7 7 C8 13 10 13 13 7"
+};
+function waveSvg(shape) {
+    return `<svg width="13" height="12" viewBox="0 0 14 14"><path d="${WAVE_PATHS[shape]}" fill="none" ` +
+           `stroke="#2E2E29" stroke-width="1.4"/></svg>`;
+}
+// a 2x2 grid of wave icons (osc shapes); shapes = [{value, shape}]
+function addWaves(id, items, x, y) {
+    const g = el("div", "waves", null, x, y);
+    const cells = items.map(item => {
+        const c = el("div", "cell", g);
+        c.innerHTML = waveSvg(item.shape);
+        c.addEventListener("click", e => {
+            if (e.ctrlKey) {return;}
+            sendGesture(PAGE.BEGIN, id);
+            setLocal(id, item.value);
+            sendGesture(PAGE.END, id);
+        });
+        c.addEventListener("pointerenter", () => sendHover(id));
+        c.addEventListener("pointerleave", () => sendHover(0xffffffff));
+        return {value: item.value, cell: c};
+    });
+    widgets.push({id, update() {for (const c of cells) {c.cell.classList.toggle("sel", values[id] === c.value);}}});
+    return g;
+}
+// one wave-icon cell that cycles through the shapes on click (the LFO types; WaveCycle in SynthControls)
+function addWaveCycle(id, shapes, x, y) {
+    const c = el("div", "waves", null, x, y, 26, 17); // .waves centers on (x, y)
+    const cell = el("div", "cell sel", c);
+    cell.style.width = "24px"; cell.style.height = "15px";
+    c.style.display = "block";
+    c.addEventListener("click", e => {
+        if (e.ctrlKey) {return;}
+        const p = param(id);
+        const step = e.shiftKey ? -1 : 1;
+        sendGesture(PAGE.BEGIN, id);
+        setLocal(id, ((values[id] - p.min + step) % shapes.length + shapes.length) % shapes.length + p.min);
+        sendGesture(PAGE.END, id);
+    });
+    c.addEventListener("pointerenter", () => sendHover(id));
+    c.addEventListener("pointerleave", () => sendHover(0xffffffff));
+    widgets.push({id, update() {
+        const i = Math.max(0, Math.min(shapes.length - 1, values[id] - param(id).min));
+        cell.innerHTML = waveSvg(shapes[i]);
+    }});
+    return c;
+}
+// LED radio: options [{value, label}], vertical or horizontal
+function addLeds(id, options, x, y, horizontal = false, showLabels = true, rowHeight = 13) {
+    const box = el("div", "leds" + (horizontal ? " h" : ""), null, x, y);
+    const rows = options.map(o => {
+        const r = el("div", "row", box);
+        r.style.height = rowHeight + "px";
+        r.innerHTML = `<span class="dot"></span>` + (showLabels ? o.label : "");
+        r.addEventListener("click", e => {
+            if (e.ctrlKey) {return;}
+            sendGesture(PAGE.BEGIN, id);
+            setLocal(id, o.value);
+            sendGesture(PAGE.END, id);
+        });
+        r.addEventListener("pointerenter", () => sendHover(id));
+        r.addEventListener("pointerleave", () => sendHover(0xffffffff));
+        return {value: o.value, row: r};
+    });
+    widgets.push({id, update() {for (const r of rows) {r.row.classList.toggle("sel", values[id] === r.value);}}});
+    return box;
+}
+function addBadge(text, x, y, id = -1) {
+    const b = el("div", "badge", null, x - 6.5, y - 6.5, 13, 13);
+    b.textContent = text;
+    if (id >= 0) { // the LFO on/off badges are toggles
+        widgets.push({id, update() {b.style.background = values[id] ? "var(--led)" : "var(--header)";
+                                  b.style.color = values[id] ? "#111" : "var(--header-text)";}});
+        b.style.cursor = "pointer";
+        b.addEventListener("click", e => {
+            if (e.ctrlKey) {return;}
+            sendGesture(PAGE.BEGIN, id);
+            setLocal(id, values[id] === 0 ? 1 : 0);
+            sendGesture(PAGE.END, id);
+        });
+        b.addEventListener("pointerenter", () => sendHover(id));
+        b.addEventListener("pointerleave", () => sendHover(0xffffffff));
+    }
+    return b;
+}
+function addLabel(text, x, y) {const l = el("div", "label", null, x, y); l.textContent = text; return l;}
+// (el() places at left/top; the .label class centers the text on that point, as SwiftUI's position does)
+
+// a popover menu button (the MIDI ctrl src/assign words)
+const CC_NAMES = {1: "mod wheel", 2: "breath", 4: "foot", 5: "porta time", 7: "volume", 8: "balance", 10: "pan",
+                  11: "expression", 64: "sustain", 65: "portamento", 66: "sostenuto", 67: "soft", 71: "resonance",
+                  72: "release", 73: "attack", 74: "cutoff", 91: "reverb", 93: "chorus"};
+const ASSIGN_TARGETS = [76, 45, 95, 2, 12, 13, 11, 5, 8, 91, 15, 16, 17, 18, 19, 20, 21, 23, 22, 25, 26, 27, 28,
+                        29, 79, 80, 81, 61, 62, 63, 60, 90, 35, 36, 37, 83, 98, 52, 53, 54, 55, 56, 39, 75, 92, 84,
+                        85, 34, 43, 44, 48, 49];
+function srcLabel(v) {
+    if (v < 0) {return "none";}
+    switch (v >> 8) {
+        case 0xB0: return "#" + (v & 0xFF) + ":" + (CC_NAMES[v & 0xFF] || "cc");
+        case 0xE0: return "pitch bend";
+        case 0xD0: return "ch pressure";
+        default: return "0x" + v.toString(16).toUpperCase().padStart(4, "0");
+    }
+}
+let openPop = null;
+function closePop() {if (openPop) {openPop.remove(); openPop = null;}}
+function showPop(x, y, w, h, build) {
+    closePop();
+    const p = el("div", "pop", stage, x, y, w, h);
+    build(p);
+    openPop = p;
+    return p;
+}
+function addMenu(id, x, y, w, labelOf, groups) {
+    const b = el("div", "tbtn", null, x - w / 2, y - 9, w, 18);
+    const widget = {id, update() {b.textContent = labelOf(values[id]);}};
+    widgets.push(widget);
+    b.addEventListener("click", e => {
+        if (e.ctrlKey) {return;}
+        const r = b.getBoundingClientRect(), s = stage.getBoundingClientRect();
+        // open upward, inside the panel
+        const px = r.left - s.left, py = r.top - s.top;
+        const pop = showPop(Math.min(px, 770 - 200), Math.max(0, py - 220), 200, 220, p => {
+            for (const g of groups) {
+                if (g.title) {el("div", "group", p).textContent = g.title;}
+                for (const item of g.items) {
+                    const it = el("div", "item" + (values[id] === item.value ? " sel" : ""), p);
+                    it.textContent = item.label;
+                    it.addEventListener("click", ev => {
+                        ev.stopPropagation();
+                        closePop();
+                        sendGesture(PAGE.BEGIN, id);
+                        setLocal(id, item.value);
+                        sendGesture(PAGE.END, id);
+                    });
+                }
+            }
+        });
+        pop.addEventListener("pointerenter", () => sendHover(id));
+    });
+    b.addEventListener("pointerenter", () => sendHover(id));
+    b.addEventListener("pointerleave", () => sendHover(0xffffffff));
+    return widget;
+}
+
+// --- local value changes -----------------------------------------------------------------------------------------
+function setLocal(id, v) {
+    v = clampv(id, v);
+    if (values[id] === v) {return;}
+    values[id] = v;
+    sendSet(id, v);
+    showReadout(`${displayNameOf(id)}: ${labelOf(id, v)}`);
+    for (const w of widgets) {if (w.id === id || w.id === 78) {w.update();}}
+}
+
+// --- the panel layout (SynthPanelView's places and positions) ------------------------------------------------------
+function section(title, x, y, w, h) {
+    const s = el("div", "section", stage, x, y, w, h);
+    el("div", "title", s).textContent = title;
+    layer = s; // the following widgets use section-relative coordinates, like SwiftUI's children
+    return s;
+}
+const K = (id, label, x, y, size) => addKnob(id, label, x, y, size); // center at (x, y+6.5)
+const T = (id, title, x, y, w) => addToggle(id, title, x, y, w);
+const C = (id, title, x, y, w) => addCycler(id, title, x, y, w);
+const D = (id, x, y, w, cycles) => addDisplay(id, x, y, w, cycles);
+
+let lcdLine2;
+function buildPanel() {
+    // title band
+    const band = el("div", null, stage); band.id = "title-band";
+    el("div", "name", band).textContent = "Synth2";
+    el("div", "sub", band).textContent = "Virtual Analog";
+    el("div", "ver", band).textContent = "V" + (describe ? describe.version : "");
+
+    // Oscillators
+    const osc = section("Oscillators", 6, 34, 312, 240);
+    addBadge("1", 14, 36);
+    addWaves(0, [{value: 0, shape: "sine"}, {value: 1, shape: "saw"}, {value: 2, shape: "pulse"}, {value: 3, shape: "tri"}], 50, 40);
+    K(76, "det", 100, 36); K(45, "FM", 136, 36);
+    addLabel("sub", 186, 24);
+    addWaves(96, [{value: 0, shape: "sine"}, {value: 1, shape: "tri"}, {value: 2, shape: "saw"}, {value: 3, shape: "square"}], 208, 44);
+    K(95, "sub", 260, 36);
+    addLeds(97, [{value: 0, label: "0oct"}, {value: 1, label: "-1oct"}], 234, 70, true);
+    addBadge("2", 14, 94);
+    addWaves(1, [{value: 1, shape: "saw"}, {value: 2, shape: "pulse"}, {value: 3, shape: "tri"}, {value: 4, shape: "noise"}], 50, 98);
+    T(7, "ring", 104, 94); T(6, "sync", 150, 94);
+    D(9, 260, 90, 32); addLabel("key shift", 260, 106);
+    T(4, "track", 36, 136, 52);
+    K(2, "pitch", 104, 132); K(3, "fine", 146, 132); K(5, "mix", 238, 132); K(8, "p/w", 282, 132);
+    T(10, "m.env", 36, 184, 52);
+    K(12, "A", 104, 184); K(13, "D", 140, 184); K(11, "amt", 176, 184);
+    C(71, "dest.", 36, 220, 52);
+    addLeds(71, [{value: 0, label: "osc2"}, {value: 1, label: "FM"}, {value: 2, label: "p/w"}], 126, 220, true);
+    K(91, "phase", 238, 206); K(72, "tune", 282, 206);
+
+    // LFO
+    const lfo = section("LFO", 6, 278, 312, 130);
+    addBadge("1", 14, 30, 57);
+    addWaveCycle(42, ["sawDown", "tri", "square", "sampleHold", "smooth", "sine"], 42, 30);
+    C(41, "dst", 78, 30, 44);
+    K(43, "spd", 30, 62); K(44, "amt", 76, 62);
+    addLabel("-sync-", 52, 99);
+    T(67, "tempo", 30, 114, 46); T(68, "key", 78, 114, 36);
+    const dests = ["osc2", "osc1+2", "filter", "amp", "p/w", "FM", "pan"];
+    addLeds(41, dests.map((l, i) => ({value: i + 1, label: ""})), 124, 72, false, false);
+    dests.forEach((l, i) => addLabel(l, 156, 72 + (i - 3) * 13)); // the column is centered on y=72, as SwiftUI's VStack
+    addLeds(46, dests.map((l, i) => ({value: i + 1, label: ""})), 188, 72, false, false);
+    C(46, "dst", 234, 30, 44);
+    addWaveCycle(47, ["sawDown", "tri", "square", "sampleHold", "smooth", "sine"], 270, 30);
+    addBadge("2", 298, 30, 58);
+    K(48, "spd", 236, 62); K(49, "amt", 282, 62);
+    addLabel("-sync-", 260, 99);
+    T(69, "tempo", 236, 114, 46); T(70, "key", 284, 114, 36);
+
+    // Wheel / MIDI
+    const wm = section("Wheel / MIDI", 6, 412, 536, 66);
+    addLabel("p.b range", 32, 28); D(40, 32, 46, 30);
+    addLabel("src1", 82, 31);
+    addMenu(86, 158, 31, 120, srcLabel,
+            [{title: "", items: [{value: 0xE000, label: "pitch bend"}, {value: 0xD000, label: "ch pressure"}]}]
+            .concat([0, 32, 64, 96].map(base => ({title: "CC " + base + "\u2013" + (base + 31),
+                items: Array.from({length: 32}, (_, i) => ({value: 0xB000 | (base + i), label: srcLabel(0xB000 | (base + i))}))
+            }))));
+    addLabel("->", 228, 31);
+    addMenu(87, 298, 31, 120, v => v < 0 ? "none" : param(v).name,
+            [{title: "", items: [{value: -1, label: "none"}]
+                .concat(ASSIGN_TARGETS.map(t => ({value: t, label: param(t).name})))}]);
+    addLabel("src2", 82, 51);
+    addMenu(88, 158, 51, 120, srcLabel,
+            [{title: "", items: [{value: 0xE000, label: "pitch bend"}, {value: 0xD000, label: "ch pressure"}]}]
+            .concat([0, 32, 64, 96].map(base => ({title: "CC " + base + "\u2013" + (base + 31),
+                items: Array.from({length: 32}, (_, i) => ({value: 0xB000 | (base + i), label: srcLabel(0xB000 | (base + i))}))
+            }))));
+    addLabel("->", 228, 51);
+    addMenu(89, 298, 51, 120, v => v < 0 ? "none" : param(v).name,
+            [{title: "", items: [{value: -1, label: "none"}]
+                .concat(ASSIGN_TARGETS.map(t => ({value: t, label: param(t).name})))}]);
+    K(50, "sens1", 400, 34, 22); K(51, "sens2", 446, 34, 22);
+
+    // Amplifier
+    const amp = section("Amplifier", 324, 34, 218, 80);
+    K(25, "A", 20, 40); K(26, "D", 55, 40); K(27, "S", 90, 40); K(28, "R", 125, 40); K(29, "gain", 162, 40); K(30, "vel", 198, 40);
+
+    // Filter
+    const fil = section("Filter", 324, 118, 218, 156);
+    K(15, "A", 20, 44); K(16, "D", 52, 44); K(17, "S", 84, 44); K(18, "R", 116, 44); K(21, "amt", 150, 44);
+    C(14, "type", 194, 30, 44);
+    addLeds(14, ["LP12", "LP24", "HP12", "BP12", "LPDL"].map((l, i) => ({value: i, label: l})), 196, 82, false, true, 14);
+    K(19, "frq", 20, 106); K(20, "res", 52, 106); K(23, "sat", 84, 106); K(22, "trk", 116, 106);
+    T(24, "vel", 150, 112, 36);
+
+    // Arpeggiator
+    const arp = section("Arpeggiator", 324, 278, 218, 130);
+    T(59, "ON", 22, 30, 32);
+    C(31, "type", 66, 30, 52); C(32, "range", 130, 30, 56);
+    addLeds(31, ["up&down", "up", "down", "random"].map((l, i) => ({value: i + 1, label: l})), 40, 78, false, true, 14);
+    addLeds(32, ["1oct", "2oct", "3oct", "4oct"].map((l, i) => ({value: i, label: l})), 126, 78, false, true, 14);
+    K(33, "beat", 190, 36); K(34, "gate", 190, 88);
+
+    // Effect
+    const eff = section("Effect", 548, 34, 216, 80);
+    T(77, "ON", 22, 40, 32);
+    const effDisp = D(78, 66, 40, 46, false);
+    effDisp.addEventListener("click", e => {
+        if (e.ctrlKey) {return;}
+        const r = effDisp.getBoundingClientRect(), s = stage.getBoundingClientRect();
+        const p = param(78);
+        showPop(r.left - s.left - 23, r.bottom - s.top + 2, 96, 5 * 18 + 4, pop => {
+            pop.classList.add("grid2x5");
+            for (let v = p.min; v <= p.max; v++) {
+                const it = el("div", "item" + (values[78] === v ? " sel" : ""), pop);
+                it.textContent = p.labels[v - p.min];
+                it.addEventListener("click", ev => {
+                    ev.stopPropagation(); closePop();
+                    sendGesture(PAGE.BEGIN, 78); setLocal(78, v); sendGesture(PAGE.END, 78);
+                });
+            }
+        });
+    });
+    K(79, "ctl1", 118, 36); K(80, "ctl2", 154, 36); K(81, "level", 190, 36);
+
+    // Equalizer / Pan
+    const eq = section("Equalizer / Pan", 548, 118, 216, 58);
+    K(61, "freq", 24, 30, 22); K(62, "level", 66, 30, 22); K(63, "Q", 108, 30, 22); K(60, "tone", 150, 30, 22); K(90, "L-R", 192, 30, 22);
+
+    // Tempo Delay
+    const dly = section("Tempo Delay", 548, 180, 216, 58);
+    T(65, "ON", 17, 32, 28); D(82, 48, 32, 28, true);
+    K(35, "time", 84, 30, 22); K(83, "sprd", 111, 30, 22); K(36, "fdbk", 138, 30, 22); K(98, "tone", 165, 30, 22); K(37, "d/w", 192, 30, 22);
+
+    // Chorus / Flanger
+    const cho = section("Chorus / Flanger", 548, 242, 216, 58);
+    T(66, "ON", 17, 32, 28); D(64, 48, 32, 28, true);
+    K(52, "time", 84, 30, 22); K(53, "depth", 111, 30, 22); K(54, "rate", 138, 30, 22); K(55, "fdbk", 165, 30, 22); K(56, "level", 192, 30, 22);
+
+    // Voice
+    const voi = section("Voice", 548, 304, 216, 174);
+    addLeds(38, ["poly", "mono", "legato"].map((l, i) => ({value: i, label: l})), 34, 46, false, true, 14);
+    D(94, 130, 38, 30); addLabel("poly", 130, 55);
+    T(73, "unison", 36, 100, 56);
+    addLabel("portamento", 153, 77);
+    K(39, "", 128, 100); T(74, "auto", 178, 100, 38);
+    D(93, 24, 138, 26); addLabel("num", 24, 155);
+    K(75, "det", 68, 136); K(92, "phase", 106, 136); K(84, "sprd", 144, 136); K(85, "pitch", 182, 136);
+
+    // Bottom bar: volume knob, LCD, meter, menu (stage-level, absolute coordinates)
+    layer = null;
+    const bottom = el("div", null, stage); bottom.id = "bottom";
+    addKnob(99, "vol", 34, 519, 26);
+    const lcd = el("div", null, bottom); lcd.id = "lcd";
+    const line1 = el("div", "line1", lcd);
+    line1.innerHTML = `<span class="nav" id="prev">&#9664;</span> <span id="pname">INIT</span> <span class="nav" id="next">&#9654;</span>`;
+    lcdLine2 = el("div", "line2", lcd);
+    document.getElementById("prev").addEventListener("click", () => stepPatch(-1));
+    document.getElementById("next").addEventListener("click", () => stepPatch(1));
+    const meter = el("canvas", null, bottom); meter.id = "meter"; meter.width = 52; meter.height = 54;
+    const menuBtn = el("div", "bbtn", bottom); menuBtn.style.left = "668px"; menuBtn.textContent = "menu";
+    menuBtn.addEventListener("click", e => {
+        if (e.ctrlKey) {return;}
+        const r = menuBtn.getBoundingClientRect(), s = stage.getBoundingClientRect();
+        showPop(Math.min(r.left - s.left, 770 - 150), Math.max(0, r.top - s.top - 100), 150, 100, pop => {
+            const items = [
+                ["Initialize patch", () => msg(PAGE.INIT, 4)],
+                ["Patches\u2026", () => showPatchBrowser()],
+                ["All notes off", () => msg(PAGE.PANIC, 4)]
+            ];
+            for (const [label, fn] of items) {
+                const it = el("div", "item", pop);
+                it.textContent = label;
+                it.addEventListener("click", ev => {ev.stopPropagation(); closePop(); fn();});
+            }
+        });
+    });
+    window.updateLcdName = () => {document.getElementById("pname").textContent = patchName;};
+}
+function showPatchBrowser() {
+    showPop(120, 60, 320, 400, pop => {
+        if (patches.length === 0) {
+            el("div", "item", pop).textContent = "(no patches.json in the bundle)";
+            return;
+        }
+        let lastBank = null, number = 0;
+        patches.forEach((patch, i) => {
+            if (patch.bank !== lastBank) {
+                lastBank = patch.bank;
+                number = 0;
+                el("div", "group", pop).textContent = patch.bank || "";
+            }
+            const it = el("div", "item" + (i === patchIndex ? " sel" : ""), pop);
+            it.textContent = `${++number}  ${patch.name}`;
+            it.addEventListener("click", ev => {
+                ev.stopPropagation(); closePop();
+                loadPatch(i);
+            });
+        });
+    });
+}
+function loadPatch(index) {
+    if (index < 0 || index >= patches.length) {return;}
+    patchIndex = index;
+    const patch = patches[index];
+    const name = new TextEncoder().encode(patch.name);
+    const buffer = new ArrayBuffer(4 + name.length + PATCH_PARAMS * 4 + 2);
+    const view = new DataView(buffer);
+    view.setUint8(0, PAGE.PATCH);
+    view.setUint16(2, name.length, true);
+    new Uint8Array(buffer, 4, name.length).set(name);
+    for (let i = 0; i < PATCH_PARAMS; i++) {
+        view.setInt32(4 + name.length + 4 * i, patch.values[i] ?? param(i).def, true);
+    }
+    view.setUint16(4 + name.length + PATCH_PARAMS * 4, patch.ver || 0, true); // .sy1 version for legacy conversion
+    post(buffer);
+    patchName = patch.name;
+    if (window.updateLcdName) {window.updateLcdName();}
+}
+function stepPatch(dir) {
+    if (patches.length === 0) {return;}
+    loadPatch((patchIndex < 0 ? (dir > 0 ? 0 : patches.length - 1) : (patchIndex + dir + patches.length) % patches.length));
+}
+// --- messages from the plugin -------------------------------------------------------------------------------------
+function decodeName(bytes) {
+    try {return new TextDecoder("utf-8", {fatal: true}).decode(bytes);}
+    catch {return new TextDecoder("shift_jis").decode(bytes);}
+}
+addEventListener("message", e => {
+    if (!(e.data instanceof ArrayBuffer)) {return;}
+    const bytes = new Uint8Array(e.data);
+    const view = new DataView(e.data);
+    switch (bytes[0]) {
+        case PLUGIN.DESCRIBE: {
+            describe = JSON.parse(new TextDecoder().decode(bytes.subarray(4)));
+            params = describe.params;
+            buildPanel();
+            for (const w of widgets) {w.update();}
+            break;
+        }
+        case PLUGIN.SNAPSHOT: {
+            for (let i = 0; i < PATCH_PARAMS; i++) {values[i] = view.getInt32(4 + 4 * i, true);}
+            values[99] = view.getInt32(4 + 396, true);
+            patchName = decodeName(bytes.subarray(4 + 400, 4 + 464)).replace(/\0+$/, "");
+            if (window.updateLcdName) {window.updateLcdName();}
+            for (const w of widgets) {w.update();}
+            break;
+        }
+        case PLUGIN.VALUES: {
+            const count = view.getUint16(2, true);
+            for (let k = 0; k < count; k++) {
+                const id = view.getUint32(4 + 16 * k, true);
+                const value = view.getFloat64(4 + 16 * k + 8, true);
+                if (id >= PARAMS || !isFinite(value)) {continue;}
+                const v = clampv(id, value);
+                if (v !== values[id]) {
+                    values[id] = v;
+                    showReadout(`${displayNameOf(id)}: ${labelOf(id, v)}`);
+                }
+            }
+            for (const w of widgets) {w.update();}
+            break;
+        }
+        case PLUGIN.ACTIVITY: {
+            meterPeakL = view.getFloat32(16, true);
+            meterPeakR = view.getFloat32(20, true);
+            drawMeter();
+            break;
+        }
+    }
+});
+
+// --- output meter -------------------------------------------------------------------------------------------------
+let meterPeakL = 0, meterPeakR = 0, meterHold = 0;
+function drawMeter() {
+    const canvas = document.getElementById("meter");
+    if (!canvas) {return;}
+    canvas.width = 52; canvas.height = 54;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#24272F";
+    ctx.fillRect(0, 0, 52, 54);
+    ctx.fillStyle = "#73F2FF";
+    ctx.font = "7px Verdana";
+    ctx.fillText("out", 3, 8);
+    const peak = Math.max(meterPeakL, meterPeakR);
+    const db = peak <= 0 ? -Infinity : 20 * Math.log10(peak);
+    const level = Math.max(0, Math.min(1, (db + 60) / 60));
+    meterHold = Math.max(meterHold, level);
+    ctx.fillStyle = "#73F2FF";
+    ctx.fillRect(4, 48 - level * 32, 20, level * 32);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(4, 48 - meterHold * 32, 20, 1);
+    ctx.fillStyle = "#9aa";
+    ctx.font = "8px monospace";
+    ctx.fillText(db === -Infinity ? "-inf" : db.toFixed(0), 28, 46);
+    meterHold = Math.max(0, meterHold - 0.02);
+}
+
+// --- scaling and the poll loop -------------------------------------------------------------------------------------
+function currentScale() {
+    return Math.min(innerWidth / 770, innerHeight / 560);
+}
+function fit() {
+    stage.style.transform = `scale(${currentScale()})`;
+}
+addEventListener("resize", fit);
+fit();
+
+let lastPoll = 0;
+function frame(now) {
+    if (now - lastPoll >= 33) {
+        lastPoll = now;
+        msg(PAGE.POLL, 4);
+    }
+    requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+fetch("patches.json").then(r => r.ok ? r.json() : {banks: []}).then(json => {
+    // {"banks": [{"name", "patches": [{"name", "ver", "values"}]}]} — flattened, each patch keeps its bank
+    patches = (json.banks ?? []).flatMap(bank => (bank.patches ?? []).map(p => ({...p, bank: bank.name})));
+    if (patches.length === 0 && Array.isArray(json.patches)) {patches = json.patches;}
+}).catch(() => {patches = [];});
+
+msg(PAGE.HELLO, 4);
+</script>
+</body>
+</html>

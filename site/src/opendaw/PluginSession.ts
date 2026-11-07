@@ -74,8 +74,10 @@ export class PluginSession implements Terminable {
 
     // Where a catalog plugin's bundle is, and what fetching it needs
     static async locate(plugin: PluginEntry, source: BundleSource): Promise<{ url: string, init?: RequestInit }> {
-        if (source === "local") {return {url: `/bundles/${plugin.id}.wclap.tar.gz`}}
-        if (plugin.bundled !== undefined) {return {url: plugin.bundled}}
+        // absolute paths in plugins.ts are under the vite base, so a fork's project page finds them under /<repo>/
+        const underBase = (path: string): string => import.meta.env.BASE_URL + path.replace(/^\//, "")
+        if (source === "local") {return {url: underBase(`/bundles/${plugin.id}.wclap.tar.gz`)}}
+        if (plugin.bundled !== undefined) {return {url: underBase(plugin.bundled)}}
         const url = await HostedIndex.bundleUrl(plugin.clapId)
         if (url === null) {throw new Error(`${plugin.name} is not hosted by openDAW yet`)}
         return {url, init: HostedHeaders}
