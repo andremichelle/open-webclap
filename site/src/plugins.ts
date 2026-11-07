@@ -84,6 +84,14 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         bundled: "/bundled/oxo-synth2.wclap.tar.gz"
     },
     {
+        id: "faust-aether", name: "Aether", kind: "instrument",
+        description: "Hybrid synth in Faust: subtractive, 4-operator FM and additive engines, modulation matrix, 16-step sequencer, stereo effects",
+        clapId: "org.faust.aether",
+        archive: "build/faust-aether/faust-aether.wclap.tar.gz", build: "scripts/build-faust-aether.sh",
+        credit: "https://github.com/sletz/faust-aether", source: port("faust-aether"), license: "MIT",
+        bundled: "/bundled/faust-aether.wclap.tar.gz"
+    },
+    {
         id: "droplets", name: "Droplets", kind: "instrument",
         description: "Stochastic water bubble synth after xoxos' Water: drips, splashes and rivers from a physical droplet model",
         clapId: "com.aquanodemusic.droplets",

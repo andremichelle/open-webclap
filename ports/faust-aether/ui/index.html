@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<!--
+    Aether's editor page (the bundle's ui/index.html), adapted from upstream's web/ page (same MIT project):
+    preset library, tabs over the parameter groups, the modulation matrix, the step sequencer. It no longer runs
+    its own WASM: it talks to module.wasm over ArrayBuffers (window.parent.postMessage), binary little endian, the
+    types at the top of aether_clap.cpp:
+
+    page -> plugin:   1 hello, 2 poll, 3 begin (u32 id@4), 4 set (u32 id@4, f64 value@8), 5 end (u32 id@4),
+                      6 hover (u32 id@4, 0xffffffff none), 8 patch (u16 name length@2, name@4, 96 x f64 values),
+                      9 defaults, 10 panic
+    plugin -> page:   0x81 describe (the parameter table JSON from 4), 0x82 snapshot (96 x f32 from 4),
+                      0x83 values (u16 count@2, then count x (u32 id, u32 0, f64 value)),
+                      0x84 activity (u8 active voices@1, f32 output peak@4)
+
+    The page says hello, gets the table and a snapshot, then polls at most every 33 ms. A drag is one gesture
+    (begin, values, end); the hovered parameter is reported so the host's menu and value entry work. openDAW owns
+    double-click, right-click and the wheel: no handlers for them here, no preventDefault on presses. Notes come
+    from the host. Upstream's six presets ship as patches.json.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Aether</title>
+<style>
+    :root {
+        --bg: #101817; --panel: #16211e; --panel2: #1b2925; --line: #263832; --ink: #cfe3d8; --dim: #7d9a8c;
+        --accent: #b7e6cf; --led: #5cf266; --display: #0d1413; --display-text: #9fe8c9;
+    }
+    html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+    body { display: flex; align-items: center; justify-content: center; color: var(--ink);
+           font-family: "Segoe UI", Verdana, sans-serif; user-select: none; -webkit-user-select: none; }
+    #stage { position: relative; width: 1024px; height: 640px; background: var(--bg); flex: none;
+             display: flex; transform-origin: center center; overflow: hidden; }
+    /* library */
+    #library { width: 240px; flex: none; border-right: 1px solid var(--line); padding: 14px; box-sizing: border-box;
+               display: flex; flex-direction: column; }
+    #library h1 { font-size: 15px; margin: 4px 0 10px; color: var(--accent); letter-spacing: .5px; }
+    .section-label { font-size: 9px; letter-spacing: 1.5px; color: var(--dim); display: flex;
+                     justify-content: space-between; margin-bottom: 8px; }
+    .preset-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+    .preset-card { display: flex; align-items: center; gap: 8px; text-align: left; background: var(--panel);
+                   border: 1px solid var(--line); border-radius: 6px; color: var(--ink); padding: 7px 9px;
+                   cursor: pointer; font: inherit; }
+    .preset-card:hover { border-color: var(--accent); }
+    .preset-card.active { background: var(--panel2); border-color: var(--accent); }
+    .preset-card .preset-index { font-size: 9px; color: var(--dim); }
+    .preset-card strong { display: block; font-size: 11px; color: var(--accent); }
+    .preset-card small { font-size: 8px; letter-spacing: 1px; color: var(--dim); }
+    .preset-card .preset-arrow { margin-left: auto; color: var(--dim); }
+    #library .foot { margin-top: auto; font-size: 9px; color: var(--dim); line-height: 1.5; }
+    /* main column */
+    #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    #patch-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 12px 16px 8px; }
+    .eyebrow { font-size: 9px; letter-spacing: 1.5px; color: var(--dim); }
+    #modified { color: var(--led); border: 1px solid var(--led); border-radius: 3px; padding: 0 4px;
+                font-size: 8px; margin-left: 6px; vertical-align: 1px; }
+    #patch-name { margin: 2px 0; font-size: 20px; color: var(--accent); }
+    #patch-tag { font-size: 9px; letter-spacing: 1.5px; color: var(--dim); }
+    #patch-description { margin: 4px 0 0; font-size: 10px; color: var(--dim); max-width: 420px; }
+    #patch-actions { display: flex; gap: 8px; align-items: center; }
+    button { font: inherit; cursor: pointer; }
+    .ghost { background: none; border: 1px solid var(--line); color: var(--ink); border-radius: 5px;
+             padding: 6px 10px; font-size: 11px; }
+    .ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .icon-button { background: none; border: 1px solid var(--line); color: var(--ink); border-radius: 5px;
+                   width: 28px; height: 28px; font-size: 14px; }
+    /* meter */
+    #meter-row { display: flex; align-items: center; gap: 10px; padding: 0 16px 8px; font-size: 9px;
+                 letter-spacing: 1.5px; color: var(--dim); }
+    #meter { width: 160px; height: 8px; background: var(--display); border: 1px solid var(--line);
+             border-radius: 3px; overflow: hidden; }
+    #meter-fill { display: block; height: 100%; width: 0%; background: var(--led); }
+    #voices-stat { color: var(--ink); }
+    /* tabs */
+    #tabs { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+    .tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--dim);
+           padding: 6px 10px; font-size: 11px; letter-spacing: .5px; }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    /* control panel */
+    #control-panel { flex: 1; overflow-y: auto; padding: 12px 16px; }
+    .panel-header h3 { margin: 0; font-size: 12px; letter-spacing: 2px; color: var(--accent); }
+    .panel-header p { margin: 2px 0 10px; font-size: 9px; color: var(--dim); }
+    .control-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .control { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+    .control-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+    .control label { font-size: 10px; color: var(--ink); white-space: nowrap; overflow: hidden;
+                     text-overflow: ellipsis; }
+    .control output { font-size: 9px; color: var(--display-text); font-family: ui-monospace, monospace;
+                      white-space: nowrap; }
+    .control input[type=range] { width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
+    .control input[type=checkbox] { accent-color: var(--accent); }
+    .control select { width: 100%; margin-top: 6px; background: var(--display); color: var(--display-text);
+                      border: 1px solid var(--line); border-radius: 4px; font-size: 10px; padding: 3px; }
+    .group-title { grid-column: 1 / -1; font-size: 9px; letter-spacing: 2px; color: var(--dim);
+                   border-bottom: 1px solid var(--line); padding-bottom: 3px; margin-top: 6px; }
+    /* matrix */
+    .route-table { border-collapse: collapse; width: 100%; font-size: 10px; }
+    .route-table th { text-align: left; font-size: 9px; letter-spacing: 1px; color: var(--dim);
+                      padding: 4px 6px; border-bottom: 1px solid var(--line); }
+    .route-table td { padding: 4px 6px; border-bottom: 1px solid var(--line); }
+    .route-table select { width: 110px; margin: 0; }
+    .route-table input[type=range] { width: 110px; margin: 0; vertical-align: middle; }
+    .route-table output { font-family: ui-monospace, monospace; font-size: 9px; color: var(--display-text); }
+    /* sequencer steps */
+    .steps { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-top: 10px; }
+    .step { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 6px;
+            text-align: center; }
+    .step .step-no { font-size: 8px; color: var(--dim); }
+    .step input { width: 44px; margin-top: 4px; background: var(--display); color: var(--display-text);
+                   border: 1px solid var(--line); border-radius: 3px; text-align: center; font-size: 11px;
+                   font-family: ui-monospace, monospace; }
+    #feedback { padding: 6px 16px; font-size: 10px; color: var(--dim); border-top: 1px solid var(--line); }
+    #feedback.error { color: #ff6b6b; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <aside id="library">
+    <div class="section-label"><span>01 / SOUND LIBRARY</span><span id="preset-count">06</span></div>
+    <h1>Aether</h1>
+    <div id="preset-list" class="preset-list" aria-label="Presets"></div>
+    <div class="foot">Faust · WebCLAP<br><small>Sound is synthesized live in module.wasm.</small></div>
+  </aside>
+  <div id="main">
+    <section id="patch-header">
+      <div>
+        <div class="eyebrow">CURRENT PATCH <span id="modified" hidden>MODIFIED</span></div>
+        <h2 id="patch-name">—</h2>
+        <div id="patch-tag"></div>
+        <p id="patch-description"></p>
+      </div>
+      <div id="patch-actions">
+        <button id="reset-patch" class="ghost" title="Restore the selected preset">↺ Reset</button>
+        <button id="panic" class="ghost" title="Stop all notes and clear the effects">Stop all</button>
+      </div>
+    </section>
+    <div id="meter-row">
+      <span>OUTPUT</span>
+      <div id="meter"><span id="meter-fill"></span></div>
+      <span>VOICES <b id="voices-stat">0 / 8</b></span>
+      <span id="engine-status">connecting…</span>
+    </div>
+    <nav id="tabs" class="tabs" aria-label="Synthesis sections"></nav>
+    <section id="control-panel" aria-live="polite"></section>
+    <p id="feedback" role="status">Loading the parameter table…</p>
+  </div>
+</div>
+<script>
+"use strict";
+// --- protocol ----------------------------------------------------------------------------------------
+const PAGE = {HELLO: 1, POLL: 2, BEGIN: 3, SET: 4, END: 5, HOVER: 6, PATCH: 8, DEFAULTS: 9, PANIC: 10};
+const PLUGIN = {DESCRIBE: 0x81, SNAPSHOT: 0x82, VALUES: 0x83, ACTIVITY: 0x84};
+const post = bytes => window.parent.postMessage(bytes, "*");
+function msg(type, size, fill) {
+    const buffer = new ArrayBuffer(size);
+    const view = new DataView(buffer);
+    view.setUint8(0, type);
+    if (fill) {fill(view);}
+    post(buffer);
+}
+const sendSet = (id, value) => msg(PAGE.SET, 16, v => {v.setUint32(4, id, true); v.setFloat64(8, value, true);});
+const sendGesture = (type, id) => msg(type, 8, v => v.setUint32(4, id, true));
+const sendHover = id => msg(PAGE.HOVER, 8, v => v.setUint32(4, id, true));
+const sendPatch = (name, values) => {
+    const bytes = new TextEncoder().encode(name);
+    msg(PAGE.PATCH, 4 + bytes.length + values.length * 8, v => {
+        v.setUint16(2, bytes.length, true);
+        new Uint8Array(v.buffer).set(bytes, 4);
+        for (let i = 0; i < values.length; i++) {v.setFloat64(4 + bytes.length + 8 * i, values[i], true);}
+    });
+};
+
+// --- state -------------------------------------------------------------------------------------------
+let params = [];                 // per id, from the describe message: {id, key, label, group, type, min, max, step, init, unit, log, menu}
+let values = [];                 // per id, the current value
+let patches = {};                // id -> {title, tag, description, values: {key: value}}
+let selected = null;
+let views = new Map();           // id -> [{input, output, log}]
+let dragging = -1;
+const $ = id => document.getElementById(id);
+const leaf = key => key.split("/").at(-1);
+const byKey = key => params.find(p => p.key === key);
+const names = {va_level:'Analog engine',fm_level:'FM engine',add_level:'Additive engine',sub_level:'Sub-octave',
+    noise_level:'Pink noise',detune_cents:'Detune',morph:'Waveform',pulse_width:'Pulse width',fm_index:'FM index',
+    fm_ratio:'FM ratio',fm_parallel:'Parallel FM',brightness:'Brightness',inharmonicity:'Inharmonicity',
+    ring_mod:'Ring modulation',fold:'Wavefolding',drive:'Drive',amp_attack:'Amp attack',amp_decay:'Amp decay',
+    amp_sustain:'Amp sustain',amp_release:'Amp release',filter_attack:'Filter attack',filter_decay:'Filter decay',
+    filter_sustain:'Filter sustain',filter_release:'Filter release',mod_decay:'Mod envelope decay',cutoff:'Filter cutoff',
+    resonance:'Resonance',filter_env_octaves:'Envelope → filter',keytrack:'Key tracking',filter_type:'Filter type',
+    lfo1_hz:'LFO 1 / sine',lfo2_hz:'LFO 2 / triangle',macro1:'Macro 1',macro2:'Macro 2',
+    velocity_cutoff_octaves:'Velocity → filter',stereo_spread:'Stereo unison',bpm:'Tempo',sequencer:'Sequencer enabled',
+    sequence_octaves:'Interval multiplier',step_gate:'Step gate length',chorus_mix:'Chorus mix',chorus_rate:'Chorus rate',
+    chorus_depth_ms:'Chorus depth',phaser_mix:'Phaser mix',phaser_rate:'Phaser rate',delay_mix:'Delay mix',
+    delay_feedback:'Delay feedback',delay_beats:'Delay / beats',delay_tone:'Delay tone',reverb_mix:'Reverb mix',
+    reverb_seconds:'Reverb time',predelay_ms:'Predelay',bass_db:'Bass',air_db:'Air',master_db:'Master volume',
+    width:'Stereo width',depth:'Depth',source:'Source',destination:'Destination'};
+for (let i = 0; i < 16; i++) {names["note_" + i] = "Step " + (i + 1);}
+const tabs = [["engines","Engines"],["filter","Filter & ADSR"],["modulation","Modulation"],["effects","Effects"],
+              ["sequence","Sequencer"],["advanced","All controls"]];
+const curated = {
+    engines: ["va_level","fm_level","add_level","sub_level","morph","detune_cents","fm_index","fm_ratio","brightness","inharmonicity","fold","drive"],
+    filter: ["cutoff","resonance","filter_type","filter_env_octaves","amp_attack","amp_decay","amp_sustain","amp_release","filter_attack","filter_decay","filter_sustain","filter_release","keytrack","velocity_cutoff_octaves","mod_decay"],
+    modulation: ["lfo1_hz","lfo2_hz","macro1","macro2","stereo_spread"],
+    sequence: ["sequencer","bpm","step_gate","sequence_octaves"]
+};
+
+function pretty(p, v) {
+    if (p.type === "checkbox") {return v ? "ON" : "OFF";}
+    if (p.menu) {
+        let best = p.menu[0];
+        for (const m of p.menu) {if (Math.abs(m[1] - v) < Math.abs(best[1] - v)) {best = m;}}
+        return best[0];
+    }
+    if (leaf(p.key) === "filter_type") {return v < 0.5 ? "Ladder" : v < 1.5 ? "Band-pass" : "High-pass";}
+    if (p.max >= 1000 && v >= 1000) {return (v / 1000).toFixed(2) + " kHz";}
+    const unit = p.unit || "";
+    return Number(v).toFixed(p.step >= 1 ? 0 : p.step >= 0.1 ? 1 : 2) + (unit ? " " + unit : "");
+}
+function setValue(id, value, send = true) {
+    const p = params[id];
+    if (!p || !Number.isFinite(Number(value))) {return;}
+    value = Math.min(p.max, Math.max(p.min, Number(value)));
+    values[id] = value;
+    for (const view of views.get(id) || []) {
+        if (p.type === "checkbox") {view.input.checked = !!value;}
+        else {view.input.value = view.log ? Math.log(value) : value;}
+        view.output.textContent = pretty(p, value);
+        view.input.setAttribute("aria-valuetext", pretty(p, value));
+    }
+    if (send) {sendSet(id, value);}
+    updateModified();
+}
+function updateModified() {
+    if (!patches[selected]) {return;}
+    const base = patches[selected].values;
+    const changed = params.some((p, id) => Math.abs(values[id] - (base[p.key] ?? p.init)) > 1e-6);
+    $("modified").hidden = !changed;
+}
+function applyPreset(id) {
+    if (!patches[id]) {return;}
+    selected = id;
+    const base = patches[id].values;
+    const all = params.map(p => Math.min(p.max, Math.max(p.min, base[p.key] ?? p.init)));
+    for (let i = 0; i < params.length; i++) {setValue(i, all[i], false);}
+    sendPatch(id, all);
+    document.querySelectorAll(".preset-card").forEach(el => {
+        const on = el.dataset.preset === id;
+        el.classList.toggle("active", on);
+        el.setAttribute("aria-pressed", String(on));
+    });
+    $("patch-name").textContent = patches[id].title;
+    $("patch-tag").textContent = patches[id].tag;
+    $("patch-description").textContent = patches[id].description;
+    $("modified").hidden = true;
+}
+
+// --- controls ----------------------------------------------------------------------------------------
+function makeControl(p) {
+    const box = document.createElement("div");
+    box.className = "control";
+    const top = document.createElement("div");
+    top.className = "control-top";
+    const label = document.createElement("label");
+    const id = "ctrl-" + p.id;
+    label.htmlFor = id;
+    label.textContent = names[leaf(p.key)] || leaf(p.key).replaceAll("_", " ");
+    const output = document.createElement("output");
+    const input = document.createElement("input");
+    input.id = id;
+    const logarithmic = p.log === true;
+    if (p.type === "checkbox") {
+        input.type = "checkbox";
+        input.checked = !!values[p.id];
+        input.addEventListener("change", () => {
+            sendGesture(PAGE.BEGIN, p.id);
+            setValue(p.id, input.checked ? 1 : 0);
+            sendGesture(PAGE.END, p.id);
+        });
+    } else if (p.menu) {
+        const sel = document.createElement("select");
+        sel.setAttribute("aria-label", label.textContent);
+        for (const [name, value] of p.menu) {
+            const op = document.createElement("option");
+            op.value = value;
+            op.textContent = name;
+            sel.append(op);
+        }
+        sel.value = values[p.id];
+        sel.addEventListener("change", () => {
+            sendGesture(PAGE.BEGIN, p.id);
+            setValue(p.id, Number(sel.value));
+            sendGesture(PAGE.END, p.id);
+        });
+        top.append(label, output);
+        box.append(top, sel);
+        views.set(p.id, [{input: sel, output, log: false}]);
+        wireHover(box, p.id);
+        return box;
+    } else {
+        input.type = "range";
+        input.min = logarithmic ? Math.log(p.min) : p.min;
+        input.max = logarithmic ? Math.log(p.max) : p.max;
+        input.step = logarithmic ? "any" : (p.step || 0.001);
+        input.value = logarithmic ? Math.log(values[p.id]) : values[p.id];
+        input.setAttribute("aria-label", label.textContent);
+        input.addEventListener("pointerdown", () => {dragging = p.id; sendGesture(PAGE.BEGIN, p.id);});
+        input.addEventListener("input", () => {setValue(p.id, logarithmic ? Math.exp(Number(input.value)) : Number(input.value));});
+        const release = () => {if (dragging === p.id) {dragging = -1; sendGesture(PAGE.END, p.id);}};
+        input.addEventListener("pointerup", release);
+        input.addEventListener("pointercancel", release);
+    }
+    output.textContent = pretty(p, values[p.id]);
+    input.setAttribute("aria-valuetext", pretty(p, values[p.id]));
+    top.append(label, output);
+    box.append(top, input);
+    if (!views.has(p.id)) {views.set(p.id, []);}
+    views.get(p.id).push({input, output, log: logarithmic});
+    wireHover(box, p.id);
+    return box;
+}
+function wireHover(el, id) {
+    el.addEventListener("pointerenter", () => sendHover(id));
+    el.addEventListener("pointerleave", () => sendHover(0xffffffff));
+}
+function groupTitle(text) {
+    const div = document.createElement("div");
+    div.className = "group-title";
+    div.textContent = text;
+    return div;
+}
+function buildMatrix(panel) {
+    const table = document.createElement("table");
+    table.className = "route-table";
+    const head = table.createTHead().insertRow();
+    for (const title of ["ROUTE", "SOURCE", "DESTINATION", "DEPTH"]) {
+        const th = document.createElement("th");
+        th.textContent = title;
+        head.append(th);
+    }
+    for (let i = 0; i < 8; i++) {
+        const row = table.insertRow();
+        row.insertCell().textContent = String(i + 1).padStart(2, "0");
+        for (const leafName of ["source", "destination"]) {
+            const p = byKey(`/Aether/Voice/Modulation/Route_${i}/${leafName}`);
+            const sel = document.createElement("select");
+            sel.setAttribute("aria-label", `Route ${i + 1} ${leafName}`);
+            for (const [name, value] of p.menu) {
+                const op = document.createElement("option");
+                op.value = value;
+                op.textContent = name;
+                sel.append(op);
+            }
+            sel.value = values[p.id];
+            const output = document.createElement("output");
+            views.set(p.id, [{input: sel, output, log: false}]);
+            sel.addEventListener("change", () => {
+                sendGesture(PAGE.BEGIN, p.id);
+                setValue(p.id, Number(sel.value));
+                sendGesture(PAGE.END, p.id);
+            });
+            row.insertCell().append(sel);
+        }
+        const cell = row.insertCell();
+        const p = byKey(`/Aether/Voice/Modulation/Route_${i}/depth`);
+        const input = document.createElement("input");
+        input.type = "range";
+        input.min = -1; input.max = 1; input.step = 0.001;
+        input.value = values[p.id];
+        input.setAttribute("aria-label", `Route ${i + 1} depth`);
+        const output = document.createElement("output");
+        output.textContent = Number(values[p.id]).toFixed(2);
+        views.set(p.id, [{input, output, log: false}]);
+        input.addEventListener("pointerdown", () => {dragging = p.id; sendGesture(PAGE.BEGIN, p.id);});
+        input.addEventListener("input", () => setValue(p.id, Number(input.value)));
+        const release = () => {if (dragging === p.id) {dragging = -1; sendGesture(PAGE.END, p.id);}};
+        input.addEventListener("pointerup", release);
+        input.addEventListener("pointercancel", release);
+        cell.append(input, output);
+    }
+    panel.append(groupTitle("MODULATION MATRIX — 8 ROUTES"), table);
+}
+function buildSteps(panel) {
+    const grid = document.createElement("div");
+    grid.className = "steps";
+    for (let i = 0; i < 16; i++) {
+        const p = byKey(`/Aether/Voice/Sequencer/Steps/note_${i}`);
+        const cell = document.createElement("div");
+        cell.className = "step";
+        const no = document.createElement("div");
+        no.className = "step-no";
+        no.textContent = String(i + 1).padStart(2, "0");
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = p.min; input.max = p.max; input.step = 1;
+        input.value = values[p.id];
+        input.setAttribute("aria-label", `Step ${i + 1} interval`);
+        const output = document.createElement("output");
+        output.textContent = pretty(p, values[p.id]);
+        views.set(p.id, [{input, output, log: false}]);
+        input.addEventListener("pointerdown", () => {dragging = p.id; sendGesture(PAGE.BEGIN, p.id);});
+        input.addEventListener("input", () => setValue(p.id, Number(input.value)));
+        const release = () => {if (dragging === p.id) {dragging = -1; sendGesture(PAGE.END, p.id);}};
+        input.addEventListener("pointerup", release);
+        input.addEventListener("change", release);
+        cell.append(no, input);
+        grid.append(cell);
+    }
+    panel.append(groupTitle("SIXTEEN STEPS — SEMITONE OFFSETS"), grid);
+}
+function showTab(id) {
+    views = new Map();
+    document.querySelectorAll(".tab").forEach(b => {
+        b.classList.toggle("active", b.dataset.tab === id);
+        b.setAttribute("aria-selected", String(b.dataset.tab === id));
+    });
+    const panel = $("control-panel");
+    panel.replaceChildren();
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    const title = document.createElement("h3");
+    title.textContent = "02 / " + tabs.find(t => t[0] === id)[1].toUpperCase();
+    const hint = document.createElement("p");
+    hint.textContent = {modulation: "8 routes · 9 sources · 6 destinations", engines: "Analog × FM × additive",
+                        sequence: "Four steps per beat, sixteen per cycle", effects: "The shared stereo bus"}[id] || "Every movement shapes the sound.";
+    header.append(title, hint);
+    panel.append(header);
+    if (id === "modulation") {
+        const grid = document.createElement("div");
+        grid.className = "control-grid";
+        for (const name of curated.modulation) {
+            const p = params.find(q => leaf(q.key) === name && q.group === "Voice/Modulation");
+            if (p) {grid.append(makeControl(p));}
+        }
+        panel.append(grid);
+        buildMatrix(panel);
+        return;
+    }
+    if (id === "sequence") {
+        const grid = document.createElement("div");
+        grid.className = "control-grid";
+        for (const name of curated.sequence) {
+            const p = params.find(q => leaf(q.key) === name);
+            if (p) {grid.append(makeControl(p));}
+        }
+        panel.append(grid);
+        buildSteps(panel);
+        return;
+    }
+    const grid = document.createElement("div");
+    grid.className = "control-grid";
+    let keys;
+    if (id === "engines") {keys = curated.engines.map(n => params.find(q => leaf(q.key) === n && q.group === "Voice/Engines")).filter(Boolean);}
+    else if (id === "filter") {keys = params.filter(q => q.group === "Voice/Filter" || q.group === "Voice/Envelopes");}
+    else if (id === "effects") {keys = params.filter(q => q.group.startsWith("Effects/"));}
+    else {keys = params;}
+    if (id === "advanced") {
+        let lastGroup = "";
+        for (const p of keys) {
+            if (p.group !== lastGroup) {lastGroup = p.group; grid.append(groupTitle(lastGroup.toUpperCase()));}
+            grid.append(makeControl(p));
+        }
+    } else if (id === "effects") {
+        let lastGroup = "";
+        for (const p of keys) {
+            if (p.group !== lastGroup) {lastGroup = p.group; grid.append(groupTitle(lastGroup.replace("Effects/", "").toUpperCase()));}
+            grid.append(makeControl(p));
+        }
+    } else {
+        for (const p of keys) {grid.append(makeControl(p));}
+    }
+    panel.append(grid);
+}
+
+// --- plugin messages ---------------------------------------------------------------------------------
+window.addEventListener("message", event => {
+    const data = new Uint8Array(event.data);
+    if (data.length < 1) {return;}
+    const view = new DataView(event.data);
+    if (data[0] === PLUGIN.DESCRIBE) {
+        params = JSON.parse(new TextDecoder().decode(data.slice(4)));
+        values = params.map(p => p.init);
+        buildPage();
+    } else if (data[0] === PLUGIN.SNAPSHOT) {
+        for (let i = 0; i < params.length && 4 + 4 * i + 4 <= data.length; i++) {
+            values[i] = view.getFloat32(4 + 4 * i, true);
+        }
+        refreshViews();
+        updateModified();
+        snapshotArrived = true;
+        startUp();
+    } else if (data[0] === PLUGIN.VALUES) {
+        const count = view.getUint16(2, true);
+        for (let i = 0; i < count; i++) {
+            const at = 4 + 16 * i;
+            const id = view.getUint32(at, true);
+            const value = view.getFloat64(at + 8, true);
+            if (id < params.length && values[id] !== value) {
+                values[id] = value;
+                for (const v of views.get(id) || []) {
+                    const p = params[id];
+                    if (p.type === "checkbox") {v.input.checked = !!value;}
+                    else {v.input.value = v.log ? Math.log(value) : value;}
+                    v.output.textContent = pretty(p, value);
+                }
+            }
+        }
+        updateModified();
+    } else if (data[0] === PLUGIN.ACTIVITY) {
+        $("voices-stat").textContent = `${data[1]} / 8`;
+        const peak = view.getFloat32(4, true);
+        const db = peak > 0 ? Math.max(-60, 20 * Math.log10(peak)) : -60;
+        $("meter-fill").style.width = `${Math.max(0, (db + 60) / 60 * 100)}%`;
+    }
+});
+function refreshViews() {
+    for (let id = 0; id < params.length; id++) {
+        for (const v of views.get(id) || []) {
+            const p = params[id];
+            if (p.type === "checkbox") {v.input.checked = !!values[id];}
+            else {v.input.value = v.log ? Math.log(values[id]) : values[id];}
+            v.output.textContent = pretty(p, values[id]);
+        }
+    }
+}
+
+// --- page --------------------------------------------------------------------------------------------
+let ready = false, snapshotArrived = false, built = false;
+// once the table, the presets and the first snapshot are all in: select the default preset and start polling
+function startUp() {
+    if (ready || !built || !snapshotArrived) {return;}
+    ready = true;
+    applyPreset("nebula");
+    showTab("engines");
+    $("engine-status").textContent = "connected";
+    $("feedback").textContent = "Play notes from the host keyboard or a MIDI keyboard.";
+    setInterval(() => msg(PAGE.POLL, 4), 33);
+}
+async function buildPage() {
+    patches = await (await fetch("patches.json")).json();
+    $("preset-count").textContent = String(Object.keys(patches).length).padStart(2, "0");
+    for (const [index, id] of Object.keys(patches).entries()) {
+        const b = document.createElement("button");
+        b.className = "preset-card";
+        b.dataset.preset = id;
+        b.setAttribute("aria-pressed", "false");
+        b.innerHTML = `<span class="preset-index">${String(index + 1).padStart(2, "0")}</span>` +
+                      `<span><strong>${patches[id].title}</strong><small>${patches[id].tag}</small></span>` +
+                      `<span class="preset-arrow">↗</span>`;
+        b.onclick = () => applyPreset(id);
+        $("preset-list").append(b);
+    }
+    for (const [id, label] of tabs) {
+        const b = document.createElement("button");
+        b.className = "tab";
+        b.dataset.tab = id;
+        b.textContent = label;
+        b.setAttribute("role", "tab");
+        b.onclick = () => showTab(id);
+        $("tabs").append(b);
+    }
+    built = true;
+    startUp();
+}
+$("panic").onclick = () => msg(PAGE.PANIC, 4);
+$("reset-patch").onclick = () => {if (selected) {applyPreset(selected);}};
+// scale the stage to the window, keeping the 1024 x 640 aspect
+function fit() {
+    const scale = Math.min(innerWidth / 1024, innerHeight / 640);
+    $("stage").style.transform = `scale(${scale})`;
+}
+addEventListener("resize", fit);
+fit();
+msg(PAGE.HELLO, 4);
+</script>
+</body>
+</html>
