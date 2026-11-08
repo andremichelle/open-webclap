@@ -480,8 +480,8 @@ class AtlasMap {
                     return;
                 }
             }
-            if (this.compact) {return;}
-            // hover: nearest point within 8 px, with the descriptors tooltip
+            // hover: nearest point within 8 px (the click target, in the compact map too); the descriptors
+            // tooltip only in the full Atlas tab
             let best = -1, bestD = 64;
             for (let i = 0; i < atlasData.points.length; i++) {
                 const p = atlasData.points[i];
@@ -490,6 +490,7 @@ class AtlasMap {
                 if (d < bestD) {bestD = d; best = i;}
             }
             this.hover = best;
+            if (this.compact) {this.draw(); return;}
             if (best >= 0 && this.tip) {
                 const p = atlasData.points[best];
                 this.tip.style.display = "block";
@@ -645,6 +646,7 @@ async function loadAtlasPoint(i) {
         $("patch-description").textContent = "A patch from the atlas, laid out by its measured descriptors.";
     }
     refreshViews();
+    orbitSetAll(); // the loaded sound's dots on the orbit
     updateAtlasCurrent();
     sendNoteOn(data.note.key, data.note.velocity);
     setTimeout(() => sendNoteOff(data.note.key), data.note.hold * 1000);
