@@ -24,9 +24,10 @@ around them, the same split upstream's web AudioWorklet uses:
   presets as a library (`ui/patches.json`, built by `gen.py` from upstream's `web/controls.js` via
   `extract-presets.mjs`), one tab per panel group, a playable on-screen keyboard (page note messages), output
   meter and voice count, an **Orbit** tab (the vendored faust-orbit-ui component with `ui/orbit.json`: every
-  control a dot, the presets as its projected library), and an **Atlas** tab rendering upstream's
-  `web/atlas.json` (the sound atlas of the web page — see ATLAS.md for how the features and the projection are
-  made): 2,024 sounds laid out by their measured descriptors, click a dot to load its patch and hear it.
+  control a dot, the presets as its projected library, plus the "Where the sound is" mini-atlas beside it with
+  the current sound as a diamond), and an **Atlas** tab rendering upstream's `web/atlas.json` (the sound atlas
+  of the web page — see ATLAS.md for how the features and the projection are made): 2,024 sounds laid out by
+  their measured descriptors, click a dot to load its patch and hear it.
 
 Build: `scripts/build-faust-elements.sh` (needs Emscripten, a Rust toolchain for the one-time faust-rs build
 cached in `external/faust-rs`, and the Faust 2.88.0 release at `~/faust` for its standard libraries —

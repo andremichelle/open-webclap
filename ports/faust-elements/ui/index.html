@@ -95,6 +95,15 @@
     /* atlas */
     #atlas-wrap { position: absolute; inset: 0; }
     #atlas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+    /* orbit split: the orbit left, the "Where the sound is" mini-atlas right (as upstream's page) */
+    #orbit-split { position: absolute; inset: 0; display: flex; }
+    #orbit-split > .orbit-side { flex: 1; min-width: 0; position: relative; }
+    #mini-atlas { width: 248px; flex: none; border-left: 1px solid var(--line); padding: 10px;
+                  box-sizing: border-box; display: flex; flex-direction: column; }
+    #mini-atlas h4 { margin: 0 0 4px; font-size: 11px; color: var(--accent); letter-spacing: .5px; }
+    #mini-atlas p { margin: 0 0 8px; font-size: 8.5px; color: var(--dim); line-height: 1.5; }
+    #mini-canvas { width: 100%; flex: 1; display: block; cursor: crosshair; background: var(--display);
+                   border: 1px solid var(--line); border-radius: 4px; min-height: 120px; }
     #atlas-tip { position: absolute; pointer-events: none; background: var(--display); border: 1px solid var(--line);
                  border-radius: 4px; padding: 6px 8px; font-size: 9px; color: var(--display-text);
                  font-family: ui-monospace, monospace; display: none; white-space: pre; z-index: 5; }
@@ -225,6 +234,7 @@ function setValue(id, value, send = true) {
     if (send) {
         sendSet(id, value);
         if (!fromOrbit) {orbitSetParams([id]);} // a change from elsewhere (slider, preset, atlas) moves the dot
+        updateAtlasCurrent(); // and the diamond on the atlas maps
     }
     updateModified();
 }
@@ -242,6 +252,7 @@ function applyPreset(id) {
     for (let i = 0; i < params.length; i++) {setValue(i, all[i], false);}
     sendPatch(id, all);
     orbitSetAll();
+    updateAtlasCurrent();
     document.querySelectorAll(".preset-card").forEach(el => {
         const on = el.dataset.preset === id;
         el.classList.toggle("active", on);
@@ -345,15 +356,18 @@ function showTab(id) {
 // panel control is a dot on an orbit; its library holds the presets projected on a plane (click a disc to
 // recall it, drag the cross between discs to morph, double-click to keep the current sound), kept in
 // localStorage. A dot moved calls setValue, i.e. the same page->plugin set message as a slider.
-let orbit = null, orbitBuilding = null, fromOrbit = false, orbitWrap = null;
+let orbit = null, orbitBuilding = null, fromOrbit = false, orbitSplit = null;
 async function buildOrbit(panel) {
-    if (orbit) {panel.append(orbitWrap); orbit.resize(); return;} // the panel was cleared: re-attach
-    if (orbitBuilding) {await orbitBuilding; if (orbit) {panel.append(orbitWrap); orbit.resize();} return;}
+    if (orbit) {panel.append(orbitSplit); orbit.resize(); if (miniMap) {miniMap.fit();} return;} // re-attach after the panel was cleared
+    if (orbitBuilding) {await orbitBuilding; if (orbit) {panel.append(orbitSplit); orbit.resize(); if (miniMap) {miniMap.fit();}} return;}
     orbitBuilding = (async () => {
+        const split = document.createElement("div");
+        split.id = "orbit-split";
         const wrap = document.createElement("div");
-        wrap.id = "atlas-wrap"; // same full-panel container style
-        orbitWrap = wrap;
-        panel.append(wrap);
+        wrap.className = "orbit-side"; // the faust-orbit-ui component attaches its shadow root here
+        orbitSplit = split;
+        split.append(wrap);
+        panel.append(split);
         const {OrbitUI, computeConfigHashSync} = await import("./vendor/faust-orbit-ui/index.js");
         const descriptor = await (await fetch("orbit.json")).json();
         // leaves of the descriptor: full address, key (address without the program name), init
@@ -395,6 +409,21 @@ async function buildOrbit(panel) {
         try {stored = JSON.parse(localStorage.getItem(storeKey) || "null");} catch {}
         orbit.setLibrary(Array.isArray(stored) && stored.length ? stored : seed());
         orbitSetAll();
+        // the "Where the sound is" mini-atlas beside the orbit, as upstream's page: the same atlas, compact,
+        // with the current sound as a diamond; click a dot to load it
+        const aside = document.createElement("div");
+        aside.id = "mini-atlas";
+        const h = document.createElement("h4");
+        h.textContent = "Where the sound is";
+        const hint = document.createElement("p");
+        hint.textContent = "The current sound (the diamond), placed at the atlas point nearest to the controls. Click a dot to load it; wheel zooms, drag moves.";
+        const miniCanvas = document.createElement("canvas");
+        miniCanvas.id = "mini-canvas";
+        aside.append(h, hint, miniCanvas);
+        split.append(aside);
+        miniMap = new AtlasMap(miniCanvas, {compact: true});
+        await miniMap.fit();
+        miniMap.setCurrent(nearestAtlasIndex());
     })();
     await orbitBuilding;
     orbitBuilding = null;
@@ -418,92 +447,177 @@ function orbitSetAll() {if (orbit) {orbitSetParams(params.map((_, id) => id));}}
 // --- atlas -------------------------------------------------------------------------------------------
 // Upstream's sound atlas (web/atlas.json): every point is a patch, played offline as A3 for a second and measured
 // (brightness, noisiness, harmonicity, attack, sustain, decay, loudness, width), then placed at its two first
-// principal components of the standardized descriptors (loudness excepted). Click loads the patch and plays it.
-let atlas = null, atlasView = {scale: 1, x: 0, y: 0}, atlasCanvas = null, atlasCtx = null, atlasHover = -1;
+// principal components of the standardized descriptors (loudness excepted) — see ports/faust-elements/ATLAS.md.
+// Two views share the data: the full Atlas tab, and the compact "Where the sound is" map beside the Orbit tab
+// (as upstream's web page). Click loads the patch and plays it; wheel zooms, drag pans, double-click fits.
+// The current sound's diamond: this page has no wasm to measure the patch with (upstream re-renders it in a
+// worker), so the diamond marks the atlas point nearest to the current controls.
+let atlasData = null;
 const MODEL_COLORS = ["#e8c98a", "#7ac9e8", "#c98ae8"];
 const MODEL_NAMES = ["modal", "string", "strings"];
-function atlasModelOf(point) {return Math.round(point.v[atlas.controls.indexOf("resonator/model")] ?? 0);}
+async function atlasJSON() {atlasData ??= await (await fetch("atlas.json")).json(); return atlasData;}
+function atlasModelOf(point) {return Math.round(point.v[atlasData.controls.indexOf("resonator/model")] ?? 0);}
+
+class AtlasMap {
+    constructor(canvas, {compact = false, tip = null} = {}) {
+        this.canvas = canvas;
+        this.compact = compact;
+        this.tip = tip;
+        this.view = {scale: 1, x: 0, y: 0};
+        this.hover = -1;
+        this.current = -1;
+        this.drag = null;
+        canvas.addEventListener("pointerdown", e => {this.drag = {x: e.offsetX, y: e.offsetY, moved: false};});
+        canvas.addEventListener("pointermove", e => {
+            const mx = e.offsetX * devicePixelRatio, my = e.offsetY * devicePixelRatio; // offsetX/Y are canvas-relative
+            if (this.drag) {
+                if (Math.abs(e.offsetX - this.drag.x) + Math.abs(e.offsetY - this.drag.y) > 4) {this.drag.moved = true;}
+                if (this.drag.moved) {
+                    this.view.x += (e.offsetX - this.drag.x) * devicePixelRatio;
+                    this.view.y += (e.offsetY - this.drag.y) * devicePixelRatio;
+                    this.drag.x = e.offsetX; this.drag.y = e.offsetY;
+                    this.draw();
+                    return;
+                }
+            }
+            if (this.compact) {return;}
+            // hover: nearest point within 8 px, with the descriptors tooltip
+            let best = -1, bestD = 64;
+            for (let i = 0; i < atlasData.points.length; i++) {
+                const p = atlasData.points[i];
+                const sx = this.view.x + p.pc[0] * this.view.scale, sy = this.view.y + p.pc[1] * this.view.scale;
+                const d = (sx - mx) ** 2 + (sy - my) ** 2;
+                if (d < bestD) {bestD = d; best = i;}
+            }
+            this.hover = best;
+            if (best >= 0 && this.tip) {
+                const p = atlasData.points[best];
+                this.tip.style.display = "block";
+                this.tip.style.left = (e.offsetX + 14) + "px";
+                this.tip.style.top = (e.offsetY + 10) + "px";
+                this.tip.textContent = (p.preset ? p.preset + "\n" : "") +
+                    atlasData.axes.map((a, i) => `${a}: ${formatDescriptor(a, p.d[i])}`).join("\n");
+            } else if (this.tip) {this.tip.style.display = "none";}
+            this.draw();
+        });
+        canvas.addEventListener("pointerup", () => {
+            const wasDrag = this.drag && this.drag.moved;
+            this.drag = null;
+            if (wasDrag || this.hover < 0) {return;}
+            loadAtlasPoint(this.hover);
+        });
+        canvas.addEventListener("pointerleave", () => {if (this.tip) {this.tip.style.display = "none";} this.hover = -1; this.draw();});
+        canvas.addEventListener("wheel", e => {
+            e.preventDefault();
+            const mx = e.offsetX * devicePixelRatio, my = e.offsetY * devicePixelRatio;
+            const factor = Math.exp(-e.deltaY * 0.0015);
+            const scale = Math.min(1e6, Math.max(1e-4, this.view.scale * factor));
+            this.view.x = mx - (mx - this.view.x) * (scale / this.view.scale);
+            this.view.y = my - (my - this.view.y) * (scale / this.view.scale);
+            this.view.scale = scale;
+            this.draw();
+        }, {passive: false});
+        canvas.addEventListener("dblclick", () => this.fit());
+    }
+    async fit() {
+        const data = await atlasJSON();
+        const rect = this.canvas.getBoundingClientRect();
+        this.canvas.width = Math.max(2, rect.width * devicePixelRatio);
+        this.canvas.height = Math.max(2, rect.height * devicePixelRatio);
+        let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+        for (const p of data.points) {x0 = Math.min(x0, p.pc[0]); x1 = Math.max(x1, p.pc[0]);
+                                      y0 = Math.min(y0, p.pc[1]); y1 = Math.max(y1, p.pc[1]);}
+        const pad = (this.compact ? 16 : 30) * devicePixelRatio;
+        this.view.scale = Math.min((this.canvas.width - 2 * pad) / Math.max(1e-9, x1 - x0),
+                                   (this.canvas.height - 2 * pad) / Math.max(1e-9, y1 - y0));
+        this.view.x = pad - x0 * this.view.scale + (this.canvas.width - 2 * pad - (x1 - x0) * this.view.scale) / 2;
+        this.view.y = pad - y0 * this.view.scale + (this.canvas.height - 2 * pad - (y1 - y0) * this.view.scale) / 2;
+        this.draw();
+    }
+    setCurrent(i) {this.current = i; this.draw();}
+    draw() {
+        if (!atlasData) {return;}
+        const canvas = this.canvas;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#14100c";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < atlasData.points.length; i++) {
+            const p = atlasData.points[i];
+            const x = this.view.x + p.pc[0] * this.view.scale, y = this.view.y + p.pc[1] * this.view.scale;
+            if (x < -5 || y < -5 || x > canvas.width + 5 || y > canvas.height + 5) {continue;}
+            const preset = !!p.preset;
+            ctx.fillStyle = MODEL_COLORS[atlasModelOf(p)];
+            ctx.globalAlpha = preset ? 1 : 0.75;
+            ctx.beginPath();
+            ctx.arc(x, y, (preset ? 4 : (this.compact ? 1.8 : 2.4)) * (i === this.hover ? 2 : 1), 0, 7);
+            ctx.fill();
+            if (preset && !this.compact) {
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = "#e8ddd0";
+                ctx.font = `${10 * devicePixelRatio}px Verdana`;
+                ctx.fillText(p.preset, x + 6 * devicePixelRatio, y - 4 * devicePixelRatio);
+            }
+        }
+        ctx.globalAlpha = 1;
+        // the current sound: a diamond at the nearest atlas point (see the note above)
+        if (this.current >= 0 && this.current < atlasData.points.length) {
+            const p = atlasData.points[this.current];
+            const x = this.view.x + p.pc[0] * this.view.scale, y = this.view.y + p.pc[1] * this.view.scale;
+            const r = (this.compact ? 5 : 6) * devicePixelRatio;
+            ctx.strokeStyle = "#f5f0e6";
+            ctx.lineWidth = 1.6 * devicePixelRatio;
+            ctx.beginPath();
+            ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y);
+            ctx.closePath();
+            ctx.stroke();
+        }
+    }
+}
+let atlasMap = null;   // the full Atlas tab's map
+let miniMap = null;    // the compact map beside the Orbit tab
 async function buildAtlas(panel) {
     const wrap = document.createElement("div");
     wrap.id = "atlas-wrap";
-    atlasCanvas = document.createElement("canvas");
-    atlasCanvas.id = "atlas";
+    const canvas = document.createElement("canvas");
+    canvas.id = "atlas";
     const tip = document.createElement("div");
     tip.id = "atlas-tip";
     const legend = document.createElement("div");
     legend.id = "atlas-legend";
+    const data = await atlasJSON();
     legend.innerHTML = MODEL_NAMES.map((name, i) => `<div><i style="background:${MODEL_COLORS[i]}"></i>${name}</div>`).join("") +
-                       `<div style="margin-top:4px">${atlas ? atlas.points.length : "…"} sounds · wheel zoom · drag pan · dbl-click fit</div>`;
-    wrap.append(atlasCanvas, tip, legend);
+                       `<div style="margin-top:4px">${data.points.length} sounds · wheel zoom · drag pan · dbl-click fit</div>`;
+    wrap.append(canvas, tip, legend);
     panel.append(wrap);
-    if (!atlas) {atlas = await (await fetch("atlas.json")).json(); legend.lastChild.textContent =
-        `${atlas.points.length} sounds · wheel zoom · drag pan · dbl-click fit`;}
-    const fit = () => {
-        const rect = atlasCanvas.getBoundingClientRect();
-        atlasCanvas.width = Math.max(2, rect.width * devicePixelRatio);
-        atlasCanvas.height = Math.max(2, rect.height * devicePixelRatio);
-        let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-        for (const p of atlas.points) {x0 = Math.min(x0, p.pc[0]); x1 = Math.max(x1, p.pc[0]);
-                                      y0 = Math.min(y0, p.pc[1]); y1 = Math.max(y1, p.pc[1]);}
-        const pad = 30 * devicePixelRatio;
-        atlasView.scale = Math.min((atlasCanvas.width - 2 * pad) / Math.max(1e-9, x1 - x0),
-                                   (atlasCanvas.height - 2 * pad) / Math.max(1e-9, y1 - y0));
-        atlasView.x = pad - x0 * atlasView.scale + (atlasCanvas.width - 2 * pad - (x1 - x0) * atlasView.scale) / 2;
-        atlasView.y = pad - y0 * atlasView.scale + (atlasCanvas.height - 2 * pad - (y1 - y0) * atlasView.scale) / 2;
-        drawAtlas();
-    };
-    fit();
-    let draggingView = null;
-    atlasCanvas.addEventListener("pointerdown", e => {draggingView = {x: e.offsetX, y: e.offsetY, moved: false};});
-    atlasCanvas.addEventListener("pointermove", e => {
-        const mx = e.offsetX * devicePixelRatio, my = e.offsetY * devicePixelRatio; // offsetX/Y are relative to the canvas
-        if (draggingView) {
-            if (Math.abs(e.offsetX - draggingView.x) + Math.abs(e.offsetY - draggingView.y) > 4) {draggingView.moved = true;}
-            if (draggingView.moved) {
-                atlasView.x += (e.offsetX - draggingView.x) * devicePixelRatio;
-                atlasView.y += (e.offsetY - draggingView.y) * devicePixelRatio;
-                draggingView.x = e.offsetX; draggingView.y = e.offsetY;
-                drawAtlas();
-                return;
-            }
+    if (!atlasMap) {atlasMap = new AtlasMap(canvas, {tip});}
+    else {atlasMap.canvas = canvas; atlasMap.tip = tip;}
+    atlasMap.fit();
+    atlasMap.setCurrent(nearestAtlasIndex());
+}
+// The atlas point nearest to the current controls (each control scaled by its range): where the current sound
+// sits on the atlas, as upstream's worker-measured diamond approximates it.
+function nearestAtlasIndex() {
+    if (!atlasData || !params.length) {return -1;}
+    const byShort = new Map(params.map(q => [q.key.replace("/elements_poly/", ""), q]));
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < atlasData.points.length; i++) {
+        const v = atlasData.points[i].v;
+        let d = 0;
+        for (let c = 0; c < atlasData.controls.length; c++) {
+            const p = byShort.get(atlasData.controls[c]);
+            if (!p) {continue;}
+            const cur = values[p.id] ?? p.init;
+            const range = Math.max(1e-9, p.max - p.min);
+            d += ((v[c] - cur) / range) ** 2;
         }
-        // hover: nearest point within 8 px
-        let best = -1, bestD = 64;
-        for (let i = 0; i < atlas.points.length; i++) {
-            const p = atlas.points[i];
-            const sx = atlasView.x + p.pc[0] * atlasView.scale, sy = atlasView.y + p.pc[1] * atlasView.scale;
-            const d = (sx - mx) ** 2 + (sy - my) ** 2;
-            if (d < bestD) {bestD = d; best = i;}
-        }
-        atlasHover = best;
-        if (best >= 0) {
-            const p = atlas.points[best];
-            const names8 = atlas.axes;
-            tip.style.display = "block";
-            tip.style.left = (e.offsetX + 14) + "px";
-            tip.style.top = (e.offsetY + 10) + "px";
-            tip.textContent = (p.preset ? p.preset + "\n" : "") + names8.map((a, i) => `${a}: ${formatDescriptor(a, p.d[i])}`).join("\n");
-        } else {tip.style.display = "none";}
-        drawAtlas();
-    });
-    atlasCanvas.addEventListener("pointerup", e => {
-        const wasDrag = draggingView && draggingView.moved;
-        draggingView = null;
-        if (wasDrag || atlasHover < 0) {return;}
-        loadAtlasPoint(atlasHover);
-    });
-    atlasCanvas.addEventListener("pointerleave", () => {tip.style.display = "none"; atlasHover = -1; drawAtlas();});
-    atlasCanvas.addEventListener("wheel", e => {
-        e.preventDefault();
-        const mx = e.offsetX * devicePixelRatio, my = e.offsetY * devicePixelRatio;
-        const factor = Math.exp(-e.deltaY * 0.0015);
-        const scale = Math.min(1e6, Math.max(1e-4, atlasView.scale * factor));
-        atlasView.x = mx - (mx - atlasView.x) * (scale / atlasView.scale);
-        atlasView.y = my - (my - atlasView.y) * (scale / atlasView.scale);
-        atlasView.scale = scale;
-        drawAtlas();
-    }, {passive: false});
-    atlasCanvas.addEventListener("dblclick", fit);
+        if (d < bestD) {bestD = d; best = i;}
+    }
+    return best;
+}
+function updateAtlasCurrent() {
+    const idx = nearestAtlasIndex();
+    if (atlasMap) {atlasMap.setCurrent(idx);}
+    if (miniMap) {miniMap.setCurrent(idx);}
 }
 function formatDescriptor(axis, v) {
     if (axis === "brightness") {return v.toFixed(0) + " Hz";}
@@ -511,36 +625,11 @@ function formatDescriptor(axis, v) {
     if (axis === "harmonicity") {return v.toFixed(2);}
     return v.toFixed(1) + " dB";
 }
-function drawAtlas() {
-    if (!atlasCanvas) {return;}
-    const ctx = atlasCtx ??= atlasCanvas.getContext("2d");
-    ctx.fillStyle = "#14100c";
-    ctx.fillRect(0, 0, atlasCanvas.width, atlasCanvas.height);
-    for (let i = 0; i < atlas.points.length; i++) {
-        const p = atlas.points[i];
-        const x = atlasView.x + p.pc[0] * atlasView.scale, y = atlasView.y + p.pc[1] * atlasView.scale;
-        if (x < -5 || y < -5 || x > atlasCanvas.width + 5 || y > atlasCanvas.height + 5) {continue;}
-        const preset = !!p.preset;
-        ctx.fillStyle = MODEL_COLORS[atlasModelOf(p)];
-        ctx.globalAlpha = preset ? 1 : 0.75;
-        ctx.beginPath();
-        ctx.arc(x, y, (preset ? 4 : 2.4) * (i === atlasHover ? 2 : 1), 0, 7);
-        ctx.fill();
-        if (preset) {
-            ctx.globalAlpha = 1;
-            ctx.fillStyle = "#e8ddd0";
-            ctx.font = `${10 * devicePixelRatio}px Verdana`;
-            ctx.fillText(p.preset, x + 6 * devicePixelRatio, y - 4 * devicePixelRatio);
-        }
-    }
-    ctx.globalAlpha = 1;
-}
-function loadAtlasPoint(i) {
-    const p = atlas.points[i];
-    const byShort = Object.fromEntries(params.map(q => [q.key.replace("/elements_poly/", ""), q]));
+async function loadAtlasPoint(i) {
+    const data = await atlasJSON();
+    const p = data.points[i];
     const all = params.map(q => {
-        const short = q.key.replace("/elements_poly/", "");
-        const at = atlas.controls.indexOf(short);
+        const at = data.controls.indexOf(q.key.replace("/elements_poly/", ""));
         return at >= 0 ? p.v[at] : q.init;
     });
     const id = p.preset ?? ("atlas #" + i);
@@ -556,8 +645,9 @@ function loadAtlasPoint(i) {
         $("patch-description").textContent = "A patch from the atlas, laid out by its measured descriptors.";
     }
     refreshViews();
-    sendNoteOn(atlas.note.key, atlas.note.velocity);
-    setTimeout(() => sendNoteOff(atlas.note.key), atlas.note.hold * 1000);
+    updateAtlasCurrent();
+    sendNoteOn(data.note.key, data.note.velocity);
+    setTimeout(() => sendNoteOff(data.note.key), data.note.hold * 1000);
 }
 
 // --- keyboard ----------------------------------------------------------------------------------------
@@ -611,6 +701,7 @@ window.addEventListener("message", event => {
         }
         refreshViews();
         orbitSetAll();
+        updateAtlasCurrent();
         updateModified();
         snapshotArrived = true;
         startUp();
@@ -631,6 +722,7 @@ window.addEventListener("message", event => {
             }
         }
         orbitSetParams(changed);
+        if (changed.length) {updateAtlasCurrent();}
         updateModified();
     } else if (data[0] === PLUGIN.ACTIVITY) {
         $("voices-stat").textContent = `${data[1]} / 8`;

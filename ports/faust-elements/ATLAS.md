@@ -81,8 +81,13 @@ Cross-check upstream does: levels measured on eight sounds re-rendered by faustp
 
 - Atlas tab: `ports/faust-elements/ui/index.html` renders `web/atlas.json` (2,024 points, PC plane, model
   colours, preset labels, descriptor tooltips, zoom/pan, click loads the patch as one `patch` message and
-  plays A3). No live measurement of the current sound (that needs the wasm + a worker in the page).
+  plays A3). The current sound is shown as a diamond at the **atlas point nearest to the current controls**
+  (each point carries its 20 control values) — upstream instead re-renders and re-measures the patch in a Web
+  Worker and projects the descriptors; that needs the wasm in the page, which the WebCLAP editor does not have.
 - Orbit tab: the vendored faust-orbit-ui component with `ui/orbit.json` (the descriptor gen.py derives from
   the compiler's JSON: voice + body groups, note controls and pitch offset excluded), the 24 presets as its
-  library (persisted in localStorage); a moved dot sends the same `set` message as a slider.
-- Not ported: the timbre orbit, the phone/PWA tab, Web MIDI, the hold pedal.
+  library (persisted in localStorage); a moved dot sends the same `set` message as a slider. Beside it, the
+  compact **"Where the sound is"** mini-atlas of upstream's Orbit tab (same atlas data, no labels, same
+  diamond, click-to-load, wheel zoom / drag pan).
+- Not ported: the timbre orbit, the phone/PWA tab, Web MIDI, the hold pedal, and the worker-based live
+  measurement of the current sound.
