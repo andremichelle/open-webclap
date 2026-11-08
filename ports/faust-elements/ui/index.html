@@ -466,59 +466,85 @@ class AtlasMap {
         this.view = {scale: 1, x: 0, y: 0};
         this.hover = -1;
         this.current = -1;
-        this.drag = null;
-        canvas.addEventListener("pointerdown", e => {this.drag = {x: e.offsetX, y: e.offsetY, moved: false};});
-        canvas.addEventListener("pointermove", e => {
-            const mx = e.offsetX * devicePixelRatio, my = e.offsetY * devicePixelRatio; // offsetX/Y are canvas-relative
-            if (this.drag) {
-                if (Math.abs(e.offsetX - this.drag.x) + Math.abs(e.offsetY - this.drag.y) > 4) {this.drag.moved = true;}
-                if (this.drag.moved) {
-                    this.view.x += (e.offsetX - this.drag.x) * devicePixelRatio;
-                    this.view.y += (e.offsetY - this.drag.y) * devicePixelRatio;
-                    this.drag.x = e.offsetX; this.drag.y = e.offsetY;
-                    this.draw();
-                    return;
-                }
-            }
-            // hover: nearest point within 8 px (the click target, in the compact map too); the descriptors
-            // tooltip only in the full Atlas tab
-            let best = -1, bestD = 64;
+        this.pressed = null;   // {x, y, x0, y0} while a pointer is down
+        this.dragged = false;  // stays set until the next press: the click after a drag is ignored
+        // The nearest point to a canvas position (CSS px), within HIT px; a preset wins over a random
+        // patch at the same distance. As upstream's atlas.js pick().
+        const HIT = 8;
+        this.pickAt = (cssX, cssY) => {
+            if (!atlasData) {return -1;}
+            const mx = cssX * devicePixelRatio, my = cssY * devicePixelRatio;
+            let best = -1, bestD = HIT * HIT * devicePixelRatio * devicePixelRatio;
             for (let i = 0; i < atlasData.points.length; i++) {
                 const p = atlasData.points[i];
                 const sx = this.view.x + p.pc[0] * this.view.scale, sy = this.view.y + p.pc[1] * this.view.scale;
-                const d = (sx - mx) ** 2 + (sy - my) ** 2;
+                const dx = sx - mx, dy = sy - my;
+                const d = dx * dx + dy * dy - (p.preset ? 9 : 0) * devicePixelRatio * devicePixelRatio;
                 if (d < bestD) {bestD = d; best = i;}
             }
-            this.hover = best;
-            if (this.compact) {this.draw(); return;}
-            if (best >= 0 && this.tip) {
-                const p = atlasData.points[best];
+            return best;
+        };
+        canvas.addEventListener("pointerdown", e => {
+            if (e.button !== 0) {return;}
+            canvas.setPointerCapture(e.pointerId);
+            this.pressed = {x: e.offsetX, y: e.offsetY, x0: e.offsetX, y0: e.offsetY};
+            this.dragged = false;
+        });
+        canvas.addEventListener("pointermove", e => {
+            if (this.pressed) {
+                if (!this.dragged && Math.hypot(e.offsetX - this.pressed.x0, e.offsetY - this.pressed.y0) < 4) {return;}
+                if (!this.dragged) {this.dragged = true; this.hover = -1;}
+                const dx = e.offsetX - this.pressed.x, dy = e.offsetY - this.pressed.y;
+                this.pressed.x = e.offsetX; this.pressed.y = e.offsetY;
+                this.view.x += dx * devicePixelRatio;
+                this.view.y += dy * devicePixelRatio;
+                this.draw();
+                return;
+            }
+            const i = this.pickAt(e.offsetX, e.offsetY);
+            if (i === this.hover) {return;}
+            this.hover = i;
+            canvas.style.cursor = i >= 0 ? "pointer" : "crosshair";
+            if (this.compact || !this.tip) {this.draw(); return;}
+            if (i >= 0) {
+                const p = atlasData.points[i];
                 this.tip.style.display = "block";
                 this.tip.style.left = (e.offsetX + 14) + "px";
                 this.tip.style.top = (e.offsetY + 10) + "px";
                 this.tip.textContent = (p.preset ? p.preset + "\n" : "") +
-                    atlasData.axes.map((a, i) => `${a}: ${formatDescriptor(a, p.d[i])}`).join("\n");
-            } else if (this.tip) {this.tip.style.display = "none";}
+                    atlasData.axes.map((a, j) => `${a}: ${formatDescriptor(a, p.d[j])}`).join("\n");
+            } else {this.tip.style.display = "none";}
             this.draw();
         });
-        canvas.addEventListener("pointerup", () => {
-            const wasDrag = this.drag && this.drag.moved;
-            this.drag = null;
-            if (wasDrag || this.hover < 0) {return;}
-            loadAtlasPoint(this.hover);
+        const release = () => {this.pressed = null;};
+        canvas.addEventListener("pointerup", release);
+        canvas.addEventListener("pointercancel", release);
+        canvas.addEventListener("pointerleave", () => {
+            if (this.pressed) {return;}
+            this.hover = -1;
+            if (this.tip) {this.tip.style.display = "none";}
+            this.draw();
         });
-        canvas.addEventListener("pointerleave", () => {if (this.tip) {this.tip.style.display = "none";} this.hover = -1; this.draw();});
+        // A click on a dot (not the end of a drag) loads it: picked fresh at the click position, so a
+        // press without a prior move works too — as upstream's atlas.
+        canvas.addEventListener("click", e => {
+            if (this.dragged) {return;}
+            const i = this.pickAt(e.offsetX, e.offsetY);
+            if (i < 0) {return;}
+            loadAtlasPoint(i);
+        });
+        canvas.addEventListener("dblclick", e => {if (this.pickAt(e.offsetX, e.offsetY) < 0) {this.fit();}});
         canvas.addEventListener("wheel", e => {
             e.preventDefault();
             const mx = e.offsetX * devicePixelRatio, my = e.offsetY * devicePixelRatio;
-            const factor = Math.exp(-e.deltaY * 0.0015);
+            const factor = Math.exp(-e.deltaY * 0.002);
             const scale = Math.min(1e6, Math.max(1e-4, this.view.scale * factor));
             this.view.x = mx - (mx - this.view.x) * (scale / this.view.scale);
             this.view.y = my - (my - this.view.y) * (scale / this.view.scale);
             this.view.scale = scale;
+            this.hover = -1;
             this.draw();
         }, {passive: false});
-        canvas.addEventListener("dblclick", () => this.fit());
     }
     async fit() {
         const data = await atlasJSON();
