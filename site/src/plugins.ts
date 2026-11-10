@@ -18,6 +18,7 @@ export type PluginEntry = {
     license: string
     bundled?: string // served by the site itself, for a plugin that is not in openDAW's catalogue
     panel?: boolean // a device panel of its own, shown above the window
+    window?: boolean // false: the device panel is the plugin's only view (no clap.gui), no window is shown
 }
 
 // what a downloaded bundle is saved as
@@ -225,6 +226,46 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         archive: "build/pearls/pearls.wclap.tar.gz", build: "scripts/build-pearls.sh",
         credit: "https://github.com/pichenettes/eurorack/tree/master/beads", source: port("pearls"), license: "MIT",
         bundled: "/bundled/pearls.wclap.tar.gz", panel: true
+    },
+    {
+        id: "openrb-bass", name: "OpenRB 303", kind: "instrument",
+        description: "Bass line synth from OpenRB-338's ReBirth engine: the TB-303, played by notes or by its own 32 patterns",
+        clapId: "studio.opendaw.openrb.bass",
+        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
+        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+    },
+    {
+        id: "openrb-distortion", name: "OpenRB Distortion", kind: "audio-fx",
+        description: "OpenRB-338's distortion: a clipper and a family of waveshapers",
+        clapId: "studio.opendaw.openrb.distortion",
+        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
+        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+    },
+    {
+        id: "openrb-pcf", name: "OpenRB PCF", kind: "audio-fx",
+        description: "OpenRB-338's pattern controlled filter: 55 rhythmic envelope patterns on a low or band pass",
+        clapId: "studio.opendaw.openrb.pcf",
+        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
+        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+    },
+    {
+        id: "openrb-compressor", name: "OpenRB Compressor", kind: "audio-fx",
+        description: "OpenRB-338's compressor, linked stereo",
+        clapId: "studio.opendaw.openrb.compressor",
+        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
+        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+    },
+    {
+        id: "openrb-delay", name: "OpenRB Delay", kind: "audio-fx",
+        description: "OpenRB-338's tempo synced delay in 16ths or 8th triplets",
+        clapId: "studio.opendaw.openrb.delay",
+        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
+        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
     },
     {
         id: "glitchfest", name: "Glitchfest", kind: "audio-fx",

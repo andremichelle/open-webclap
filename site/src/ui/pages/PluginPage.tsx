@@ -34,7 +34,7 @@ export const PluginPage = (plugin: PluginEntry): PageFactory<null> => ({lifecycl
     const save: HTMLAnchorElement = <a className="hidden" download={bundleFileName(plugin)}>Download</a>
     lifecycle.own({terminate: () => {if (save.href.length > 0) {URL.revokeObjectURL(save.href)}}})
     return (
-        <PluginView lifecycle={lifecycle} name={plugin.name} panel={plugin.panel === true}
+        <PluginView lifecycle={lifecycle} name={plugin.name} panel={plugin.panel === true} windowed={plugin.window !== false}
                     links={(
                         <div className="links">
                             <a href={plugin.credit} target="_blank" rel="noopener noreferrer">Original</a>
@@ -80,7 +80,7 @@ export const ImportedPage: PageFactory<null> = ({lifecycle, path}) => {
         )
     }
     return (
-        <PluginView lifecycle={lifecycle} name={imported.fileName} panel={false}
+        <PluginView lifecycle={lifecycle} name={imported.fileName} panel={false} windowed
                     links={<div className="links"><span>imported from {imported.fileName}</span></div>}
                     open={async (env, loading) => {
                         loading.setValue({text: `Unpacking ${imported.fileName}…`, fraction: null})
@@ -101,9 +101,10 @@ type PluginViewConstruct = {
     subtitle: string | null // null: the plugin's clap id
     hint: JsxValue // under the error, when the plugin could not be loaded
     panel: boolean // shows the device panel above the window
+    windowed: boolean // false: the device panel is the plugin's only view
 }
 
-const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint, panel}: PluginViewConstruct) => {
+const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint, panel, windowed}: PluginViewConstruct) => {
     let alive = true
     lifecycle.own({terminate: () => alive = false})
     const title: HTMLElement = <h1>{name}</h1>
@@ -132,7 +133,8 @@ const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint,
         document.title = `${identity.name} · open-webclap`
         subtitle.textContent = subtitleText ?? identity.clapId
         loading.setValue({text: `Starting ${identity.name}…`, fraction: null})
-        replaceChildren(body, <Workbench lifecycle={lifecycle} session={session} loading={loading} panel={panel}/>)
+        replaceChildren(body, <Workbench lifecycle={lifecycle} session={session} loading={loading} panel={panel}
+                                                windowed={windowed}/>)
     }).catch((reason: unknown) => {
         if (!alive) {return}
         subtitle.textContent = "not loaded"
@@ -185,9 +187,10 @@ type WorkbenchConstruct = {
     session: PluginSession
     loading: DefaultObservableValue<LoadingState> // shown in the plugin column until the window is up
     panel: boolean // shows the device panel above the window (note effects always do)
+    windowed: boolean // false: the device panel alone, no window
 }
 
-const Workbench = ({lifecycle, session, loading, panel}: WorkbenchConstruct) => {
+const Workbench = ({lifecycle, session, loading, panel, windowed}: WorkbenchConstruct) => {
     const {kind} = session.identity
     const log = new MessageLog(id => `#${id}`)
     const midiStatus: HTMLElement = <span className="muted"/>
@@ -199,6 +202,10 @@ const Workbench = ({lifecycle, session, loading, panel}: WorkbenchConstruct) => 
     // (the main column goes full screen in presentation mode, the stack scales to fit, see Presentation)
     let stack_: HTMLElement | null = null
     let loading_: HTMLElement | null = null
+    const layout = () => {
+        stack_?.classList.remove("pending")
+        loading_?.remove()
+    }
     const aside: HTMLElement = (
         <aside>
             <Panel title="Audio">
@@ -244,14 +251,11 @@ const Workbench = ({lifecycle, session, loading, panel}: WorkbenchConstruct) => 
                     <LoadingProgress lifecycle={lifecycle} state={loading}/>
                 </div>
                 <div className="stack pending" onInit={stack => stack_ = stack}>
-                    {(kind === "midi-fx" || panel) && (
-                        <PluginWindow lifecycle={lifecycle} session={session} log={log} panel onLayout={() => {}}/>
+                    {(kind === "midi-fx" || panel || !windowed) && (
+                        <PluginWindow lifecycle={lifecycle} session={session} log={log} panel
+                                      onLayout={windowed ? () => {} : layout}/>
                     )}
-                    <PluginWindow lifecycle={lifecycle} session={session} log={log}
-                                  onLayout={() => {
-                                      stack_?.classList.remove("pending")
-                                      loading_?.remove()
-                                  }}/>
+                    {windowed && <PluginWindow lifecycle={lifecycle} session={session} log={log} onLayout={layout}/>}
                     {kind !== "audio-fx" && (
                         <Keyboard lifecycle={lifecycle} session={session} midiStatus={midiStatus}/>
                     )}

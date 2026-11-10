@@ -1,0 +1,20 @@
+# OpenRB-338's engine (external/openrb-338, scripts/fetch-deps.py) behind a C API for the plugin (plugin/openrb.cpp),
+# built as a static library for wasm32-unknown-emscripten and linked by em++.
+[package]
+name = "openrb-webclap-engine"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+orb-engine = { path = "../../../external/openrb-338/crates/orb-engine" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

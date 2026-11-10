@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OpenRB</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <!--
+        The device panels of the OpenRB plugins (plugin/openrb.cpp). Every device is its panel (176 px high), there is
+        no window: the 303's pattern editor is on its panel. A faceplate of controls in one row, no frames or titles; black
+        knobs on a scale with an orange pointer; square switches with an LED; dark screens with orange traces.
+
+        ?device=bass|distortion|pcf|compressor|delay names the device. Without one (or with ?preview) every panel with
+        made-up signals, each with its content's width against the width the plugin declares.
+    -->
+    <style>
+        :root {
+            --text: #cfcfcf;
+            --dim: #8c8c8c;
+            --tick: #7a7a7a;
+            --knob: #121212;
+            --orange: #f08a24;
+            --screen: #151515;
+            --button: #b4b4b4;
+            --led-off: #3c1210;
+            --led-on: #ff3d2e;
+        }
+        * {box-sizing: border-box}
+        html, body {margin: 0; height: 100%; overflow: hidden; background: transparent}
+        body {background: transparent; font-family: Rubik, sans-serif; color: var(--text); user-select: none;
+            -webkit-user-select: none}
+        body.preview {overflow: auto; background: hsl(197, 14%, 12%)}
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+        body.preview #stage {position: static; padding: 20px 24px 40px; transform: none}
+        .shelf {display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px}
+        .device > .caption {font-size: 9px; color: #777; margin: 0 0 5px 1px}
+
+        /* the faceplate: the controls in one row, no frames, no titles */
+        .plate {display: flex; align-items: center; gap: 16px; height: 176px; padding: 8px}
+        .grid {display: grid; grid-auto-flow: column; grid-template-rows: 78px 78px; column-gap: 14px; row-gap: 4px}
+        .stack {display: flex; flex-direction: column; align-items: center; justify-content: space-between; height: 160px; padding: 4px 0}
+        .stack:has(> :only-child) {justify-content: center}
+
+        /* a knob: the scale around it, its numbers at the ends, the label below (its value while turned) */
+        .knob {position: relative; width: 62px; height: 78px; cursor: ns-resize; touch-action: none}
+        .knob svg {display: block}
+        .knob .label, .knob .readout {position: absolute; left: -6px; right: -6px; bottom: 2px; text-align: center;
+            font-size: 10px; line-height: 12px; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap}
+        .knob .readout {color: var(--orange); visibility: hidden; text-transform: none; font-variant-numeric: tabular-nums}
+        .knob.active .readout {visibility: visible}
+        .knob.active .label {visibility: hidden}
+
+        /* a switch: an LED above a square button, its label below */
+        .switches {display: flex; gap: 6px}
+        .switches.column {flex-direction: column; gap: 4px}
+        .switch {display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; width: 40px}
+        .switch .led {position: relative; top: -1px; width: 7px; height: 7px; border-radius: 50%; background: var(--led-off)}
+        .switch.on .led {background: var(--led-on); box-shadow: 0 0 4px var(--led-on)}
+        .switch .button {width: 26px; height: 20px; border-radius: 3px; background: var(--button);
+            box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25)}
+        .switch.on .button {background: var(--orange)}
+        .switch .label {font-size: 9px; line-height: 11px; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap}
+
+        /* a selector: the value in a box with arrows either side, its label below */
+        .selector {display: flex; flex-direction: column; align-items: center; gap: 3px}
+        .selector .box {display: flex; align-items: center; height: 22px; border-radius: 3px; background: var(--screen);
+            cursor: ns-resize; touch-action: none}
+        .selector .arrow {width: 16px; height: 22px; display: grid; place-items: center; font-size: 7px; color: var(--dim);
+            cursor: pointer}
+        .selector .value {min-width: 20px; text-align: center; font-size: 9px; font-weight: 500;
+            font-variant-numeric: tabular-nums; color: var(--text)}
+        .selector.active .value {color: var(--orange)}
+        .selector .label {font-size: 9px; line-height: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim)}
+
+        /* a screen: dark, inset, orange inside */
+        .screen {position: relative; background: var(--screen); border-radius: 4px; flex: none}
+        .screen canvas {display: block; width: 100%; height: 100%}
+        .screen canvas.steps {touch-action: none; cursor: crosshair}
+        /* the 303's pattern: no screen behind it */
+        .screen.bare {background: none}
+    </style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script>
+    "use strict"
+    const clamp = (value, low, high) => Math.min(high, Math.max(low, value))
+    const ORANGE = alpha => `rgba(240, 138, 36, ${alpha})`
+    const GREY = alpha => `rgba(207, 207, 207, ${alpha})`
+
+    // --- the devices ------------------------------------------------------------------------------------------------
+    // As plugin/openrb.cpp: the parameters in id order, their values the device's own numbers. The 303's Length and
+    // Shuffle switch are its pattern's, not parameters: the page keeps them and sends the pattern's header.
+
+    const TUNE = [-12, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+        11, 12, 12]
+    const percent = value => `${Math.round(value * 100 / 127)}%`
+    const patternName = index => `${"ABCD"[index >> 3]}${(index & 7) + 1}`
+    // a knob from 0 to 127 on a scale of 0 to 10
+    const knob = (label, def, text = percent, extra = {}) =>
+        ({label, low: 0, high: 127, def, text, scale: ["0", "10"], ...extra})
+    const choice = (label, labels, def = 0) => ({label, low: 0, high: labels.length - 1, def, labels, text: v => labels[v]})
+
+    const DEVICES = {
+        bass: {
+            title: "OpenRB 303",
+            params: {
+                tune: knob("Tune", 64, value => {
+                    const semis = TUNE[value >> 2]
+                    return semis === 0 ? "0 st" : `${semis > 0 ? "+" : ""}${semis} st`
+                }, {scale: ["-12", "12"], bipolar: true}),
+                cutoff: knob("Cutoff", 20),
+                resonance: knob("Reso", 90),
+                envmod: knob("Env Mod", 20),
+                decay: knob("Decay", 100),
+                accent: knob("Accent", 64),
+                wave: choice("Wave", ["Saw", "Square"]),
+                sound: choice("Sound", ["2.0", "Vintage"]),
+                play: choice("Play", ["Notes", "Pattern"], 1),
+                pattern: {label: "Pattern", low: 0, high: 31, def: 0, text: patternName},
+                amount: knob("Shuffle", 0),
+                gain: {label: "Gain", low: -24, high: 6, def: 0, scale: ["-24", "+6"],
+                    text: value => `${value > 0 ? "+" : ""}${value} dB`}
+            },
+            build: panel => panel.row([
+                panel.stepScreen(240, 160),
+                panel.stack([panel.selector("pattern"), panel.selector("length"),
+                    panel.switches([panel.toggle("shuffle", "Shuffle")])]),
+                panel.grid(["cutoff", "resonance", "envmod", "decay", "accent", "tune"]),
+                panel.stack([panel.choice("play", ["Pattern", "Notes"], {values: [1, 0]}),
+                    panel.choice("sound", ["2.0", "Vintage"]), panel.choice("wave", ["Saw", "Sqr"])]),
+                panel.grid(["amount", "gain"])
+            ])
+        },
+        distortion: {
+            title: "OpenRB Distortion",
+            params: {amount: knob("Amount", 70), shape: knob("Shape", 0, value => value === 0 ? "Clip" : String((value >> 2) + 1))},
+            build: panel => panel.row([panel.screen("distortion", 136, 160), panel.grid(["amount", "shape"])])
+        },
+        pcf: {
+            title: "OpenRB PCF",
+            params: {
+                frequency: knob("Freq", 70), resonance: knob("Reso", 64), amount: knob("Amount", 40),
+                wave: {label: "Wave", low: 0, high: 54, def: 24, text: value => String(value + 1), scale: ["1", "55"]},
+                decay: knob("Decay", 90),
+                mode: choice("Mode", ["Low Pass", "Band Pass"])
+            },
+            build: panel => panel.row([panel.screen("pcf", 156, 160),
+                panel.grid(["wave", "frequency", "resonance", "amount", "decay"]),
+                panel.stack([panel.choice("mode", ["LP", "BP"])])])
+        },
+        compressor: {
+            title: "OpenRB Compressor",
+            params: {amount: knob("Amount", 70), threshold: knob("Thresh", 64)},
+            build: panel => panel.row([panel.screen("compressor", 120, 160), panel.grid(["amount", "threshold"])])
+        },
+        delay: {
+            title: "OpenRB Delay",
+            params: {
+                steps: {label: "Steps", low: 1, high: 32, def: 3, text: String, scale: ["1", "32"]},
+                grid: choice("Grid", ["1/16", "1/8 T"]),
+                feedback: knob("Feedback", 80),
+                pan: knob("Pan", 64, value => value === 64 ? "C" : value < 64 ? `L${64 - value}` : `R${value - 64}`,
+                    {scale: ["L", "R"], bipolar: true}),
+                send: knob("Send", 100)
+            },
+            build: panel => panel.row([panel.screen("delay", 140, 160),
+                panel.grid(["steps", "feedback", "pan", "send"]),
+                panel.stack([panel.choice("grid", ["1/16", "1/8T"])])])
+        }
+    }
+    const ORDER = ["bass", "distortion", "pcf", "compressor", "delay"]
+    for (const device of Object.values(DEVICES)) {
+        Object.values(device.params).forEach((p, index) => p.id = index)
+        device.keys = Object.keys(device.params)
+    }
+
+    // --- the messages (plugin/openrb.cpp) -----------------------------------------------------------------------
+
+    const PAGE = {HELLO: 8, STEP: 10, HEADER: 11, COMMIT: 13}
+    const PLUGIN = {STATUS: 1, SNAPSHOT: 2}
+    const PATTERN_BYTES = 98, PATTERNS = 32
+    const post = bytes => window.parent.postMessage(bytes.buffer, "*")
+
+    const emptyPattern = () => ({shuffle: false, length: 16,
+        steps: Array.from({length: 16}, () => ({note: 0, slide: false, accent: false, up: false, down: false, rest: true}))})
+    const decodePattern = (bytes, at) => ({shuffle: bytes[at] !== 0, length: bytes[at + 1] || 16,
+        steps: Array.from({length: 16}, (_, i) => {
+            const s = at + 2 + i * 6
+            return {note: bytes[s], slide: bytes[s + 1] !== 0, accent: bytes[s + 2] !== 0, up: bytes[s + 3] !== 0,
+                down: bytes[s + 4] !== 0, rest: bytes[s + 5] !== 0}
+        })})
+    const encodeStep = step => [step.note, +step.slide, +step.accent, +step.up, +step.down, +step.rest]
+    // a step's pitch in semitones from the 303's lowest C (C2), -12..24, and back
+    const pitchOf = step => step.note + (step.up ? 12 : 0) - (step.down ? 12 : 0)
+    const setPitch = (step, pitch) => {
+        step.down = pitch < 0
+        step.up = pitch > 12
+        step.note = pitch - (step.up ? 12 : 0) + (step.down ? 12 : 0)
+    }
+
+    // --- the controls -------------------------------------------------------------------------------------------
+
+    const SVG = "http://www.w3.org/2000/svg"
+    const svg = (name, attributes, parent) => {
+        const element = document.createElementNS(SVG, name)
+        for (const [key, value] of Object.entries(attributes)) {element.setAttribute(key, value)}
+        parent?.append(element)
+        return element
+    }
+    const div = (className, text) => Object.assign(document.createElement("div"), {className, textContent: text ?? ""})
+    const START = -135, SWEEP = 270
+    const polar = (cx, cy, r, degrees) => [cx + r * Math.sin(degrees * Math.PI / 180), cy - r * Math.cos(degrees * Math.PI / 180)]
+
+    const makePanel = (name, host) => {
+        const device = DEVICES[name]
+        const card = {
+            name, device, views: [], dragging: new Set(),
+            values: device.keys.map(key => device.params[key].def),
+            status: {playing: false, pattern: 0, step: 255, meters: [0, 0], curve: null, env: 0, pcfStep: -1,
+                wave: null, delayLength: 0, gains: [], peaks: []},
+            patterns: Array.from({length: PATTERNS}, emptyPattern),
+            screens: [], editing: false
+        }
+        card.value = key => card.values[device.params[key].id]
+        card.pattern = () => card.patterns[card.value("pattern")]
+        card.update = () => card.views.forEach(view => view())
+        const set = (key, value) => {
+            const p = device.params[key]
+            const next = Math.round(clamp(value, p.low, p.high))
+            if (card.values[p.id] === next) {return}
+            card.values[p.id] = next
+            host.set(p.id, next)
+            card.update()
+        }
+        // a click: one gesture
+        const pick = (key, value) => {
+            const p = device.params[key]
+            host.begin(p.id)
+            set(key, value)
+            host.end(p.id)
+        }
+        const sendHeader = () => {
+            const p = card.pattern()
+            post(new Uint8Array([PAGE.HEADER, card.value("pattern"), +p.shuffle, p.length]))
+            post(new Uint8Array([PAGE.COMMIT]))
+            card.update()
+        }
+        // the pattern's own values (Length, the Shuffle switch) as the controls see them
+        const local = {
+            length: {get: () => card.pattern().length, set: v => {card.pattern().length = v; sendHeader()}, low: 1, high: 16,
+                label: "Length", text: String},
+            shuffle: {get: () => +card.pattern().shuffle, set: v => {card.pattern().shuffle = v === 1; sendHeader()}}
+        }
+        const hoverable = (element, id) => {
+            element.addEventListener("pointerenter", () => host.hover(id))
+            element.addEventListener("pointerleave", () => host.hover(null))
+        }
+        // a vertical drag changes the value; Shift or Alt for fine steps
+        const dragging = (element, key, get, apply, low, high) => {
+            let drag = null
+            element.addEventListener("pointerdown", event => {
+                if (event.button !== 0 || event.ctrlKey) {return}
+                element.setPointerCapture(event.pointerId)
+                drag = {unit: (get() - low) / (high - low)}
+                element.classList.add("active")
+                card.dragging.add(key)
+                if (key in device.params) {host.begin(device.params[key].id)}
+            })
+            element.addEventListener("pointermove", event => {
+                if (drag === null) {return}
+                drag.unit = clamp(drag.unit - event.movementY / 128 * (event.shiftKey || event.altKey ? 0.2 : 1.2), 0, 1)
+                const value = Math.round(low + drag.unit * (high - low))
+                if (value !== get()) {apply(value)}
+            })
+            const end = () => {
+                if (drag === null) {return}
+                drag = null
+                element.classList.remove("active")
+                card.dragging.delete(key)
+                if (key in device.params) {host.end(device.params[key].id)} else {post(new Uint8Array([PAGE.COMMIT]))}
+            }
+            element.addEventListener("pointerup", end)
+            element.addEventListener("lostpointercapture", end)
+            element.addEventListener("pointerenter", () => element.classList.add("active"))
+            element.addEventListener("pointerleave", () => {if (drag === null) {element.classList.remove("active")}})
+        }
+
+        const panel = {
+            // the controls in the order given, no frame, no title
+            row: children => children,
+            grid: keys => {
+                const element = div("grid")
+                element.append(...keys.map(panel.knob))
+                return element
+            },
+            stack: children => {
+                const element = div("stack")
+                element.append(...children)
+                return element
+            },
+            switches: (children, column = false) => {
+                const element = div(column ? "switches column" : "switches")
+                element.append(...children)
+                return element
+            },
+            // a black knob on its scale: eleven ticks, the numbers at the ends, an orange pointer
+            knob: key => {
+                const p = device.params[key]
+                const element = div("knob")
+                const root = svg("svg", {width: 62, height: 64, viewBox: "0 0 62 64"}, element)
+                const cx = 31, cy = 29
+                for (let i = 0; i <= 10; i++) {
+                    const angle = START + i * SWEEP / 10
+                    const [x0, y0] = polar(cx, cy, 21, angle), [x1, y1] = polar(cx, cy, i % 5 === 0 ? 26 : 24, angle)
+                    svg("line", {x1: x0, y1: y0, x2: x1, y2: y1, stroke: "var(--tick)", "stroke-width": 1}, root)
+                }
+                const [lx, ly] = polar(cx, cy, 27, START), [rx, ry] = polar(cx, cy, 27, START + SWEEP)
+                svg("text", {x: lx - 1, y: ly + 8, "text-anchor": "middle", "font-size": 8, fill: "var(--dim)"}, root).textContent = p.scale?.[0] ?? ""
+                svg("text", {x: rx + 1, y: ry + 8, "text-anchor": "middle", "font-size": 8, fill: "var(--dim)"}, root).textContent = p.scale?.[1] ?? ""
+                svg("circle", {cx, cy, r: 17, fill: "var(--knob)", stroke: "#000", "stroke-width": 1}, root)
+                svg("circle", {cx, cy: cy - 0.75, r: 15.5, fill: "none", stroke: "rgba(255, 255, 255, 0.07)", "stroke-width": 1}, root)
+                const pointer = svg("line", {x1: cx, y1: cy - 5, x2: cx, y2: cy - 15, stroke: "var(--orange)",
+                    "stroke-width": 2.5, "stroke-linecap": "round"}, root)
+                element.append(div("label", p.label))
+                const readout = div("readout")
+                element.append(readout)
+                card.views.push(() => {
+                    const value = card.value(key)
+                    pointer.setAttribute("transform", `rotate(${START + (value - p.low) / (p.high - p.low) * SWEEP} ${cx} ${cy})`)
+                    readout.textContent = p.text(value)
+                })
+                dragging(element, key, () => card.value(key), value => set(key, value), p.low, p.high)
+                hoverable(element, p.id)
+                return element
+            },
+            // a choice as switches, one lit: labels in the order shown, values (default 0, 1, ...) theirs
+            choice: (key, labels, {values = labels.map((_, index) => index), column = false} = {}) => {
+                const p = device.params[key]
+                const element = panel.switches(labels.map((label, index) => {
+                    const item = div("switch")
+                    item.append(div("led"), div("button"), div("label", label))
+                    item.addEventListener("pointerdown", event => {if (event.button === 0) {pick(key, values[index])}})
+                    card.views.push(() => item.classList.toggle("on", card.value(key) === values[index]))
+                    return item
+                }), column)
+                hoverable(element, p.id)
+                return element
+            },
+            // the pattern's Shuffle switch
+            toggle: (key, label) => {
+                const item = div("switch")
+                item.append(div("led"), div("button"), div("label", label))
+                item.addEventListener("pointerdown", event => {if (event.button === 0) {local[key].set(1 - local[key].get())}})
+                card.views.push(() => item.classList.toggle("on", local[key].get() === 1))
+                return item
+            },
+            // a value in a box with arrows, dragged or stepped
+            selector: key => {
+                const p = device.params[key] ?? local[key]
+                const isParam = key in device.params
+                const get = isParam ? () => card.value(key) : local[key].get
+                const apply = isParam ? value => set(key, value) : local[key].set
+                const element = div("selector")
+                const box = div("box"), left = div("arrow", "◀"), value = div("value"), right = div("arrow", "▶")
+                box.append(left, value, right)
+                element.append(box, div("label", p.label))
+                const stepBy = delta => {
+                    const next = clamp(get() + delta, p.low, p.high)
+                    if (isParam) {pick(key, next)} else {apply(next)}
+                }
+                for (const [arrow, delta] of [[left, -1], [right, 1]]) {
+                    arrow.addEventListener("pointerdown", event => {
+                        if (event.button !== 0) {return}
+                        event.stopPropagation()
+                        stepBy(delta)
+                    })
+                }
+                dragging(value, key, get, apply, p.low, p.high)
+                value.addEventListener("pointerdown", () => element.classList.add("active"))
+                value.addEventListener("lostpointercapture", () => element.classList.remove("active"))
+                if (isParam) {hoverable(element, p.id)}
+                card.views.push(() => value.textContent = p.text(get()))
+                return element
+            },
+            screen: (kind, width, height) => {
+                const element = div("screen")
+                element.style.width = `${width}px`
+                element.style.height = `${height}px`
+                const canvas = document.createElement("canvas")
+                element.append(canvas)
+                card.screens.push({canvas, context: canvas.getContext("2d"), draw: DISPLAYS[kind]})
+                return element
+            },
+            stepScreen: (width, height) => {
+                const element = panel.screen("bass", width, height)
+                element.classList.add("bare")
+                stepEditor(card, element.querySelector("canvas"))
+                return element
+            }
+        }
+        const plate = div("plate")
+        plate.append(...device.build(panel))
+        card.element = plate
+        card.draw = zoom => {
+            for (const {canvas, context, draw} of card.screens) {
+                const {width, height} = OpenDAWPanel.fit(canvas, context, zoom)
+                draw(context, width, height, card)
+            }
+        }
+        card.update()
+        return card
+    }
+
+    // the plugin's status into the panel
+    const receive = (card, buffer) => {
+        const view = new DataView(buffer), bytes = new Uint8Array(buffer)
+        if (bytes.length < 8 || (bytes[0] !== PLUGIN.STATUS && bytes[0] !== PLUGIN.SNAPSHOT)) {return}
+        if (bytes[1] !== ORDER.indexOf(card.name)) {return}
+        const count = card.device.keys.length
+        let changed = false
+        card.device.keys.forEach((key, index) => {
+            if (card.dragging.has(key)) {return}
+            const value = view.getFloat64(8 + index * 8, true)
+            if (value !== card.values[index]) {
+                card.values[index] = value
+                changed = true
+            }
+        })
+        const status = card.status
+        status.playing = (bytes[2] & 1) !== 0
+        status.pattern = bytes[3]
+        status.step = bytes[4]
+        status.meters = [bytes[5], bytes[6]]
+        const at = 8 + count * 8
+        switch (card.name) {
+            case "bass":
+                if (bytes[0] === PLUGIN.SNAPSHOT && bytes.length >= at + PATTERNS * PATTERN_BYTES && !card.editing
+                    && !card.dragging.has("length")) {
+                    card.patterns = Array.from({length: PATTERNS}, (_, i) => decodePattern(bytes, at + i * PATTERN_BYTES))
+                    changed = true
+                }
+                break
+            case "distortion":
+                status.curve = Array.from({length: 65}, (_, i) => view.getFloat32(at + i * 4, true))
+                break
+            case "pcf":
+                status.env = view.getFloat32(at, true)
+                status.pcfStep = view.getInt32(at + 4, true)
+                status.wave = {length: view.getUint16(at + 8, true), resolution: view.getUint16(at + 10, true),
+                    steps: Array.from(bytes.subarray(at + 12, at + 44))}
+                break
+            case "compressor":
+                status.gains.push(bytes[5])
+                status.peaks.push(bytes[6])
+                if (status.gains.length > 120) {status.gains.shift(); status.peaks.shift()}
+                break
+            case "delay":
+                status.delayLength = view.getUint32(at, true)
+                break
+        }
+        if (changed) {card.update()}
+    }
+
+    // --- the 303's pattern on its screen, edited in place -------------------------------------------------------
+    // 16 steps, the pitch from C1 to C4 (the 303's lowest C is C2), accent and slide in two rows below. A click on a
+    // step sets its note where it lands, a click on the note it plays makes it a rest; dragging draws across the
+    // steps. A click in a row toggles it, dragging paints the same.
+
+    const EDITOR = {left: 22, right: 4, top: 16, bottom: 118, accent: 134, slide: 150, low: -12, high: 24}
+    const editorGeometry = width => {
+        const cell = (width - EDITOR.left - EDITOR.right) / 16
+        const span = EDITOR.bottom - EDITOR.top, range = EDITOR.high - EDITOR.low
+        return {
+            cell, x: i => EDITOR.left + i * cell,
+            y: pitch => EDITOR.bottom - (pitch - EDITOR.low) / range * span,
+            pitchAt: py => Math.round(EDITOR.low + (EDITOR.bottom - py) / span * range)
+        }
+    }
+
+    const stepEditor = (card, canvas) => {
+        canvas.classList.add("steps")
+        let drag = null
+        const target = event => {
+            const rect = canvas.getBoundingClientRect()
+            const scale = rect.width / canvas.clientWidth
+            const x = (event.clientX - rect.left) / scale, y = (event.clientY - rect.top) / scale
+            const g = editorGeometry(canvas.clientWidth)
+            const step = Math.floor((x - EDITOR.left) / g.cell)
+            if (step < 0 || step >= 16) {return null}
+            if (y >= EDITOR.top - 6 && y <= EDITOR.bottom + 3) {
+                return {step, row: "pitch", pitch: clamp(g.pitchAt(y), EDITOR.low, EDITOR.high)}
+            }
+            if (Math.abs(y - EDITOR.accent) <= 7) {return {step, row: "accent"}}
+            if (Math.abs(y - EDITOR.slide) <= 7) {return {step, row: "slide"}}
+            return null
+        }
+        const send = index => {
+            const bytes = new Uint8Array(10)
+            bytes[0] = PAGE.STEP
+            bytes[1] = card.value("pattern")
+            bytes[2] = index
+            bytes.set(encodeStep(card.pattern().steps[index]), 4)
+            post(bytes)
+        }
+        const apply = at => {
+            if (drag === null || at === null) {return}
+            const step = card.pattern().steps[at.step]
+            if (drag.row === "pitch" && at.row === "pitch") {
+                if (!step.rest && pitchOf(step) === at.pitch) {return}
+                setPitch(step, at.pitch)
+                step.rest = false
+            } else if (drag.row !== "pitch") {
+                if (at.step === drag.last) {return}
+                step[drag.row] = drag.value
+            } else {
+                return
+            }
+            drag.last = at.step
+            drag.moved = true
+            send(at.step)
+        }
+        canvas.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            const at = target(event)
+            if (at === null) {return}
+            canvas.setPointerCapture(event.pointerId)
+            card.editing = true
+            const step = card.pattern().steps[at.step]
+            if (at.row === "pitch") {
+                // on the note the step plays: a click without a drag makes it a rest
+                const onNote = !step.rest && Math.abs(pitchOf(step) - at.pitch) <= 1
+                drag = {row: "pitch", last: at.step, moved: false, restOnClick: onNote ? at.step : -1}
+                if (!onNote) {apply(at)}
+            } else {
+                drag = {row: at.row, value: !step[at.row], last: -1}
+                apply(at)
+            }
+        })
+        canvas.addEventListener("pointermove", event => {
+            if (drag !== null) {apply(target(event))}
+        })
+        const end = () => {
+            if (drag === null) {return}
+            if (drag.row === "pitch" && drag.restOnClick >= 0 && !drag.moved) {
+                card.pattern().steps[drag.restOnClick].rest = true
+                send(drag.restOnClick)
+            }
+            drag = null
+            card.editing = false
+            post(new Uint8Array([PAGE.COMMIT]))
+        }
+        canvas.addEventListener("pointerup", end)
+        canvas.addEventListener("lostpointercapture", end)
+    }
+
+    // --- the screens --------------------------------------------------------------------------------------------
+
+    const text = (context, value, x, y, align = "left", color = GREY(0.55)) => {
+        context.font = "8px Rubik, sans-serif"
+        context.textAlign = align
+        context.textBaseline = "alphabetic"
+        context.fillStyle = color
+        context.fillText(value, x, y)
+    }
+    const line = (context, points, color = ORANGE(0.95), width = 1.5) => {
+        context.strokeStyle = color
+        context.lineWidth = width
+        context.lineJoin = "round"
+        context.beginPath()
+        points.forEach(([x, y], i) => i === 0 ? context.moveTo(x, y) : context.lineTo(x, y))
+        context.stroke()
+    }
+    const dashed = (context, x0, y0, x1, y1) => {
+        context.save()
+        context.setLineDash([2, 3])
+        line(context, [[x0, y0], [x1, y1]], GREY(0.18), 1)
+        context.restore()
+    }
+
+    const DISPLAYS = {
+        bass: (context, width, height, card) => {
+            const g = editorGeometry(width)
+            const pattern = card.pattern(), index = card.value("pattern")
+            const live = card.value("play") === 1
+            const playing = live && card.status.playing && card.status.pattern === index && card.status.step < 16
+                ? card.status.step : -1
+            // the octaves and the beats
+            for (const [pitch, name] of [[-12, "C1"], [0, "C2"], [12, "C3"], [24, "C4"]]) {
+                dashed(context, EDITOR.left, g.y(pitch), width - EDITOR.right, g.y(pitch))
+                text(context, name, 4, g.y(pitch) + 3)
+            }
+            text(context, "ACC", 4, EDITOR.accent + 3)
+            text(context, "SLD", 4, EDITOR.slide + 3)
+            for (let i = 0; i < 16; i++) {
+                text(context, String(i + 1), g.x(i) + g.cell / 2, 9, "center",
+                    i === playing ? ORANGE(1) : i < pattern.length ? GREY(i % 4 === 0 ? 0.7 : 0.35) : GREY(0.15))
+            }
+            if (playing >= 0) {
+                context.fillStyle = ORANGE(0.12)
+                context.fillRect(g.x(playing), EDITOR.top - 3, g.cell, EDITOR.slide + 6 - EDITOR.top)
+            }
+            for (let i = 0; i < 16; i++) {
+                const step = pattern.steps[i]
+                const fade = i < pattern.length ? 1 : 0.3
+                const x = g.x(i), y = g.y(pitchOf(step))
+                if (step.rest) {
+                    context.fillStyle = GREY(0.18 * fade)
+                    context.fillRect(x + g.cell / 2 - 1, y - 1, 2, 2)
+                } else {
+                    context.fillStyle = ORANGE((step.accent ? 1 : 0.6) * fade)
+                    context.fillRect(x + 1.5, y - 2.5, g.cell - 3, 5)
+                    const next = pattern.steps[i + 1]
+                    if (step.slide && next !== undefined && !next.rest) {
+                        line(context, [[x + g.cell - 1.5, y], [x + g.cell + 1.5, g.y(pitchOf(next))]], ORANGE(0.6 * fade), 1.25)
+                    }
+                }
+                for (const [row, at] of [["accent", EDITOR.accent], ["slide", EDITOR.slide]]) {
+                    context.fillStyle = step[row] ? ORANGE(0.95 * fade) : GREY(0.1)
+                    context.fillRect(x + 2, at - 4, g.cell - 4, 8)
+                }
+            }
+            if (!live) {text(context, "NOTES", width - 4, height - 3, "right", GREY(0.35))}
+        },
+        // the transfer curve from -1 to 1, unity dashed, the input level on it
+        distortion: (context, width, height, card) => {
+            const curve = card.status.curve
+            if (!curve) {return}
+            const size = Math.min(width, height) - 16, left = (width - size) / 2, top = (height - size) / 2
+            const scale = Math.max(1e-6, ...curve.map(Math.abs)) / 0.9
+            dashed(context, left, top + size, left + size, top)
+            dashed(context, left, top + size / 2, left + size, top + size / 2)
+            const points = curve.map((value, i) => [left + i / 64 * size, top + size / 2 - value / scale * size / 2])
+            line(context, points)
+            const level = Math.min(1, card.status.meters[0] / 127)
+            if (level > 0.01) {
+                const [x, y] = points[Math.round((0.5 + level / 2) * 64)]
+                context.fillStyle = ORANGE(1)
+                context.beginPath()
+                context.arc(x, y, 2.5, 0, Math.PI * 2)
+                context.fill()
+            }
+        },
+        // the wave's steps as bars (a slow attack hollow), the step it is at lit, the cutoff it sets dashed
+        pcf: (context, width, height, card) => {
+            const wave = card.status.wave
+            if (!wave || wave.length === 0) {return}
+            text(context, `WAVE ${card.value("wave") + 1}`, 6, 12)
+            text(context, `1/${wave.resolution}`, width - 6, 12, "right")
+            const top = 22, bottom = height - 8, left = 6, count = wave.length
+            const cell = (width - 12) / count
+            const highest = Math.max(1, ...wave.steps.slice(0, count))
+            for (let i = 0; i < count; i++) {
+                const v = wave.steps[i]
+                const current = i === card.status.pcfStep
+                const x = left + i * cell + 1, w = Math.max(1, cell - 2)
+                if (v === 0) {
+                    context.fillStyle = GREY(0.15)
+                    context.fillRect(x, bottom - 1, w, 1)
+                    continue
+                }
+                const h = Math.max(2, v / highest * (bottom - top))
+                if ((v & 1) !== 0) {
+                    context.strokeStyle = ORANGE(current ? 1 : 0.5)
+                    context.lineWidth = 1
+                    context.strokeRect(x + 0.5, bottom - h + 0.5, w - 1, h - 1)
+                } else {
+                    context.fillStyle = ORANGE(current ? 1 : 0.45)
+                    context.fillRect(x, bottom - h, w, h)
+                }
+            }
+            const level = top + (1 - clamp(card.status.env / 511, 0, 1)) * (bottom - top)
+            dashed(context, left, level, width - left, level)
+        },
+        // the gain over the last seconds (the device's meter: 18 is unity), the input's peaks faint below
+        compressor: (context, width, height, card) => {
+            const {gains, peaks} = card.status
+            const top = 18, bottom = height - 8, right = width - 22
+            text(context, "GAIN", 6, 12)
+            const db = gain => 20 * Math.log10(Math.max(1e-3, gain / 18))
+            const y = value => top + (-clamp(value, -24, 0)) / 24 * (bottom - top)
+            for (const value of [0, -12, -24]) {
+                dashed(context, 6, y(value), right, y(value))
+                text(context, String(value), width - 4, y(value) + 3, "right")
+            }
+            const n = gains.length
+            if (n < 2) {return}
+            const step = (right - 6) / 119, x = i => right - (n - 1 - i) * step
+            context.fillStyle = GREY(0.12)
+            peaks.forEach((peak, i) => {
+                const h = Math.min(1, peak / 127) * (bottom - top)
+                context.fillRect(x(i) - step, bottom - h, step, h)
+            })
+            line(context, gains.map((gain, i) => [x(i), y(db(gain))]))
+        },
+        // the echoes over the beats they take: the dry hit, then each repeat, its height the feedback's
+        delay: (context, width, height, card) => {
+            const length = card.status.delayLength
+            const top = 22, bottom = height - 8, left = 8, right = width - 8
+            const steps = card.value("steps"), grid = card.value("grid")
+            const at = steps * (grid === 0 ? 0.25 : 1 / 3)
+            text(context, grid === 0 ? `${steps}/16` : `${steps}/8T`, 6, 12)
+            if (length > 0) {text(context, `${Math.round(length / 44.1)} ms`, width - 6, 12, "right")}
+            const beats = Math.max(2, Math.ceil(at * 3))
+            const x = t => left + t / beats * (right - left)
+            for (let b = 1; b < beats; b++) {dashed(context, x(b), top, x(b), bottom)}
+            const fb = card.value("feedback") / 127
+            context.fillStyle = GREY(0.4)
+            context.fillRect(x(0) - 1, top, 2, bottom - top)
+            let level = 1
+            for (let k = 1; at * k <= beats && level > 0.02; k++) {
+                const h = level * (bottom - top)
+                context.fillStyle = ORANGE(0.35 + 0.65 * level)
+                context.fillRect(x(at * k) - 1.5, bottom - h, 3, h)
+                level *= fb
+            }
+        }
+    }
+
+    // --- preview: every panel, signals made up here ------------------------------------------------------------
+
+    const simulate = (card, time) => {
+        const s = card.status
+        switch (card.name) {
+            case "bass":
+                if (card.patterns[0].steps.every(step => step.rest)) {
+                    const notes = [0, 12, null, 0, 3, 5, 12, null, 0, null, -2, 7, 0, null, 3, 5]
+                    card.patterns[0].steps.forEach((step, i) => {
+                        step.rest = notes[i] === null
+                        if (notes[i] !== null) {setPitch(step, notes[i])}
+                        step.accent = [1, 4, 11, 15].includes(i)
+                        step.slide = [1, 11].includes(i)
+                    })
+                    card.values[card.device.params.play.id] = 1
+                    card.update()
+                }
+                s.playing = true
+                s.pattern = 0
+                s.step = Math.floor(time * 8) % 16
+                break
+            case "distortion": {
+                const amount = card.value("amount"), shape = card.value("shape")
+                s.curve = Array.from({length: 65}, (_, i) => {
+                    const x = -1 + i / 32, g = 1 + amount / 8
+                    return shape === 0 ? clamp(g * x, -0.4, 0.4) : Math.tanh(g * x * (1 + shape / 40))
+                })
+                s.meters = [Math.round(64 + 50 * Math.sin(time * 2)), 0]
+                break
+            }
+            case "pcf": {
+                // no engine here: a pattern made up from the wave's number (the plugin sends the real one)
+                const wave = card.value("wave")
+                const length = [16, 8, 12, 16, 32][wave % 5]
+                s.wave = {length, resolution: length > 16 ? 32 : 16,
+                    steps: Array.from({length: 32}, (_, i) => {
+                        const hash = Math.sin((wave + 1) * 12.9898 + i * 78.233) * 43758.5453
+                        const r = hash - Math.floor(hash)
+                        return i === 0 ? 96 : r < 0.45 ? 0 : Math.round(r * 120) | (r > 0.85 ? 1 : 0)
+                    })}
+                s.pcfStep = Math.floor(time * 8) % 16
+                s.env = 200 + 200 * Math.pow(1 - (time * 8 % 1), 3)
+                break
+            }
+            case "compressor": {
+                const beat = Math.pow(1 - (time * 2 % 1), 3)
+                s.gains.push(18 * Math.pow(10, -9 * beat / 20))
+                s.peaks.push(60 + 60 * beat)
+                if (s.gains.length > 120) {s.gains.shift(); s.peaks.shift()}
+                break
+            }
+            case "delay":
+                s.delayLength = 44100 * 60 / 120 * card.value("steps") * (card.value("grid") === 0 ? 0.25 : 1 / 3)
+                break
+        }
+    }
+
+    // --- start ----------------------------------------------------------------------------------------------------
+
+    const name = new URL(location).searchParams.get("device")
+    const preview = new URL(location).searchParams.has("preview") || !(name in DEVICES)
+    const stage = document.getElementById("stage")
+    // the widths the plugin declares (openrb.cpp *_PANEL_WIDTH)
+    const WIDTHS = {bass: 734, distortion: 230, pcf: 504, compressor: 214, delay: 412}
+
+    if (preview) {
+        document.body.classList.add("preview")
+        const shelf = div("shelf")
+        stage.append(shelf)
+        const cards = ORDER.map(name => {
+            const card = makePanel(name, OpenDAWPanel.quietHost())
+            const device = div("device")
+            device.append(div("caption", card.device.title), card.element)
+            card.element.style.width = "max-content"
+            shelf.append(device)
+            return card
+        })
+        document.fonts.ready.then(() => cards.forEach(card => {
+            card.element.dataset.content = card.element.offsetWidth
+            card.element.parentElement.querySelector(".caption").textContent += ` · ${card.element.offsetWidth} × 176`
+        }))
+        const frame = now => {
+            for (const card of cards) {
+                simulate(card, now / 1000)
+                card.draw(1)
+            }
+            requestAnimationFrame(frame)
+        }
+        document.fonts.ready.then(() => requestAnimationFrame(frame))
+    } else {
+        // the panel, 1:1 in openDAW's 176 px device panel (zoomed in any larger view)
+        const host = OpenDAWPanel.pluginHost()
+        const card = makePanel(name, host)
+        card.element.style.width = `${WIDTHS[name]}px`
+        stage.append(card.element)
+        let zoom = 1
+        OpenDAWPanel.zoomToWindow(stage, WIDTHS[name], value => {zoom = value})
+        addEventListener("message", event => {
+            if (event.data instanceof ArrayBuffer) {receive(card, event.data)}
+        })
+        post(new Uint8Array([PAGE.HELLO]))
+        let lastPoll = 0
+        const frame = now => {
+            if (now - lastPoll >= 33) {
+                lastPoll = now
+                host.poll()
+            }
+            card.draw(zoom)
+            requestAnimationFrame(frame)
+        }
+        document.fonts.ready.then(() => requestAnimationFrame(frame))
+    }
+</script>
+</body>
+</html>

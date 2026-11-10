@@ -278,6 +278,15 @@ DEPS += [(directory + "/zldsp_fft", "ZL-Audio/zldsp_fft", "dfc50e6c39680d9ee04fb
           lambda p: p.startswith("src/") or p == "LICENSE.md")
          for directory in ("zl-compressor", "zl-spectrum-equalizer")]
 
+# OpenRB-338 (pingw33n) at main at the time of writing: the engine crate and the song format crate it uses, with the
+# workspace manifest they inherit from. GPL-3.0-only. Nothing of Propellerhead's (assets/Standard.rbm stays upstream):
+# the ports are the 303 and the effects, which need no samples.
+DEPS += [
+    ("openrb-338", "pingw33n/openrb-338", "cbca4492c0224dffaa477346bc8860559f3d853f",
+     lambda p: p.startswith(("crates/orb-engine/src/", "crates/rbs/src/"))
+     or p in ("Cargo.toml", "crates/orb-engine/Cargo.toml", "crates/rbs/Cargo.toml", "LICENSE", "README.md")),
+]
+
 # (package, {file in the package: name in external/fonts})
 FONT_PACKAGES = [
     ("https://registry.npmjs.org/dejavu-fonts-ttf/-/dejavu-fonts-ttf-2.37.3.tgz",
