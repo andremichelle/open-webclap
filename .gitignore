@@ -7,3 +7,6 @@
 # The site (site/)
 /site/node_modules/
 /site/dist/
+
+# Discord posts of the catalogue (discord/README.md): the manual, its scripts, the posted message ids
+/discord/
