@@ -36,7 +36,8 @@ Needs the site's dev server (`cd site && npm run dev`, port 8130) and Google Chr
   `node discord/import.mjs http://localhost:8130 build/screenshots <name>=<path to the .wclap.tar.gz>` (the site's
   Import button, headless).
 - **OpenRB's panels with made-up signals**: `node discord/shoot.mjs http://localhost:8130/openrb-preview/index.html?preview build/openrb/screenshots`
-  (the preview page, untracked in `site/public/openrb-preview/`).
+  (the preview page: copy `ports/openrb/page/index.html` to `site/public/openrb-preview/index.html` first, and
+  delete that folder afterwards; it is not committed).
 - **A collage** (several plugins in one bundle): put the shots side by side on openDAW's background
   (hsl(197, 8%, 9%)), each with its name above in small grey; see the Python (PIL) used for Signalsmith Basics and
   OpenRB in the session of 2026-11-10: rows of images, 24 px padding, 20 px gaps, 2x.
