@@ -360,7 +360,8 @@ PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "
                  ("surge-", "surge"), ("coopiano-", "coopiano"), ("open-spatial-delay-", "open-spatial-delay"),
                  ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric"), ("oxygen-", "oxygen"),
                  ("obxf-", "OB-Xf"), ("helm-", "helm"), ("signalsmith-basics-", "signalsmith-basics"),
-                 ("stmlib-", "eurorack/stmlib"), ("oxo-synth2-", "oxo-synth2")] + [(d + "-", d) for d, _, _ in ZL]
+                 ("stmlib-", "eurorack/stmlib"), ("oxo-synth2-", "oxo-synth2"),
+                 ("openrb-338-", "openrb-338")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():

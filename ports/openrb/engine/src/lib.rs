@@ -521,3 +521,248 @@ pub unsafe extern "C" fn orb_delay_clear(delay: *mut Echo) {
 pub unsafe extern "C" fn orb_delay_meter(delay: *const Echo) -> u8 {
     unsafe { &*delay }.device.live[orb_engine::delay::METER]
 }
+
+// --- the drum kit: the samples the user brings ---------------------------------------------------------------------
+// The 808 and 909 play ReBirth's own drum samples, which this port does not ship. The user brings them: the 46 AIFF
+// resources of ReBirth.dll (ids 1000..1045, read by the engine's own `SampleSet::from_dll`), or single samples per
+// slot (16-bit mono at 44.1 kHz, decoded by the page). A slot without a sample is silent.
+
+use orb_engine::samples::{COUNT as KIT_SLOTS, FIRST_ID, Sample, SampleSet};
+use orb_engine::tr808::{self, Tr808};
+use orb_engine::tr909::{self, Tr909};
+use std::sync::Arc;
+
+/// The 46 slots by resource id from 1000, raw 16-bit audio (no padding).
+pub struct Kit {
+    slots: Vec<Vec<i16>>,
+}
+
+impl Kit {
+    fn set(&self) -> Arc<SampleSet> {
+        Arc::new(SampleSet::from_samples(self.slots.iter().map(|audio| Sample::from_audio(audio)).collect()))
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn orb_kit_new() -> *mut Kit {
+    boxed(Kit {
+        slots: vec![Vec::new(); KIT_SLOTS],
+    })
+}
+
+/// # Safety
+/// `kit` came from [`orb_kit_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_kit_free(kit: *mut Kit) {
+    unsafe { free(kit) }
+}
+
+/// Every slot from the bytes of ReBirth.dll; false (the kit unchanged) when it is not one.
+///
+/// # Safety
+/// `kit` came from [`orb_kit_new`], `bytes` holds `size` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_kit_load_dll(kit: *mut Kit, bytes: *const u8, size: u32) -> bool {
+    let dll = unsafe { std::slice::from_raw_parts(bytes, size as usize) };
+    match SampleSet::from_dll(dll) {
+        Ok(set) => {
+            let k = unsafe { &mut *kit };
+            for (i, slot) in k.slots.iter_mut().enumerate() {
+                *slot = set.get(FIRST_ID + i as u16).audio().to_vec();
+            }
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Slot `id` (1000..1045) to `frames` samples of `audio`.
+///
+/// # Safety
+/// `kit` came from [`orb_kit_new`], `audio` holds `frames` samples.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_kit_set(kit: *mut Kit, id: u16, audio: *const i16, frames: u32) {
+    let k = unsafe { &mut *kit };
+    if let Some(slot) = id.checked_sub(FIRST_ID).and_then(|i| k.slots.get_mut(i as usize)) {
+        *slot = if frames == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(audio, frames as usize) }.to_vec() };
+    }
+}
+
+/// Slot `id`'s audio and its length in `frames` (0: empty).
+///
+/// # Safety
+/// `kit` came from [`orb_kit_new`], `frames` points to a u32.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_kit_get(kit: *const Kit, id: u16, frames: *mut u32) -> *const i16 {
+    let k = unsafe { &*kit };
+    match id.checked_sub(FIRST_ID).and_then(|i| k.slots.get(i as usize)) {
+        Some(slot) => {
+            unsafe { *frames = slot.len() as u32 };
+            slot.as_ptr()
+        }
+        None => {
+            unsafe { *frames = 0 };
+            std::ptr::null()
+        }
+    }
+}
+
+// --- TR-808 and TR-909 ---------------------------------------------------------------------------------------------
+
+pub enum Drums {
+    Tr808(Box<Tr808>),
+    Tr909(Box<Tr909>),
+}
+
+impl Drums {
+    fn device(&mut self) -> &mut dyn ChannelDevice {
+        match self {
+            Drums::Tr808(d) => d.as_mut(),
+            Drums::Tr909(d) => d.as_mut(),
+        }
+    }
+}
+
+/// A drum machine, 808 (`machine` 0) or 909 (1), on `kit`'s samples.
+///
+/// # Safety
+/// `kit` came from [`orb_kit_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_new(machine: u8, kit: *const Kit) -> *mut Drums {
+    let set = unsafe { &*kit }.set();
+    let process = ProcessState::new();
+    boxed(if machine == 0 {
+        Drums::Tr808(Box::new(Tr808::new(set, process)))
+    } else {
+        Drums::Tr909(Box::new(Tr909::new(set, process)))
+    })
+}
+
+/// # Safety
+/// `drums` came from [`orb_drums_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_free(drums: *mut Drums) {
+    unsafe { free(drums) }
+}
+
+/// The samples of `kit` from now on (what sounds is silenced).
+///
+/// # Safety
+/// `drums` came from [`orb_drums_new`], `kit` from [`orb_kit_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_set_kit(drums: *mut Drums, kit: *const Kit) {
+    let set = unsafe { &*kit }.set();
+    let mut retired = orb_engine::samples::Retired::default();
+    unsafe { &mut *drums }.device().set_samples(&set, &mut retired);
+}
+
+/// Controller `ctrl` (the RBS order of the machine) to `value`; the pattern-mode copy follows.
+///
+/// # Safety
+/// `drums` came from [`orb_drums_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_set(drums: *mut Drums, ctrl: u8, value: u8) {
+    match unsafe { &mut *drums } {
+        Drums::Tr808(d) => {
+            d.set_param(ctrl, value);
+            d.params = d.live;
+        }
+        Drums::Tr909(d) => {
+            d.set_param(ctrl, value);
+            d.params = d.live;
+        }
+    }
+}
+
+/// Instrument `column` (1..11, the pattern's columns) from a note: `accent` the step's accent column, `strong` the
+/// 909's louder step value (2: gain 2.0 for 0.8).
+///
+/// # Safety
+/// `drums` came from [`orb_drums_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_hit(drums: *mut Drums, column: u8, accent: bool, strong: bool) {
+    let column = column as usize;
+    if !(1..=11).contains(&column) {
+        return;
+    }
+    match unsafe { &mut *drums } {
+        Drums::Tr808(d) => {
+            // as the step function: f32(AC * accent level * 0.03125 + 1)
+            d.accent = ((accent as u8 as f64 * d.live[tr808::ACCENT] as f64) * 0.03125 + 1.0) as f32;
+            d.trigger(column);
+        }
+        Drums::Tr909(d) => {
+            d.accent = ((accent as u8 as f64 * d.live[tr909::ACCENT] as f64) * 0.03125 + 1.0) as f32;
+            d.gain = (d.accent as f64 * if strong { 2.0 } else { 0.8 }) as f32;
+            d.trigger(column);
+        }
+    }
+}
+
+/// The transport starts at `tick`.
+///
+/// # Safety
+/// `drums` came from [`orb_drums_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_start(drums: *mut Drums, tick: i32) {
+    let d = unsafe { &mut *drums }.device();
+    d.relocate(tick, tick);
+    d.start(tick);
+}
+
+/// # Safety
+/// `drums` came from [`orb_drums_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_stop(drums: *mut Drums) {
+    unsafe { &mut *drums }.device().stop();
+}
+
+/// The sequencer's step at `tick`.
+///
+/// # Safety
+/// `drums` came from [`orb_drums_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_step(drums: *mut Drums, tick: i32, shuffle: u8, tempo: u32) {
+    unsafe { &mut *drums }.device().step(tick, seq::shuffled(tick, shuffle), tempo as i32);
+}
+
+/// One block of 64 frames into `out`.
+///
+/// # Safety
+/// `drums` came from [`orb_drums_new`], `out` holds 64 floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_process(drums: *mut Drums, out: *mut f32) {
+    unsafe { &mut *drums }.device().process(unsafe { block(out) }, &context(0, 120_000));
+}
+
+/// # Safety
+/// `drums` came from [`orb_drums_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_reset(drums: *mut Drums) {
+    unsafe { &mut *drums }.device().reset();
+}
+
+/// The 32 patterns, 194 bytes each (shuffle, length, 16 steps of 12 columns: accent and the 11 instruments).
+///
+/// # Safety
+/// `drums` came from [`orb_drums_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_patterns(drums: *mut Drums) -> *mut u8 {
+    unsafe { &mut *drums }.device().patterns_mut().map_or(std::ptr::null_mut(), |p| p.as_mut_ptr())
+}
+
+/// The pattern playing and the step it played last.
+///
+/// # Safety
+/// `drums` came from [`orb_drums_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_drums_position(drums: *mut Drums, pattern: *mut u8, step: *mut u8) {
+    let (p, s) = match unsafe { &*drums } {
+        Drums::Tr808(d) => (d.cur_pattern, d.live()[29]),
+        Drums::Tr909(d) => (d.cur_pattern, d.live()[30]),
+    };
+    unsafe {
+        *pattern = p;
+        *step = s;
+    }
+}

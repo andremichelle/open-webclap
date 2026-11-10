@@ -75,23 +75,50 @@ void orb_delay_process(Echo *delay, const float *send, float *l, float *r, uint3
 uint32_t orb_delay_length(uint32_t tempo, uint8_t steps, uint8_t mode);
 void orb_delay_clear(Echo *delay);
 uint8_t orb_delay_meter(const Echo *delay);
+struct Kit;
+struct Drums;
+Kit *orb_kit_new();
+void orb_kit_free(Kit *kit);
+bool orb_kit_load_dll(Kit *kit, const uint8_t *bytes, uint32_t size);
+void orb_kit_set(Kit *kit, uint16_t id, const int16_t *audio, uint32_t frames);
+const int16_t *orb_kit_get(const Kit *kit, uint16_t id, uint32_t *frames);
+Drums *orb_drums_new(uint8_t machine, const Kit *kit);
+void orb_drums_free(Drums *drums);
+void orb_drums_set_kit(Drums *drums, const Kit *kit);
+void orb_drums_set(Drums *drums, uint8_t ctrl, uint8_t value);
+void orb_drums_hit(Drums *drums, uint8_t column, bool accent, bool strong);
+void orb_drums_start(Drums *drums, int32_t tick);
+void orb_drums_stop(Drums *drums);
+void orb_drums_step(Drums *drums, int32_t tick, uint8_t shuffle, uint32_t tempo);
+void orb_drums_process(Drums *drums, float *out);
+void orb_drums_reset(Drums *drums);
+uint8_t *orb_drums_patterns(Drums *drums);
+void orb_drums_position(const Drums *drums, uint8_t *pattern, uint8_t *step);
 }
 
 #define ENGINE_RATE 44100.0
 #define BLOCK 64
 #define TICKS_PER_BEAT 192 // 768 to a bar, 48 to a 16th
 #define PATTERNS 32
-#define PATTERN_BYTES 98 // shuffle, length, 16 steps of note, slide, accent, up, down, rest
+#define PATTERN_BYTES 98 // the 303's: shuffle, length, 16 steps of note, slide, accent, up, down, rest
+#define DRUM_PATTERN_BYTES 194 // the 808's and 909's: shuffle, length, 16 steps of 12 columns (accent, 11 instruments)
+#define DRUM_COLUMNS 12
+#define MAX_PATTERN_BYTES DRUM_PATTERN_BYTES
 #define STEPS 16
 #define FIFO 1024
-#define MAX_PARAMS 12
+#define MAX_PARAMS 32
 #define TRANSFER_POINTS 65
 #define ACCENT_VELOCITY (100.5 / 127.0) // openDAW's default velocity is 100: above it accents
 #define STATE_VERSION 1
+#define FIRST_SAMPLE 1000 // the kit's slots are ReBirth.dll's resource ids, 1000..1045
 
 // --- the plugins and their parameters ------------------------------------------------------------------------------
 
-enum Kind : uint8_t {KIND_BASS = 0, KIND_DIST = 1, KIND_PCF = 2, KIND_COMP = 3, KIND_DELAY = 4, KIND_COUNT = 5};
+enum Kind : uint8_t {KIND_BASS = 0, KIND_DIST = 1, KIND_PCF = 2, KIND_COMP = 3, KIND_DELAY = 4, KIND_TR808 = 5, KIND_TR909 = 6,
+                     KIND_COUNT = 7};
+
+static bool is_drums(uint8_t kind) {return kind == KIND_TR808 || kind == KIND_TR909;}
+static bool is_instrument(uint8_t kind) {return kind == KIND_BASS || is_drums(kind);}
 
 enum Format : uint8_t {
     F_PERCENT,  // 0..127 as 0..100 %
@@ -164,11 +191,88 @@ static const Param delay_params[E_COUNT] = {
     {"Send", 0, 127, 100, 255, F_PERCENT, {}},
 };
 
+// The 808: the controllers of the machine (tr808.rs, RBS order) after the plugin's own Play, Pattern, Shuffle and
+// Gain. A tom's or the rim shot's and clap's switch picks the other sample of its pair (conga, claves, maracas).
+enum : clap_id {R_PLAY, R_PATTERN, R_SHUFFLE, R_GAIN};
+static const Param tr808_params[] = {
+    {"Play", 0, 1, 1, 255, F_CHOICE, {"Notes", "Pattern"}},
+    {"Pattern", 0, PATTERNS - 1, 0, 1, F_PATTERN, {}},
+    {"Shuffle", 0, 127, 0, 255, F_PERCENT, {}},
+    {"Gain", -24, 6, 0, 255, F_DB, {}},
+    {"Accent", 0, 127, 40, 2, F_PERCENT, {}},
+    {"BD Level", 0, 127, 100, 3, F_PERCENT, {}},
+    {"BD Tone", 0, 127, 64, 4, F_PERCENT, {}},
+    {"BD Decay", 0, 127, 64, 5, F_PERCENT, {}},
+    {"SD Level", 0, 127, 100, 6, F_PERCENT, {}},
+    {"SD Tone", 0, 127, 64, 7, F_PERCENT, {}},
+    {"SD Snappy", 0, 127, 64, 8, F_PERCENT, {}},
+    {"LT Level", 0, 127, 100, 9, F_PERCENT, {}},
+    {"LT Tuning", 0, 127, 64, 10, F_PERCENT, {}},
+    {"LT Select", 0, 1, 0, 11, F_CHOICE, {"Conga", "Tom"}},
+    {"MT Level", 0, 127, 100, 12, F_PERCENT, {}},
+    {"MT Tuning", 0, 127, 64, 13, F_PERCENT, {}},
+    {"MT Select", 0, 1, 0, 14, F_CHOICE, {"Conga", "Tom"}},
+    {"HT Level", 0, 127, 100, 15, F_PERCENT, {}},
+    {"HT Tuning", 0, 127, 64, 16, F_PERCENT, {}},
+    {"HT Select", 0, 1, 0, 17, F_CHOICE, {"Conga", "Tom"}},
+    {"RS Level", 0, 127, 100, 18, F_PERCENT, {}},
+    {"RS Select", 0, 1, 0, 19, F_CHOICE, {"Claves", "Rim Shot"}},
+    {"CP Level", 0, 127, 100, 20, F_PERCENT, {}},
+    {"CP Select", 0, 1, 0, 21, F_CHOICE, {"Maracas", "Clap"}},
+    {"CB Level", 0, 127, 100, 22, F_PERCENT, {}},
+    {"CY Level", 0, 127, 100, 23, F_PERCENT, {}},
+    {"CY Tone", 0, 127, 0, 24, F_PERCENT, {}},
+    {"CY Decay", 0, 127, 100, 25, F_PERCENT, {}},
+    {"OH Level", 0, 127, 100, 26, F_PERCENT, {}},
+    {"OH Decay", 0, 127, 100, 27, F_PERCENT, {}},
+    {"CH Level", 0, 127, 100, 28, F_PERCENT, {}},
+};
+
+// The 909: its controllers (tr909.rs, RBS order: 20 rim shot, 21 clap, 22 hi-hat level) after the plugin's own.
+static const Param tr909_params[] = {
+    {"Play", 0, 1, 1, 255, F_CHOICE, {"Notes", "Pattern"}},
+    {"Pattern", 0, PATTERNS - 1, 0, 1, F_PATTERN, {}},
+    {"Shuffle", 0, 127, 0, 255, F_PERCENT, {}},
+    {"Gain", -24, 6, 0, 255, F_DB, {}},
+    {"Accent", 0, 127, 32, 2, F_PERCENT, {}},
+    {"BD Level", 0, 127, 100, 3, F_PERCENT, {}},
+    {"BD Tune", 0, 127, 64, 4, F_PERCENT, {}},
+    {"BD Attack", 0, 127, 64, 5, F_PERCENT, {}},
+    {"BD Decay", 0, 127, 127, 6, F_PERCENT, {}},
+    {"SD Level", 0, 127, 100, 7, F_PERCENT, {}},
+    {"SD Tune", 0, 127, 64, 8, F_PERCENT, {}},
+    {"SD Tone", 0, 127, 64, 9, F_PERCENT, {}},
+    {"SD Snappy", 0, 127, 64, 10, F_PERCENT, {}},
+    {"LT Level", 0, 127, 100, 11, F_PERCENT, {}},
+    {"LT Tune", 0, 127, 64, 12, F_PERCENT, {}},
+    {"LT Decay", 0, 127, 127, 13, F_PERCENT, {}},
+    {"MT Level", 0, 127, 100, 14, F_PERCENT, {}},
+    {"MT Tune", 0, 127, 64, 15, F_PERCENT, {}},
+    {"MT Decay", 0, 127, 127, 16, F_PERCENT, {}},
+    {"HT Level", 0, 127, 100, 17, F_PERCENT, {}},
+    {"HT Tune", 0, 127, 64, 18, F_PERCENT, {}},
+    {"HT Decay", 0, 127, 127, 19, F_PERCENT, {}},
+    {"RS Level", 0, 127, 100, 20, F_PERCENT, {}},
+    {"CP Level", 0, 127, 100, 21, F_PERCENT, {}},
+    {"HH Level", 0, 127, 100, 22, F_PERCENT, {}},
+    {"CH Decay", 0, 127, 32, 23, F_PERCENT, {}},
+    {"OH Decay", 0, 127, 127, 24, F_PERCENT, {}},
+    {"Crash Level", 0, 127, 100, 25, F_PERCENT, {}},
+    {"Crash Tune", 0, 127, 64, 26, F_PERCENT, {}},
+    {"Ride Level", 0, 127, 100, 27, F_PERCENT, {}},
+    {"Ride Tune", 0, 127, 64, 28, F_PERCENT, {}},
+    {"Flam", 0, 127, 64, 29, F_PERCENT, {}},
+};
+#define TR808_COUNT (sizeof(tr808_params) / sizeof(tr808_params[0]))
+#define TR909_COUNT (sizeof(tr909_params) / sizeof(tr909_params[0]))
+
 struct KindInfo {
     const Param *params;
     uint32_t count;
     const char *page; // ?device=
     double panel_width;
+    // the sequencing instruments' own parameters, -1 none
+    int play, pattern, shuffle, gain;
 };
 
 // the panels' widths at 176 px, as page/index.html lays them out (its preview measures them, WIDTHS there)
@@ -177,14 +281,37 @@ struct KindInfo {
 #define PCF_PANEL_WIDTH 504
 #define COMP_PANEL_WIDTH 214
 #define DELAY_PANEL_WIDTH 412
+#define TR808_PANEL_WIDTH 1042
+#define TR909_PANEL_WIDTH 1282
 
 static const KindInfo kinds[KIND_COUNT] = {
-    {bass_params, B_COUNT, "bass", BASS_PANEL_WIDTH},
-    {dist_params, D_COUNT, "distortion", DIST_PANEL_WIDTH},
-    {pcf_params, P_COUNT, "pcf", PCF_PANEL_WIDTH},
-    {comp_params, C_COUNT, "compressor", COMP_PANEL_WIDTH},
-    {delay_params, E_COUNT, "delay", DELAY_PANEL_WIDTH},
+    {bass_params, B_COUNT, "bass", BASS_PANEL_WIDTH, B_PLAY, B_PATTERN, B_SHUFFLE, B_GAIN},
+    {dist_params, D_COUNT, "distortion", DIST_PANEL_WIDTH, -1, -1, -1, -1},
+    {pcf_params, P_COUNT, "pcf", PCF_PANEL_WIDTH, -1, -1, -1, -1},
+    {comp_params, C_COUNT, "compressor", COMP_PANEL_WIDTH, -1, -1, -1, -1},
+    {delay_params, E_COUNT, "delay", DELAY_PANEL_WIDTH, -1, -1, -1, -1},
+    {tr808_params, TR808_COUNT, "tr808", TR808_PANEL_WIDTH, R_PLAY, R_PATTERN, R_SHUFFLE, R_GAIN},
+    {tr909_params, TR909_COUNT, "tr909", TR909_PANEL_WIDTH, R_PLAY, R_PATTERN, R_SHUFFLE, R_GAIN},
 };
+
+// the drum machines' keys: General MIDI's drum map, to the pattern's columns (1 BD .. 11)
+static uint8_t drum_column(uint8_t kind, int key) {
+    switch (key) {
+        case 35: case 36: return 1;           // bass drum
+        case 38: case 40: return 2;           // snare
+        case 41: case 43: return 3;           // low tom
+        case 45: case 47: return 4;           // mid tom
+        case 48: case 50: return 5;           // high tom
+        case 37: return 6;                    // rim shot
+        case 39: return 7;                    // clap
+        case 42: case 44: return kind == KIND_TR808 ? 11 : 8; // closed hi-hat
+        case 46: return kind == KIND_TR808 ? 10 : 9;          // open hi-hat
+        case 49: case 57: return kind == KIND_TR808 ? 9 : 10; // cymbal / crash
+        case 56: return kind == KIND_TR808 ? 8 : 0;           // cowbell (808)
+        case 51: case 59: return kind == KIND_TR909 ? 11 : 0; // ride (909)
+        default: return 0;
+    }
+}
 
 // --- the page's messages -------------------------------------------------------------------------------------------
 // The shared ones (poll, parameters, hover) are opendaw_page.h's. From the page: hello (asks for the snapshot),
@@ -194,13 +321,18 @@ static const KindInfo kinds[KIND_COUNT] = {
 //             meter, u8 0, f64 values[count], then the kind's own: the distortion's transfer curve (65 f32 from -1 to
 //             1), the PCF's envelope (f32, 0..511), step (i32), its wave's length and resolution (u16 each) and 32
 //             step velocities, the delay's length in samples (u32)
-//   snapshot  the status of a 303, then its 32 patterns of 98 bytes
+//   snapshot  the status of a 303, 808 or 909, then its 32 patterns (98 or 194 bytes each); a drum machine's status
+//             has the number of its kit's slots that hold a sample at byte 5
+//   kit       from the page: u8 type, 3 bytes 0, then ReBirth.dll's bytes (PAGE_KIT_DLL); or u8 type, u8 0, u16 slot
+//             id (1000..1045), u32 frames, then the 16-bit samples at 44.1 kHz (PAGE_KIT_SLOT, 0 frames clears it)
 
 #define PAGE_HELLO 8
 #define PAGE_STEP 10
 #define PAGE_HEADER 11
 #define PAGE_PATTERN 12
 #define PAGE_COMMIT 13
+#define PAGE_KIT_DLL 14
+#define PAGE_KIT_SLOT 15
 #define PLUGIN_STATUS 1
 #define PLUGIN_SNAPSHOT 2
 #define FLAG_PLAYING 1
@@ -224,6 +356,8 @@ struct Plugin {
     Filter *pcf[2];
     Comp *comp;
     Echo *delay;
+    Drums *drums;
+    Kit *kit;
 
     // the rates: the host's, the resamplers to the engine's and back, a block in, the output's queue
     double host_rate;
@@ -249,7 +383,7 @@ struct Plugin {
     bool pattern_mode;
 
     bool snapshot_due;
-    float gain; // the 303's output gain at the end of the last block
+    float gain; // an instrument's output gain at the end of the last block
 };
 
 static Plugin *plugin_of(const clap_plugin_t *plugin) {return static_cast<Plugin *>(plugin->plugin_data);}
@@ -297,13 +431,25 @@ static void sync_params(Plugin *self) {
             case KIND_DELAY:
                 if (ctrl != 255) {orb_delay_set(self->delay, ctrl, static_cast<uint8_t>(byte));}
                 break;
+            case KIND_TR808:
+            case KIND_TR909:
+                if (ctrl != 255) {orb_drums_set(self->drums, ctrl, static_cast<uint8_t>(byte));}
+                break;
             default: break;
         }
     }
 }
 
+// the patterns of a 303, 808 or 909
+static uint8_t *patterns_of(Plugin *self) {
+    return self->kind == KIND_BASS ? orb_bass_patterns(self->bass) : orb_drums_patterns(self->drums);
+}
+
+static uint32_t pattern_bytes(const Plugin *self) {return self->kind == KIND_BASS ? PATTERN_BYTES : DRUM_PATTERN_BYTES;}
+
+// A pattern's shuffle flag is always on: the Shuffle knob alone decides (at 0 nothing moves).
 static void sanitize_pattern(uint8_t *pattern) {
-    pattern[0] = pattern[0] != 0 ? 1 : 0;
+    pattern[0] = 1;
     if (pattern[1] < 1 || pattern[1] > STEPS) {pattern[1] = STEPS;}
     for (int step = 0; step < STEPS; step++) {
         uint8_t *s = pattern + 2 + step * 6;
@@ -312,18 +458,34 @@ static void sanitize_pattern(uint8_t *pattern) {
     }
 }
 
+// A drum pattern: the accent column 0 or 1; an 808's instruments 0 or 1, a 909's 0..4 (1 on, 2 strong, 3 and 4 the
+// same with a flam).
+static void sanitize_drum_pattern(uint8_t kind, uint8_t *pattern) {
+    pattern[0] = 1;
+    if (pattern[1] < 1 || pattern[1] > STEPS) {pattern[1] = STEPS;}
+    const uint8_t top = kind == KIND_TR909 ? 4 : 1;
+    for (int step = 0; step < STEPS; step++) {
+        uint8_t *s = pattern + 2 + step * DRUM_COLUMNS;
+        s[0] = s[0] != 0 ? 1 : 0;
+        for (int i = 1; i < DRUM_COLUMNS; i++) {if (s[i] > top) {s[i] = top;}}
+    }
+}
+
+static void sanitize_any(Plugin *self, uint8_t *pattern) {
+    if (self->kind == KIND_BASS) {sanitize_pattern(pattern);} else {sanitize_drum_pattern(self->kind, pattern);}
+}
+
 // --- the factory patterns ------------------------------------------------------------------------------------------
 // Bank A, written for this port. A step: a note name (C .. B, then c for the C above), "+" an octave up, "-" down,
-// "a" accented, "s" sliding into the next step; "." a rest. A leading "~" turns the pattern's shuffle on, "/n" ends
-// it after n steps.
+// "a" accented, "s" sliding into the next step; "." a rest. "/n" ends it after n steps.
 
 static const char *factory_patterns[] = {
     "C C+a . C D#s F C+ . C . A# Ga C . D# Fs",
-    "~ C . C+a C . G-s A#- C Ca . C+ D# . C Fa C",
+    "C . C+a C . G-s A#- C Ca . C+ D# . C Fa C",
     "A- A-a A . A- E-s G- A- A-a . C A- G-s A- . Da",
     "C+a C+s G F D#a Ds C . C+a A#s G . Fa D# Cs G-",
     "/12 F#- F#-a . F# F#- C#s D# F#- . E-a F#- Bs",
-    "~ C . D# . Ca . G-s A#- C C+as C . A#- . Ga Fs",
+    "C . D# . Ca . G-s A#- C C+as C . A#- . Ga Fs",
     "D-a D- D . D-a D- Cs D . D-a D- F . D-as A- C",
     "Ca C+s Cs C+ G-a G-s G . A#-a A#- A#-s C . D#a Ds C",
 };
@@ -347,9 +509,7 @@ static void parse_pattern(const char *text, uint8_t *pattern) {
         if (*at == 0) {break;}
         const char *end = at;
         while (*end != 0 && *end != ' ') {end++;}
-        if (*at == '~') {
-            pattern[0] = 1;
-        } else if (*at == '/') {
+        if (*at == '/') {
             pattern[1] = static_cast<uint8_t>(std::atoi(at + 1));
         } else {
             uint8_t *s = pattern + 2 + step * 6;
@@ -372,10 +532,57 @@ static void parse_pattern(const char *text, uint8_t *pattern) {
     sanitize_pattern(pattern);
 }
 
+// The drum machines' bank A, written for this port: a row per instrument, a character per step ("x" on, "o" the
+// 909's strong hit, "f" a flam, "." off), the accent row first. Rows: AC BD SD LT MT HT RS CP, then the 808's CB CY OH
+// CH or the 909's CH OH CC RC (the pattern's columns).
+struct DrumPattern {
+    const char *rows[DRUM_COLUMNS];
+};
+
+static const DrumPattern factory_808[] = {
+    {{"x...x...x...x...", "x.....x...x.....", "....x.......x...", "", "", "", "", "", "", "", "", "x.x.x.x.x.x.x.x."}},
+    {{"x.......x.......", "x..x..x...x.x...", "....x.......x..x", "", "", "", "..x....x..x.....", "", "", "", "", "xxxxxxxxxxxxxxxx"}},
+    {{"....x.......x...", "x.........x.....", "....x.......x...", "", "", "", "", "............x...", "..x.....x.....x.", "x...............", "......x.......x.",
+      "x.x.x...x.x.x..."}},
+    {{"x...............", "x..x......xx....", "....x..x....x...", "......x...x.....", "....x....x......", "..x.....x.......", "", "", "", "", "", "x.xxx.xxx.xxx.xx"}},
+};
+
+static const DrumPattern factory_909[] = {
+    {{"x...x...x...x...", "x...x...x...x...", "....x.......x...", "", "", "", "", "", "x.x.x.x.x.x.x.x.", "..x...x...x...x.", "", ""}},
+    {{"....x.......x...", "x...x...x...x...", "....o.......o..x", "", "", "", "", "....x.......x...", "x.xxx.xxx.xxx.xx", "", "x...............", ""}},
+    {{"x.......x.......", "x...x...x...x...", "....x.....x.f...", "", "", "", "", "", "", "..o...o...o...o.", "", "x.x.x.x.x.x.x.x."}},
+    {{"x...x...x...x...", "x.....x...x.....", "....x.......x...", "..........x.....", "........x.....x.", "......x.....x...", "", "", "x.x.x.x.x.x.x.x.", "", "", ""}},
+};
+
+static void parse_drum_pattern(uint8_t kind, const DrumPattern &source, uint8_t *pattern) {
+    std::memset(pattern, 0, DRUM_PATTERN_BYTES);
+    pattern[1] = STEPS;
+    for (int column = 0; column < DRUM_COLUMNS; column++) {
+        const char *row = source.rows[column];
+        for (int step = 0; step < STEPS && row != nullptr && row[step] != 0; step++) {
+            const char c = row[step];
+            uint8_t v = c == 'x' ? 1 : c == 'o' ? 2 : c == 'f' ? 3 : 0;
+            if (kind == KIND_TR808 && v > 1) {v = 1;}
+            pattern[2 + step * DRUM_COLUMNS + column] = v;
+        }
+    }
+    sanitize_drum_pattern(kind, pattern);
+}
+
 static void load_factory_patterns(Plugin *self) {
-    uint8_t *patterns = orb_bass_patterns(self->bass);
-    const int count = static_cast<int>(sizeof(factory_patterns) / sizeof(factory_patterns[0]));
-    for (int p = 0; p < count; p++) {parse_pattern(factory_patterns[p], patterns + p * PATTERN_BYTES);}
+    uint8_t *patterns = patterns_of(self);
+    if (self->kind == KIND_BASS) {
+        const int count = static_cast<int>(sizeof(factory_patterns) / sizeof(factory_patterns[0]));
+        for (int p = 0; p < count; p++) {parse_pattern(factory_patterns[p], patterns + p * PATTERN_BYTES);}
+        for (int p = 0; p < PATTERNS; p++) {sanitize_pattern(patterns + p * PATTERN_BYTES);}
+        return;
+    }
+    const DrumPattern *bank = self->kind == KIND_TR808 ? factory_808 : factory_909;
+    const int count = 4;
+    for (int p = 0; p < PATTERNS; p++) {
+        uint8_t *pattern = patterns + p * DRUM_PATTERN_BYTES;
+        if (p < count) {parse_drum_pattern(self->kind, bank[p], pattern);} else {sanitize_drum_pattern(self->kind, pattern);}
+    }
 }
 
 // --- the transport and the notes -----------------------------------------------------------------------------------
@@ -392,6 +599,7 @@ static int32_t tick_at(const Plugin *self, uint32_t frame) {
 
 static void release_notes(Plugin *self) {
     self->held_count = 0;
+    if (self->kind != KIND_BASS) {return;}
     if (self->sounding >= 0 && self->bass != nullptr) {orb_bass_note_off(self->bass);}
     self->sounding = -1;
 }
@@ -402,7 +610,17 @@ static void play_key(Plugin *self, int key, double velocity, bool glide) {
 }
 
 static void note_on(Plugin *self, int key, double velocity) {
-    if (key < 0 || key > 127 || self->pattern_mode) {return;}
+    if (key < 0 || key > 127) {return;}
+    if (is_drums(self->kind)) {
+        // a drum machine plays notes in both modes: velocity above 100 accents (the 909: its strong hit)
+        const uint8_t column = drum_column(self->kind, key);
+        if (column == 0) {return;}
+        const bool loud = velocity > ACCENT_VELOCITY;
+        if (self->kind == KIND_TR808) {orb_drums_hit(self->drums, column, loud, false);}
+        else {orb_drums_hit(self->drums, column, false, loud);}
+        return;
+    }
+    if (self->pattern_mode) {return;}
     // a key held already moves to the top
     uint32_t at = 0;
     for (uint32_t i = 0; i < self->held_count; i++) {if (self->held[i] != key) {self->held[at++] = self->held[i];}}
@@ -413,7 +631,7 @@ static void note_on(Plugin *self, int key, double velocity) {
 }
 
 static void note_off(Plugin *self, int key) {
-    if (key < 0 || key > 127 || self->pattern_mode) {return;}
+    if (key < 0 || key > 127 || self->kind != KIND_BASS || self->pattern_mode) {return;}
     uint32_t at = 0;
     for (uint32_t i = 0; i < self->held_count; i++) {if (self->held[i] != key) {self->held[at++] = self->held[i];}}
     self->held_count = at;
@@ -437,7 +655,7 @@ static void handle_event(Plugin *self, const clap_event_header_t *header) {
         }
         case CLAP_EVENT_NOTE_ON: {
             const clap_event_note_t *note = reinterpret_cast<const clap_event_note_t *>(header);
-            if (self->kind == KIND_BASS) {
+            if (is_instrument(self->kind)) {
                 if (note->velocity <= 0.0) {note_off(self, note->key);} else {note_on(self, note->key, note->velocity);}
             }
             break;
@@ -445,14 +663,14 @@ static void handle_event(Plugin *self, const clap_event_header_t *header) {
         case CLAP_EVENT_NOTE_OFF:
         case CLAP_EVENT_NOTE_CHOKE: {
             const clap_event_note_t *note = reinterpret_cast<const clap_event_note_t *>(header);
-            if (self->kind == KIND_BASS) {
+            if (is_instrument(self->kind)) {
                 if (note->key < 0) {release_notes(self);} else {note_off(self, note->key);}
             }
             break;
         }
         case CLAP_EVENT_MIDI: {
             const clap_event_midi_t *midi = reinterpret_cast<const clap_event_midi_t *>(header);
-            if (self->kind != KIND_BASS) {break;}
+            if (!is_instrument(self->kind)) {break;}
             const uint8_t status = midi->data[0] & 0xF0;
             if (status == 0x90 && midi->data[2] > 0) {note_on(self, midi->data[1], midi->data[2] / 127.0);}
             else if (status == 0x80 || status == 0x90) {note_off(self, midi->data[1]);}
@@ -479,7 +697,10 @@ static void run_transport(Plugin *self, uint32_t frame, int32_t *tick, bool *adv
     if (self->transport_playing) {
         const int32_t t = tick_at(self, frame);
         const bool jumped = !self->was_playing || t < self->last_tick || t > self->last_tick + TICKS_PER_BEAT;
-        if (jumped && self->kind == KIND_BASS && self->pattern_mode) {orb_bass_start(self->bass, t);}
+        if (jumped && self->pattern_mode) {
+            if (self->kind == KIND_BASS) {orb_bass_start(self->bass, t);}
+            else if (is_drums(self->kind)) {orb_drums_start(self->drums, t);}
+        }
         *advanced = jumped || t > self->last_tick;
         self->last_tick = t;
         self->free_tick = t;
@@ -489,7 +710,10 @@ static void run_transport(Plugin *self, uint32_t frame, int32_t *tick, bool *adv
     }
     if (self->was_playing) {
         self->was_playing = false;
-        if (self->kind == KIND_BASS && self->pattern_mode) {orb_bass_stop(self->bass);}
+        if (self->pattern_mode) {
+            if (self->kind == KIND_BASS) {orb_bass_stop(self->bass);}
+            else if (is_drums(self->kind)) {orb_drums_stop(self->drums);}
+        }
     }
     self->free_tick += tempo_of(self) / 60.0 * TICKS_PER_BEAT * BLOCK / ENGINE_RATE;
     *tick = static_cast<int32_t>(self->free_tick);
@@ -499,12 +723,12 @@ static void run_block(Plugin *self, uint32_t frame) {
     sync_params(self);
     int32_t tick;
     bool advanced;
-    // the 303's mode follows its parameter at a block
-    if (self->kind == KIND_BASS) {
-        const bool pattern = self->values[B_PLAY] != 0.0;
+    // an instrument's mode follows its parameter at a block
+    if (is_instrument(self->kind)) {
+        const bool pattern = self->values[self->info->play] != 0.0;
         if (pattern != self->pattern_mode) {
             release_notes(self);
-            orb_bass_stop(self->bass);
+            if (self->kind == KIND_BASS) {orb_bass_stop(self->bass);} else {orb_drums_stop(self->drums);}
             self->pattern_mode = pattern;
             if (pattern && self->transport_playing) {self->was_playing = false;} // starts at the next block
         }
@@ -516,14 +740,13 @@ static void run_block(Plugin *self, uint32_t frame) {
                 orb_bass_step(self->bass, tick, static_cast<uint8_t>(self->values[B_SHUFFLE]), engine_tempo(self));
             }
             orb_bass_process(self->bass, self->out[0]);
-            {
-                // the output gain, ramped over the block
-                const float target = static_cast<float>(std::pow(10.0, self->values[B_GAIN] / 20.0));
-                const float step = (target - self->gain) / BLOCK;
-                for (int i = 0; i < BLOCK; i++) {self->out[0][i] *= self->gain + step * (i + 1);}
-                self->gain = target;
+            break;
+        case KIND_TR808:
+        case KIND_TR909:
+            if (self->pattern_mode && self->transport_playing && advanced && tick >= 0) {
+                orb_drums_step(self->drums, tick, static_cast<uint8_t>(self->values[R_SHUFFLE]), engine_tempo(self));
             }
-            std::memcpy(self->out[1], self->out[0], sizeof(self->out[0]));
+            orb_drums_process(self->drums, self->out[0]);
             break;
         case KIND_DIST:
             for (int c = 0; c < 2; c++) {
@@ -552,6 +775,14 @@ static void run_block(Plugin *self, uint32_t frame) {
         }
         default: break;
     }
+    if (is_instrument(self->kind)) {
+        // the output gain, ramped over the block; mono to both sides
+        const float target = static_cast<float>(std::pow(10.0, self->values[self->info->gain] / 20.0));
+        const float step = (target - self->gain) / BLOCK;
+        for (int i = 0; i < BLOCK; i++) {self->out[0][i] *= self->gain + step * (i + 1);}
+        self->gain = target;
+        std::memcpy(self->out[1], self->out[0], sizeof(self->out[0]));
+    }
     for (int i = 0; i < BLOCK; i++) {
         self->up.push(self->out[0][i], self->out[1][i], [self](float l, float r) {push_out(self, l, r);});
     }
@@ -566,7 +797,7 @@ static void configure(Plugin *self) {
     std::memset(self->fifo, 0, sizeof(self->fifo));
     self->fifo_read = 0;
     const double ratio = self->host_rate / ENGINE_RATE;
-    self->latency = self->kind == KIND_BASS ? 0
+    self->latency = is_instrument(self->kind) ? 0
         : static_cast<uint32_t>(self->down.delay() + std::ceil(BLOCK * ratio) + std::ceil(self->up.delay() * ratio) + 2);
     self->fifo_write = self->latency;
 }
@@ -574,6 +805,7 @@ static void configure(Plugin *self) {
 static void reset_devices(Plugin *self) {
     release_notes(self);
     if (self->bass != nullptr) {orb_bass_reset(self->bass);}
+    if (self->drums != nullptr) {orb_drums_reset(self->drums);}
     if (self->delay != nullptr) {orb_delay_clear(self->delay);}
     self->was_playing = false;
     self->last_tick = -1;
@@ -595,6 +827,8 @@ static void plugin_destroy(const clap_plugin_t *plugin) {
     for (Filter *f : self->pcf) {if (f != nullptr) {orb_pcf_free(f);}}
     if (self->comp != nullptr) {orb_comp_free(self->comp);}
     if (self->delay != nullptr) {orb_delay_free(self->delay);}
+    if (self->drums != nullptr) {orb_drums_free(self->drums);}
+    if (self->kit != nullptr) {orb_kit_free(self->kit);}
     self->~Plugin();
     std::free(self);
 }
@@ -638,7 +872,7 @@ static clap_process_status plugin_process(const clap_plugin_t *plugin, const cla
     const clap_input_events_t *in_events = process->in_events;
     const uint32_t count = in_events->size(in_events);
     uint32_t event = 0;
-    const bool effect = self->kind != KIND_BASS;
+    const bool effect = !is_instrument(self->kind);
     const float *in_l = nullptr, *in_r = nullptr;
     if (effect && process->audio_inputs_count > 0 && process->audio_inputs[0].data32 != nullptr) {
         in_l = process->audio_inputs[0].data32[0];
@@ -682,11 +916,11 @@ static clap_process_status plugin_process(const clap_plugin_t *plugin, const cla
 // --- audio and note ports ------------------------------------------------------------------------------------------
 
 static uint32_t audio_ports_count(const clap_plugin_t *plugin, bool is_input) {
-    return is_input && plugin_of(plugin)->kind == KIND_BASS ? 0 : 1;
+    return is_input && is_instrument(plugin_of(plugin)->kind) ? 0 : 1;
 }
 
 static bool audio_ports_get(const clap_plugin_t *plugin, uint32_t index, bool is_input, clap_audio_port_info_t *info) {
-    if (index != 0 || (is_input && plugin_of(plugin)->kind == KIND_BASS)) {return false;}
+    if (index != 0 || (is_input && is_instrument(plugin_of(plugin)->kind))) {return false;}
     std::memset(info, 0, sizeof(*info));
     info->id = is_input ? 0 : 1;
     std::snprintf(info->name, sizeof(info->name), "%s", is_input ? "Input" : "Output");
@@ -700,11 +934,11 @@ static bool audio_ports_get(const clap_plugin_t *plugin, uint32_t index, bool is
 static const clap_plugin_audio_ports_t audio_ports = {audio_ports_count, audio_ports_get};
 
 static uint32_t note_ports_count(const clap_plugin_t *plugin, bool is_input) {
-    return is_input && plugin_of(plugin)->kind == KIND_BASS ? 1 : 0;
+    return is_input && is_instrument(plugin_of(plugin)->kind) ? 1 : 0;
 }
 
 static bool note_ports_get(const clap_plugin_t *plugin, uint32_t index, bool is_input, clap_note_port_info_t *info) {
-    if (index != 0 || !is_input || plugin_of(plugin)->kind != KIND_BASS) {return false;}
+    if (index != 0 || !is_input || !is_instrument(plugin_of(plugin)->kind)) {return false;}
     std::memset(info, 0, sizeof(*info));
     info->id = 0;
     info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
@@ -849,46 +1083,68 @@ static const clap_plugin_params_t params = {
 };
 
 // --- state ---------------------------------------------------------------------------------------------------------
-// "ORB1", the kind, the version, two bytes 0, the parameters (f64 each, in id order), then the 303's 32 patterns (98
-// bytes each, as the device keeps them). The layout never moves: a step's edit changes its 6 bytes.
+// "ORB1", the kind, the version, two bytes 0, the parameters (f64 each, in id order), then a 303's, 808's or 909's 32
+// patterns (98 or 194 bytes each, as the device keeps them), then a drum machine's kit: for each of its slots (the 808
+// 1000..1023, the 909 1025..1045) a u32 frame count and the 16-bit samples. The layout up to the kit never moves: a
+// step's edit changes its own bytes.
 
 #define STATE_HEADER 8
 
-static uint32_t state_size(const Plugin *self) {
-    return STATE_HEADER + self->info->count * 8 + (self->kind == KIND_BASS ? PATTERNS * PATTERN_BYTES : 0);
+static uint16_t kit_first(const Plugin *self) {return self->kind == KIND_TR808 ? 1000 : 1025;}
+static uint16_t kit_last(const Plugin *self) {return self->kind == KIND_TR808 ? 1023 : 1045;}
+
+static uint32_t fixed_state_size(const Plugin *self) {
+    const uint32_t patterns = self->kind == KIND_BASS || is_drums(self->kind) ? PATTERNS * pattern_bytes(self) : 0;
+    return STATE_HEADER + self->info->count * 8 + patterns;
 }
 
-static bool state_save(const clap_plugin_t *plugin, const clap_ostream_t *stream) {
-    const Plugin *self = plugin_of(plugin);
-    uint8_t bytes[STATE_HEADER + MAX_PARAMS * 8 + PATTERNS * PATTERN_BYTES] = {};
-    std::memcpy(bytes, "ORB1", 4);
-    bytes[4] = self->kind;
-    bytes[5] = STATE_VERSION;
-    std::memcpy(bytes + STATE_HEADER, self->values, self->info->count * 8);
-    if (self->kind == KIND_BASS) {
-        std::memcpy(bytes + STATE_HEADER + self->info->count * 8, orb_bass_patterns(self->bass), PATTERNS * PATTERN_BYTES);
-    }
-    const int64_t size = state_size(self);
-    int64_t written = 0;
+static bool write_all(const clap_ostream_t *stream, const uint8_t *bytes, uint64_t size) {
+    uint64_t written = 0;
     while (written < size) {
-        const int64_t result = stream->write(stream, bytes + written, static_cast<uint64_t>(size - written));
+        const int64_t result = stream->write(stream, bytes + written, size - written);
         if (result <= 0) {return false;}
-        written += result;
+        written += static_cast<uint64_t>(result);
     }
     return true;
 }
 
+static bool state_save(const clap_plugin_t *plugin, const clap_ostream_t *stream) {
+    Plugin *self = plugin_of(plugin);
+    uint8_t bytes[STATE_HEADER + MAX_PARAMS * 8 + PATTERNS * MAX_PATTERN_BYTES] = {};
+    std::memcpy(bytes, "ORB1", 4);
+    bytes[4] = self->kind;
+    bytes[5] = STATE_VERSION;
+    std::memcpy(bytes + STATE_HEADER, self->values, self->info->count * 8);
+    if (self->kind == KIND_BASS || is_drums(self->kind)) {
+        std::memcpy(bytes + STATE_HEADER + self->info->count * 8, patterns_of(self), PATTERNS * pattern_bytes(self));
+    }
+    if (!write_all(stream, bytes, fixed_state_size(self))) {return false;}
+    if (!is_drums(self->kind)) {return true;}
+    for (uint16_t id = kit_first(self); id <= kit_last(self); id++) {
+        uint32_t frames = 0;
+        const int16_t *audio = orb_kit_get(self->kit, id, &frames);
+        if (!write_all(stream, reinterpret_cast<const uint8_t *>(&frames), 4)) {return false;}
+        if (frames > 0 && !write_all(stream, reinterpret_cast<const uint8_t *>(audio), frames * 2ull)) {return false;}
+    }
+    return true;
+}
+
+static uint64_t read_all(const clap_istream_t *stream, uint8_t *bytes, uint64_t size) {
+    uint64_t read = 0;
+    while (read < size) {
+        const int64_t result = stream->read(stream, bytes + read, size - read);
+        if (result <= 0) {break;}
+        read += static_cast<uint64_t>(result);
+    }
+    return read;
+}
+
 static bool state_load(const clap_plugin_t *plugin, const clap_istream_t *stream) {
     Plugin *self = plugin_of(plugin);
-    uint8_t bytes[STATE_HEADER + MAX_PARAMS * 8 + PATTERNS * PATTERN_BYTES];
-    const int64_t size = state_size(self);
-    int64_t read = 0;
-    while (read < size) {
-        const int64_t result = stream->read(stream, bytes + read, static_cast<uint64_t>(size - read));
-        if (result <= 0) {break;}
-        read += result;
-    }
-    if (read < size || std::memcmp(bytes, "ORB1", 4) != 0 || bytes[4] != self->kind || bytes[5] != STATE_VERSION) {
+    uint8_t bytes[STATE_HEADER + MAX_PARAMS * 8 + PATTERNS * MAX_PATTERN_BYTES];
+    const uint64_t size = fixed_state_size(self);
+    if (read_all(stream, bytes, size) < size || std::memcmp(bytes, "ORB1", 4) != 0 || bytes[4] != self->kind
+        || bytes[5] != STATE_VERSION) {
         return false;
     }
     for (clap_id id = 0; id < self->info->count; id++) {
@@ -896,10 +1152,25 @@ static bool state_load(const clap_plugin_t *plugin, const clap_istream_t *stream
         std::memcpy(&value, bytes + STATE_HEADER + id * 8, 8);
         set_value(self, id, value);
     }
-    if (self->kind == KIND_BASS) {
-        uint8_t *patterns = orb_bass_patterns(self->bass);
-        std::memcpy(patterns, bytes + STATE_HEADER + self->info->count * 8, PATTERNS * PATTERN_BYTES);
-        for (int p = 0; p < PATTERNS; p++) {sanitize_pattern(patterns + p * PATTERN_BYTES);}
+    if (self->kind == KIND_BASS || is_drums(self->kind)) {
+        uint8_t *patterns = patterns_of(self);
+        const uint32_t each = pattern_bytes(self);
+        std::memcpy(patterns, bytes + STATE_HEADER + self->info->count * 8, PATTERNS * each);
+        for (int p = 0; p < PATTERNS; p++) {sanitize_any(self, patterns + p * each);}
+    }
+    if (is_drums(self->kind)) {
+        // the kit: a slot the state lacks (an older or shorter one) stays empty
+        for (uint16_t id = kit_first(self); id <= kit_last(self); id++) {
+            uint32_t frames = 0;
+            if (read_all(stream, reinterpret_cast<uint8_t *>(&frames), 4) < 4 || frames > 44100u * 60u) {frames = 0;}
+            int16_t *audio = frames > 0 ? static_cast<int16_t *>(std::malloc(frames * 2ull)) : nullptr;
+            if (audio != nullptr && read_all(stream, reinterpret_cast<uint8_t *>(audio), frames * 2ull) < frames * 2ull) {
+                frames = 0;
+            }
+            orb_kit_set(self->kit, id, audio, audio != nullptr ? frames : 0);
+            std::free(audio);
+        }
+        orb_drums_set_kit(self->drums, self->kit);
     }
     self->snapshot_due = true;
     return true;
@@ -926,7 +1197,7 @@ static bool webview_get_resource(const clap_plugin_t *plugin, const char *path, 
     return false;
 }
 
-static uint32_t write_status(const Plugin *self, uint8_t *message, uint8_t type) {
+static uint32_t write_status(Plugin *self, uint8_t *message, uint8_t type) {
     std::memset(message, 0, 8);
     message[0] = type;
     message[1] = self->kind;
@@ -967,6 +1238,20 @@ static uint32_t write_status(const Plugin *self, uint8_t *message, uint8_t type)
         case KIND_COMP:
             orb_comp_meters(self->comp, message + 5, message + 6);
             break;
+        case KIND_TR808:
+        case KIND_TR909: {
+            message[2] = self->was_playing ? FLAG_PLAYING : 0;
+            orb_drums_position(self->drums, message + 3, message + 4);
+            if (!self->pattern_mode || !self->was_playing) {message[4] = 255;}
+            uint8_t loaded = 0;
+            for (uint16_t id = kit_first(self); id <= kit_last(self); id++) {
+                uint32_t frames = 0;
+                orb_kit_get(self->kit, id, &frames);
+                if (frames > 0) {loaded++;}
+            }
+            message[5] = loaded;
+            break;
+        }
         case KIND_DELAY: {
             message[5] = orb_delay_meter(self->delay);
             const uint32_t length = orb_delay_length(engine_tempo(self), static_cast<uint8_t>(byte_of(self, E_STEPS)),
@@ -981,11 +1266,11 @@ static uint32_t write_status(const Plugin *self, uint8_t *message, uint8_t type)
 }
 
 static void send_status(Plugin *self) {
-    uint8_t message[8 + MAX_PARAMS * 8 + TRANSFER_POINTS * 4 + PATTERNS * PATTERN_BYTES];
-    if (self->snapshot_due && self->kind == KIND_BASS) {
+    static uint8_t message[8 + MAX_PARAMS * 8 + TRANSFER_POINTS * 4 + PATTERNS * MAX_PATTERN_BYTES];
+    if (self->snapshot_due && (self->kind == KIND_BASS || is_drums(self->kind))) {
         uint32_t at = write_status(self, message, PLUGIN_SNAPSHOT);
-        std::memcpy(message + at, orb_bass_patterns(self->bass), PATTERNS * PATTERN_BYTES);
-        at += PATTERNS * PATTERN_BYTES;
+        std::memcpy(message + at, patterns_of(self), PATTERNS * pattern_bytes(self));
+        at += PATTERNS * pattern_bytes(self);
         self->snapshot_due = false;
         self->page.send(message, at);
         return;
@@ -1021,28 +1306,56 @@ static bool webview_receive(const clap_plugin_t *plugin, const void *buffer, uin
             send_status(self);
             return true;
         case PAGE_STEP: {
-            // u8 type, u8 pattern, u8 step, u8 0, 6 bytes: the step
-            if (self->kind != KIND_BASS || size < 10 || bytes[1] >= PATTERNS || bytes[2] >= STEPS) {return false;}
-            uint8_t *pattern = orb_bass_patterns(self->bass) + bytes[1] * PATTERN_BYTES;
-            std::memcpy(pattern + 2 + bytes[2] * 6, bytes + 4, 6);
-            sanitize_pattern(pattern);
+            // u8 type, u8 pattern, u8 step, u8 0, the step's bytes (6 for a 303, 12 for an 808 or 909)
+            if (self->kind != KIND_BASS && !is_drums(self->kind)) {return false;}
+            const uint32_t width = self->kind == KIND_BASS ? 6 : DRUM_COLUMNS;
+            if (size < 4 + width || bytes[1] >= PATTERNS || bytes[2] >= STEPS) {return false;}
+            uint8_t *pattern = patterns_of(self) + bytes[1] * pattern_bytes(self);
+            std::memcpy(pattern + 2 + bytes[2] * width, bytes + 4, width);
+            sanitize_any(self, pattern);
             return true;
         }
         case PAGE_HEADER: {
-            // u8 type, u8 pattern, u8 shuffle, u8 length
-            if (self->kind != KIND_BASS || size < 4 || bytes[1] >= PATTERNS) {return false;}
-            uint8_t *pattern = orb_bass_patterns(self->bass) + bytes[1] * PATTERN_BYTES;
-            pattern[0] = bytes[2];
+            // u8 type, u8 pattern, u8 0 (the shuffle switch that was), u8 length
+            if ((self->kind != KIND_BASS && !is_drums(self->kind)) || size < 4 || bytes[1] >= PATTERNS) {return false;}
+            uint8_t *pattern = patterns_of(self) + bytes[1] * pattern_bytes(self);
             pattern[1] = bytes[3];
-            sanitize_pattern(pattern);
+            sanitize_any(self, pattern);
             return true;
         }
         case PAGE_PATTERN: {
-            // u8 type, u8 pattern, u16 0, 98 bytes: the pattern
-            if (self->kind != KIND_BASS || size < 4 + PATTERN_BYTES || bytes[1] >= PATTERNS) {return false;}
-            uint8_t *pattern = orb_bass_patterns(self->bass) + bytes[1] * PATTERN_BYTES;
-            std::memcpy(pattern, bytes + 4, PATTERN_BYTES);
-            sanitize_pattern(pattern);
+            // u8 type, u8 pattern, u16 0, the pattern's bytes
+            if (self->kind != KIND_BASS && !is_drums(self->kind)) {return false;}
+            if (size < 4 + pattern_bytes(self) || bytes[1] >= PATTERNS) {return false;}
+            uint8_t *pattern = patterns_of(self) + bytes[1] * pattern_bytes(self);
+            std::memcpy(pattern, bytes + 4, pattern_bytes(self));
+            sanitize_any(self, pattern);
+            return true;
+        }
+        case PAGE_KIT_DLL: {
+            // u8 type, 3 bytes 0, ReBirth.dll: every slot from its AIFF resources
+            if (!is_drums(self->kind) || size < 5) {return false;}
+            if (!orb_kit_load_dll(self->kit, bytes + 4, size - 4)) {return false;}
+            orb_drums_set_kit(self->drums, self->kit);
+            self->snapshot_due = true;
+            if (self->page.state != nullptr) {self->page.state->mark_dirty(self->page.host);}
+            return true;
+        }
+        case PAGE_KIT_SLOT: {
+            // u8 type, u8 0, u16 slot id, u32 frames, the 16-bit samples
+            if (!is_drums(self->kind) || size < 8) {return false;}
+            uint16_t id;
+            uint32_t frames;
+            std::memcpy(&id, bytes + 2, 2);
+            std::memcpy(&frames, bytes + 4, 4);
+            if (id < kit_first(self) || id > kit_last(self) || size < 8 + frames * 2ull) {return false;}
+            int16_t *audio = frames > 0 ? static_cast<int16_t *>(std::malloc(frames * 2ull)) : nullptr;
+            if (audio != nullptr) {std::memcpy(audio, bytes + 8, frames * 2ull);}
+            orb_kit_set(self->kit, id, audio, audio != nullptr ? frames : 0);
+            std::free(audio);
+            orb_drums_set_kit(self->drums, self->kit);
+            self->snapshot_due = true;
+            if (self->page.state != nullptr) {self->page.state->mark_dirty(self->page.host);}
             return true;
         }
         case PAGE_COMMIT:
@@ -1073,7 +1386,7 @@ static const opendaw_plugin_device_panel_t device_panel = {panel_get_uri, panel_
 static const void *plugin_get_extension(const clap_plugin_t *plugin, const char *id) {
     const Plugin *self = plugin_of(plugin);
     if (std::strcmp(id, CLAP_EXT_AUDIO_PORTS) == 0) {return &audio_ports;}
-    if (std::strcmp(id, CLAP_EXT_NOTE_PORTS) == 0 && self->kind == KIND_BASS) {return &note_ports;}
+    if (std::strcmp(id, CLAP_EXT_NOTE_PORTS) == 0 && is_instrument(self->kind)) {return &note_ports;}
     if (std::strcmp(id, CLAP_EXT_LATENCY) == 0) {return &latency;}
     if (std::strcmp(id, CLAP_EXT_PARAMS) == 0) {return &params;}
     if (std::strcmp(id, CLAP_EXT_STATE) == 0) {return &state;}
@@ -1099,6 +1412,10 @@ static const char *comp_features[] = {CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLU
                                       CLAP_PLUGIN_FEATURE_STEREO, PANEL_FEATURES(COMP_PANEL_WIDTH), nullptr};
 static const char *delay_features[] = {CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_DELAY,
                                        CLAP_PLUGIN_FEATURE_STEREO, PANEL_FEATURES(DELAY_PANEL_WIDTH), nullptr};
+static const char *tr808_features[] = {CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_DRUM_MACHINE,
+                                       CLAP_PLUGIN_FEATURE_MONO, PANEL_FEATURES(TR808_PANEL_WIDTH), nullptr};
+static const char *tr909_features[] = {CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_DRUM_MACHINE,
+                                       CLAP_PLUGIN_FEATURE_MONO, PANEL_FEATURES(TR909_PANEL_WIDTH), nullptr};
 
 static const clap_plugin_descriptor_t descriptors[KIND_COUNT] = {
     {CLAP_VERSION_INIT, "studio.opendaw.openrb.bass", "OpenRB 303", "open-webclap", URL, URL, "", "0.1.0",
@@ -1111,6 +1428,10 @@ static const clap_plugin_descriptor_t descriptors[KIND_COUNT] = {
      "OpenRB-338's compressor, linked stereo as on its master", comp_features},
     {CLAP_VERSION_INIT, "studio.opendaw.openrb.delay", "OpenRB Delay", "open-webclap", URL, URL, "", "0.1.0",
      "OpenRB-338's tempo synced delay in 16ths or 8th triplets", delay_features},
+    {CLAP_VERSION_INIT, "studio.opendaw.openrb.tr808", "OpenRB 808", "open-webclap", URL, URL, "", "0.1.0",
+     "OpenRB-338's TR-808 on the samples you bring (ReBirth.dll), played by notes or by its own patterns", tr808_features},
+    {CLAP_VERSION_INIT, "studio.opendaw.openrb.tr909", "OpenRB 909", "open-webclap", URL, URL, "", "0.1.0",
+     "OpenRB-338's TR-909 on the samples you bring (ReBirth.dll), played by notes or by its own patterns", tr909_features},
 };
 
 static const clap_plugin_t *create(const clap_plugin_factory_t *factory, const clap_host_t *host, const char *plugin_id) {
@@ -1135,6 +1456,13 @@ static const clap_plugin_t *create(const clap_plugin_factory_t *factory, const c
         case KIND_PCF: self->pcf[0] = orb_pcf_new(); self->pcf[1] = orb_pcf_new(); break;
         case KIND_COMP: self->comp = orb_comp_new(); break;
         case KIND_DELAY: self->delay = orb_delay_new(); break;
+        case KIND_TR808:
+        case KIND_TR909:
+            // no samples until the user brings them
+            self->kit = orb_kit_new();
+            self->drums = orb_drums_new(self->kind == KIND_TR808 ? 0 : 1, self->kit);
+            load_factory_patterns(self);
+            break;
         default: break;
     }
     self->sounding = -1;

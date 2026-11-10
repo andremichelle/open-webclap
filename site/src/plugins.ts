@@ -268,6 +268,22 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
     },
     {
+        id: "openrb-808", name: "OpenRB 808", kind: "instrument",
+        description: "OpenRB-338's TR-808 on the samples you bring (ReBirth.dll or sample files), played by notes or by its own patterns",
+        clapId: "studio.opendaw.openrb.tr808",
+        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
+        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+    },
+    {
+        id: "openrb-909", name: "OpenRB 909", kind: "instrument",
+        description: "OpenRB-338's TR-909 on the samples you bring (ReBirth.dll or sample files), played by notes or by its own patterns",
+        clapId: "studio.opendaw.openrb.tr909",
+        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
+        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+    },
+    {
         id: "glitchfest", name: "Glitchfest", kind: "audio-fx",
         description: "Glitch effect: twelve rows of stutter, tape, pitch and more, blocks drawn into patterns on the transport",
         clapId: "studio.opendaw.commons.glitchfest",

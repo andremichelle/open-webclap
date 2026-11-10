@@ -10,8 +10,11 @@ the bit-exact reimplementation of ReBirth RB-338 2.01's engine, as five WebCLAP 
 | OpenRB PCF | `studio.opendaw.openrb.pcf` | audio effect |
 | OpenRB Compressor | `studio.opendaw.openrb.compressor` | audio effect |
 | OpenRB Delay | `studio.opendaw.openrb.delay` | audio effect |
+| OpenRB 808 | `studio.opendaw.openrb.tr808` | instrument |
+| OpenRB 909 | `studio.opendaw.openrb.tr909` | instrument |
 
-The TR-808 and TR-909 are not ported: they play ReBirth's own drum samples, which are Propellerhead's material.
+The TR-808 and TR-909 play ReBirth's own drum samples, which are Reason Studios' (Propellerhead's) recordings. This
+port ships none of them: the user brings them (see Behaviour).
 
 ## How
 
@@ -32,8 +35,21 @@ The TR-808 and TR-909 are not ported: they play ReBirth's own drum samples, whic
   rest, a drag draws; the ACC and SLD rows toggle. Play: Pattern (the default) plays the patterns, Play: Notes takes notes (velocity above 100 accents, a legato note slides, MIDI notes too; C2 is the
   lowest C at the middle tune). Play: Pattern plays its 32 patterns (A1..D8, 16 steps of note, up, down, accent,
   slide, rest) on the host's transport: a new pattern starts at the next bar line, Shuffle delays the second 16th of
-  each 8th in patterns with their shuffle on. Sound: 2.0 or Vintage (song-wide in the original). Gain (-24 to +6 dB, 0 the engine's own level) is the port's:
+  each 8th. Sound: 2.0 or Vintage (song-wide in the original). Gain (-24 to +6 dB, 0 the engine's own level) is the port's:
   the original's accents pass 0 dB before its mixer turns them down.
+- **808, 909**: silent until they have samples. Drop `ReBirth.dll` on the panel (the free download of the ReBirth
+  Museum; the plugin reads its 46 AIFF resources with the engine's own `SampleSet::from_dll`), or sample files named
+  as their slots (808: `BD`, `SD1`..`SD5`, `N1`..`N4`, `CB`, `CH`, `CL`, `CP`, `CY`, `HC`, `HT`, `LC`, `LT`, `MA`,
+  `MC`, `MT`, `OH`, `RS`; 909: `bd1`..`bd4`, `sd1`..`sd5`, `sdn1`..`sdn3`, `lt`, `mt`, `ht`, `rs`, `hc`, `chh`, `ohh`,
+  `ccy`, `rcy`; any format the browser decodes, taken as 44.1 kHz mono), or click the empty screen to choose them.
+  The samples live in the plugin's state (only the machine's own slots). Mods (`.rbm`) are not read: upstream's mod
+  crate carries ReBirth's standard kit and part of its decryption key. Notes on General MIDI's drum keys play the
+  instruments in both modes (velocity above 100 accents, on the 909 its strong hit); Play: Pattern (the default) runs
+  the 32 patterns on the transport, bank A with four factory patterns each. The step grid on the panel: a click
+  toggles a step (909: off, on, strong; Alt its flam), dragging paints along the row. Upstream's `trigger` is made
+  public for the notes (`patches/openrb-338-note-trigger.patch`).
+- **Shuffle** (303, 808, 909) is one knob: every pattern shuffles, at 0 nothing moves (the original's per-pattern
+  switch is always on).
 - **PCF**: its 55 patterns follow the host's beat position while it plays and run on at its tempo while it stops.
 - **Delay**: steps of 16ths or 8th triplets at the host's tempo; Send is the mixer's send knob (the dry signal
   passes), each instance has its own line.
@@ -43,7 +59,7 @@ The TR-808 and TR-909 are not ported: they play ReBirth's own drum samples, whic
 
 ```sh
 rustup target add wasm32-unknown-emscripten
-scripts/build-openrb.sh   # build/openrb/openrb.wclap.tar.gz, then node ports/openrb/check.mjs (20 checks)
+scripts/build-openrb.sh   # build/openrb/openrb.wclap.tar.gz, then node ports/openrb/check.mjs (24 checks)
 ```
 
 Rust's std carries wasm target features newer than emsdk 3.1.51's wasm-opt knows, so `build.sh` strips the

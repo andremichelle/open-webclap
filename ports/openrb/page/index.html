@@ -12,7 +12,7 @@
         no window: the 303's pattern editor is on its panel. A faceplate of controls in one row, no frames or titles; black
         knobs on a scale with an orange pointer; square switches with an LED; dark screens with orange traces.
 
-        ?device=bass|distortion|pcf|compressor|delay names the device. Without one (or with ?preview) every panel with
+        ?device=bass|distortion|pcf|compressor|delay|tr808|tr909 names the device. Without one (or with ?preview) every panel with
         made-up signals, each with its content's width against the width the plugin declares.
     -->
     <style>
@@ -42,6 +42,8 @@
         .grid {display: grid; grid-auto-flow: column; grid-template-rows: 78px 78px; column-gap: 14px; row-gap: 4px}
         .stack {display: flex; flex-direction: column; align-items: center; justify-content: space-between; height: 160px; padding: 4px 0}
         .stack:has(> :only-child) {justify-content: center}
+        /* the pattern's steppers: together, one below the other */
+        .stack.steppers {justify-content: center; gap: 14px}
 
         /* a knob: the scale around it, its numbers at the ends, the label below (its value while turned) */
         .knob {position: relative; width: 62px; height: 78px; cursor: ns-resize; touch-action: none}
@@ -74,10 +76,30 @@
         .selector.active .value {color: var(--orange)}
         .selector .label {font-size: 9px; line-height: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim)}
 
+        /* the drum machines: a column per instrument, its name on top, small knobs below */
+        .instrument {display: flex; flex-direction: column; align-items: center; height: 160px}
+        .instrument > .name {height: 12px; font-size: 9px; line-height: 12px; font-weight: 500; letter-spacing: 0.05em;
+            text-transform: uppercase; color: var(--dim)}
+        .instruments .knob .label, .instruments .switch .label {color: var(--tick)}
+        .instrument > .cell {height: 49px; display: flex; align-items: center; justify-content: center}
+        .instruments {display: flex; gap: 4px}
+        /* the 909: an instrument's knobs as a grid of two rows (2 x 2), from the top as the 808's columns */
+        .instrument > .block {display: grid; grid-auto-flow: column; grid-template-rows: 49px 49px; column-gap: 4px}
+        .knob.small {width: 44px; height: 49px}
+        .knob.small .label, .knob.small .readout {font-size: 8px; line-height: 10px; bottom: 0}
+        /* a select in a knob's cell: LED and button where the knob is, the label on the knobs' line */
+        .switch.small {position: relative; width: 44px; height: 49px; gap: 3px; justify-content: center; padding-bottom: 10px}
+        .switch.small .button {width: 20px; height: 15px}
+        .switch.small .led {width: 6px; height: 6px}
+        .switch.small .label {position: absolute; left: -6px; right: -6px; bottom: 0; text-align: center; font-size: 8px;
+            line-height: 10px}
+        .plate.drop {box-shadow: inset 0 0 0 2px var(--orange); border-radius: 6px}
+
         /* a screen: dark, inset, orange inside */
         .screen {position: relative; background: var(--screen); border-radius: 4px; flex: none}
         .screen canvas {display: block; width: 100%; height: 100%}
         .screen canvas.steps {touch-action: none; cursor: crosshair}
+        .screen canvas.grid-steps {touch-action: none; cursor: pointer}
         /* the 303's pattern: no screen behind it */
         .screen.bare {background: none}
     </style>
@@ -92,8 +114,9 @@
     const GREY = alpha => `rgba(207, 207, 207, ${alpha})`
 
     // --- the devices ------------------------------------------------------------------------------------------------
-    // As plugin/openrb.cpp: the parameters in id order, their values the device's own numbers. The 303's Length and
-    // Shuffle switch are its pattern's, not parameters: the page keeps them and sends the pattern's header.
+    // As plugin/openrb.cpp: the parameters in id order, their values the device's own numbers. A pattern's Length is
+    // the pattern's, not a parameter: the page keeps it and sends the pattern's header. Shuffle is a knob alone (every
+    // pattern shuffles, at 0 nothing moves).
 
     const TUNE = [-12, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
         11, 12, 12]
@@ -127,8 +150,7 @@
             },
             build: panel => panel.row([
                 panel.stepScreen(240, 160),
-                panel.stack([panel.selector("pattern"), panel.selector("length"),
-                    panel.switches([panel.toggle("shuffle", "Shuffle")])]),
+                panel.stack([panel.selector("pattern"), panel.selector("length")], "steppers"),
                 panel.grid(["cutoff", "resonance", "envmod", "decay", "accent", "tune"]),
                 panel.stack([panel.choice("play", ["Pattern", "Notes"], {values: [1, 0]}),
                     panel.choice("sound", ["2.0", "Vintage"]), panel.choice("wave", ["Saw", "Sqr"])]),
@@ -172,7 +194,68 @@
                 panel.stack([panel.choice("grid", ["1/16", "1/8T"])])])
         }
     }
-    const ORDER = ["bass", "distortion", "pcf", "compressor", "delay"]
+    // The drum machines: Play, Pattern, Shuffle and Gain, then the machine's controllers (openrb.cpp tr808_params,
+    // tr909_params, in id order). A column per instrument: [caption, keys top to bottom]; a select key a switch.
+    const own = {
+        play: choice("Play", ["Notes", "Pattern"], 1),
+        pattern: {label: "Pattern", low: 0, high: 31, def: 0, text: patternName},
+        amount: knob("Shuffle", 0),
+        gain: {label: "Gain", low: -24, high: 6, def: 0, scale: ["-24", "+6"], text: value => `${value > 0 ? "+" : ""}${value} dB`}
+    }
+    const drums = (title, controls, columns, rows, gridRows = 3) => ({
+        title, rows,
+        params: {...own, ...Object.fromEntries(controls.map(([key, label, def, labels, short]) =>
+            [key, labels ? {...choice(label, labels, def), short} : knob(label, def)]))},
+        build: panel => panel.row([
+            panel.drumScreen(236, 160),
+            panel.stack([panel.selector("pattern"), panel.selector("length")], "steppers"),
+            panel.instruments(columns, gridRows),
+            panel.stack([panel.choice("play", ["Pattern", "Notes"], {values: [1, 0], column: true})]),
+            panel.grid(["amount", "gain"])
+        ])
+    })
+    DEVICES.tr808 = drums("OpenRB 808", [
+        ["accent", "Accent", 40],
+        ["bdLevel", "Level", 100], ["bdTone", "Tone", 64], ["bdDecay", "Decay", 64],
+        ["sdLevel", "Level", 100], ["sdTone", "Tone", 64], ["sdSnappy", "Snappy", 64],
+        ["ltLevel", "Level", 100], ["ltTuning", "Tuning", 64], ["ltSelect", "LT", 0, ["Conga", "Tom"], "Tom/Cga"],
+        ["mtLevel", "Level", 100], ["mtTuning", "Tuning", 64], ["mtSelect", "MT", 0, ["Conga", "Tom"], "Tom/Cga"],
+        ["htLevel", "Level", 100], ["htTuning", "Tuning", 64], ["htSelect", "HT", 0, ["Conga", "Tom"], "Tom/Cga"],
+        ["rsLevel", "Level", 100], ["rsSelect", "RS", 0, ["Claves", "Rim"], "Rim/Clv"],
+        ["cpLevel", "Level", 100], ["cpSelect", "CP", 0, ["Maracas", "Clap"], "Clp/Mrc"],
+        ["cbLevel", "Level", 100],
+        ["cyLevel", "Level", 100], ["cyTone", "Tone", 0], ["cyDecay", "Decay", 100],
+        ["ohLevel", "Level", 100], ["ohDecay", "Decay", 100],
+        ["chLevel", "Level", 100]
+    ], [["AC", ["accent"]], ["BD", ["bdLevel", "bdTone", "bdDecay"]], ["SD", ["sdLevel", "sdTone", "sdSnappy"]],
+        ["LT", ["ltLevel", "ltTuning", "ltSelect"]], ["MT", ["mtLevel", "mtTuning", "mtSelect"]],
+        ["HT", ["htLevel", "htTuning", "htSelect"]], ["RS", ["rsLevel", null, "rsSelect"]], ["CP", ["cpLevel", null, "cpSelect"]],
+        ["CB", ["cbLevel"]], ["CY", ["cyLevel", "cyTone", "cyDecay"]], ["OH", ["ohLevel", "ohDecay"]], ["CH", ["chLevel"]]],
+        ["AC", "BD", "SD", "LT", "MT", "HT", "RS", "CP", "CB", "CY", "OH", "CH"])
+    DEVICES.tr909 = drums("OpenRB 909", [
+        ["accent", "Accent", 32],
+        ["bdLevel", "Level", 100], ["bdTune", "Tune", 64], ["bdAttack", "Attack", 64], ["bdDecay", "Decay", 127],
+        ["sdLevel", "Level", 100], ["sdTune", "Tune", 64], ["sdTone", "Tone", 64], ["sdSnappy", "Snappy", 64],
+        ["ltLevel", "Level", 100], ["ltTune", "Tune", 64], ["ltDecay", "Decay", 127],
+        ["mtLevel", "Level", 100], ["mtTune", "Tune", 64], ["mtDecay", "Decay", 127],
+        ["htLevel", "Level", 100], ["htTune", "Tune", 64], ["htDecay", "Decay", 127],
+        ["rsLevel", "Level", 100], ["cpLevel", "Level", 100],
+        ["hhLevel", "Level", 100], ["chDecay", "CH Decay", 32], ["ohDecay", "OH Decay", 127],
+        ["ccLevel", "Level", 100], ["ccTune", "Tune", 64], ["rcLevel", "Level", 100], ["rcTune", "Tune", 64],
+        ["flam", "Flam", 64]
+    ], [["AC", ["accent", "flam"]], ["BD", ["bdLevel", "bdTune", "bdAttack", "bdDecay"]],
+        ["SD", ["sdLevel", "sdTune", "sdTone", "sdSnappy"]],
+        ["LT", ["ltLevel", "ltTune", null, "ltDecay"]], ["MT", ["mtLevel", "mtTune", null, "mtDecay"]],
+        ["HT", ["htLevel", "htTune", null, "htDecay"]], ["RS", ["rsLevel"]], ["CP", ["cpLevel"]],
+        ["HH", ["hhLevel", "chDecay", null, "ohDecay"]], ["Crash", ["ccLevel", "ccTune"]], ["Ride", ["rcLevel", "rcTune"]]],
+        ["AC", "BD", "SD", "LT", "MT", "HT", "RS", "CP", "CH", "OH", "CC", "RC"], 2)
+    // the kit's slots by name (ReBirth.dll's resource ids), for single sample files
+    DEVICES.tr808.slots = {first: 1000, names: ["BD", "SD1", "SD2", "SD3", "SD4", "SD5", "N1", "N2", "N3", "N4", "CB", "CH",
+        "CL", "CP", "CY", "HC", "HT", "LC", "LT", "MA", "MC", "MT", "OH", "RS"]}
+    DEVICES.tr909.slots = {first: 1025, names: ["bd1", "bd2", "bd3", "bd4", "sd1", "sd2", "sd3", "sd4", "sd5", "sdn1", "sdn2",
+        "sdn3", "lt", "mt", "ht", "rs", "hc", "chh", "ohh", "ccy", "rcy"]}
+    const isDrums = name => name === "tr808" || name === "tr909"
+    const ORDER = ["bass", "distortion", "pcf", "compressor", "delay", "tr808", "tr909"]
     for (const device of Object.values(DEVICES)) {
         Object.values(device.params).forEach((p, index) => p.id = index)
         device.keys = Object.keys(device.params)
@@ -180,9 +263,9 @@
 
     // --- the messages (plugin/openrb.cpp) -----------------------------------------------------------------------
 
-    const PAGE = {HELLO: 8, STEP: 10, HEADER: 11, COMMIT: 13}
+    const PAGE = {HELLO: 8, STEP: 10, HEADER: 11, COMMIT: 13, KIT_DLL: 14, KIT_SLOT: 15}
     const PLUGIN = {STATUS: 1, SNAPSHOT: 2}
-    const PATTERN_BYTES = 98, PATTERNS = 32
+    const PATTERN_BYTES = 98, DRUM_PATTERN_BYTES = 194, PATTERNS = 32
     const post = bytes => window.parent.postMessage(bytes.buffer, "*")
 
     const emptyPattern = () => ({shuffle: false, length: 16,
@@ -194,6 +277,10 @@
                 down: bytes[s + 4] !== 0, rest: bytes[s + 5] !== 0}
         })})
     const encodeStep = step => [step.note, +step.slide, +step.accent, +step.up, +step.down, +step.rest]
+    // a drum pattern: length, 16 steps of 12 columns (the accent, the instruments)
+    const emptyDrumPattern = () => ({length: 16, steps: Array.from({length: 16}, () => new Array(12).fill(0))})
+    const decodeDrumPattern = (bytes, at) => ({length: bytes[at + 1] || 16,
+        steps: Array.from({length: 16}, (_, i) => Array.from(bytes.subarray(at + 2 + i * 12, at + 14 + i * 12)))})
     // a step's pitch in semitones from the 303's lowest C (C2), -12..24, and back
     const pitchOf = step => step.note + (step.up ? 12 : 0) - (step.down ? 12 : 0)
     const setPitch = (step, pitch) => {
@@ -222,8 +309,8 @@
             values: device.keys.map(key => device.params[key].def),
             status: {playing: false, pattern: 0, step: 255, meters: [0, 0], curve: null, env: 0, pcfStep: -1,
                 wave: null, delayLength: 0, gains: [], peaks: []},
-            patterns: Array.from({length: PATTERNS}, emptyPattern),
-            screens: [], editing: false
+            patterns: Array.from({length: PATTERNS}, isDrums(name) ? emptyDrumPattern : emptyPattern),
+            screens: [], editing: false, loaded: 0
         }
         card.value = key => card.values[device.params[key].id]
         card.pattern = () => card.patterns[card.value("pattern")]
@@ -245,15 +332,14 @@
         }
         const sendHeader = () => {
             const p = card.pattern()
-            post(new Uint8Array([PAGE.HEADER, card.value("pattern"), +p.shuffle, p.length]))
+            post(new Uint8Array([PAGE.HEADER, card.value("pattern"), 0, p.length]))
             post(new Uint8Array([PAGE.COMMIT]))
             card.update()
         }
-        // the pattern's own values (Length, the Shuffle switch) as the controls see them
+        // the pattern's own Length as the controls see it
         const local = {
             length: {get: () => card.pattern().length, set: v => {card.pattern().length = v; sendHeader()}, low: 1, high: 16,
-                label: "Length", text: String},
-            shuffle: {get: () => +card.pattern().shuffle, set: v => {card.pattern().shuffle = v === 1; sendHeader()}}
+                label: "Length", text: String}
         }
         const hoverable = (element, id) => {
             element.addEventListener("pointerenter", () => host.hover(id))
@@ -294,11 +380,11 @@
             row: children => children,
             grid: keys => {
                 const element = div("grid")
-                element.append(...keys.map(panel.knob))
+                element.append(...keys.map(key => panel.knob(key)))
                 return element
             },
-            stack: children => {
-                const element = div("stack")
+            stack: (children, className = "") => {
+                const element = div(className === "" ? "stack" : `stack ${className}`)
                 element.append(...children)
                 return element
             },
@@ -308,23 +394,29 @@
                 return element
             },
             // a black knob on its scale: eleven ticks, the numbers at the ends, an orange pointer
-            knob: key => {
+            // small: the drum machines' knobs, three to a column
+            knob: (key, small = false) => {
                 const p = device.params[key]
-                const element = div("knob")
-                const root = svg("svg", {width: 62, height: 64, viewBox: "0 0 62 64"}, element)
-                const cx = 31, cy = 29
+                const element = div(small ? "knob small" : "knob")
+                // the sizes: the box, the centre, the body, the ticks, the numbers' radius, their font
+                const [w, h, cx, cy, body, tick0, tick1, tick5, numbers, font] = small
+                    ? [44, 38, 22, 18, 11, 13.5, 15, 16.5, 17.5, 6.5]
+                    : [62, 64, 31, 29, 17, 21, 24, 26, 27, 8]
+                const root = svg("svg", {width: w, height: h, viewBox: `0 0 ${w} ${h}`}, element)
                 for (let i = 0; i <= 10; i++) {
                     const angle = START + i * SWEEP / 10
-                    const [x0, y0] = polar(cx, cy, 21, angle), [x1, y1] = polar(cx, cy, i % 5 === 0 ? 26 : 24, angle)
+                    const [x0, y0] = polar(cx, cy, tick0, angle), [x1, y1] = polar(cx, cy, i % 5 === 0 ? tick5 : tick1, angle)
                     svg("line", {x1: x0, y1: y0, x2: x1, y2: y1, stroke: "var(--tick)", "stroke-width": 1}, root)
                 }
-                const [lx, ly] = polar(cx, cy, 27, START), [rx, ry] = polar(cx, cy, 27, START + SWEEP)
-                svg("text", {x: lx - 1, y: ly + 8, "text-anchor": "middle", "font-size": 8, fill: "var(--dim)"}, root).textContent = p.scale?.[0] ?? ""
-                svg("text", {x: rx + 1, y: ry + 8, "text-anchor": "middle", "font-size": 8, fill: "var(--dim)"}, root).textContent = p.scale?.[1] ?? ""
-                svg("circle", {cx, cy, r: 17, fill: "var(--knob)", stroke: "#000", "stroke-width": 1}, root)
-                svg("circle", {cx, cy: cy - 0.75, r: 15.5, fill: "none", stroke: "rgba(255, 255, 255, 0.07)", "stroke-width": 1}, root)
-                const pointer = svg("line", {x1: cx, y1: cy - 5, x2: cx, y2: cy - 15, stroke: "var(--orange)",
-                    "stroke-width": 2.5, "stroke-linecap": "round"}, root)
+                if (!small) {
+                    const [lx, ly] = polar(cx, cy, numbers, START), [rx, ry] = polar(cx, cy, numbers, START + SWEEP)
+                    svg("text", {x: lx - 1, y: ly + 8, "text-anchor": "middle", "font-size": font, fill: "var(--dim)"}, root).textContent = p.scale?.[0] ?? ""
+                    svg("text", {x: rx + 1, y: ry + 8, "text-anchor": "middle", "font-size": font, fill: "var(--dim)"}, root).textContent = p.scale?.[1] ?? ""
+                }
+                svg("circle", {cx, cy, r: body, fill: "var(--knob)", stroke: "#000", "stroke-width": 1}, root)
+                svg("circle", {cx, cy: cy - 0.75, r: body - 1.5, fill: "none", stroke: "rgba(255, 255, 255, 0.07)", "stroke-width": 1}, root)
+                const pointer = svg("line", {x1: cx, y1: cy - body * 0.3, x2: cx, y2: cy - body + 2, stroke: "var(--orange)",
+                    "stroke-width": small ? 2 : 2.5, "stroke-linecap": "round"}, root)
                 element.append(div("label", p.label))
                 const readout = div("readout")
                 element.append(readout)
@@ -350,13 +442,43 @@
                 hoverable(element, p.id)
                 return element
             },
-            // the pattern's Shuffle switch
-            toggle: (key, label) => {
-                const item = div("switch")
-                item.append(div("led"), div("button"), div("label", label))
-                item.addEventListener("pointerdown", event => {if (event.button === 0) {local[key].set(1 - local[key].get())}})
-                card.views.push(() => item.classList.toggle("on", local[key].get() === 1))
+            // a two-way select as one switch, lit for the second sample; its label names both, first the lit one
+            flip: key => {
+                const p = device.params[key]
+                const item = div("switch small")
+                item.append(div("led"), div("button"), div("label", p.short))
+                item.addEventListener("pointerdown", event => {if (event.button === 0) {pick(key, 1 - card.value(key))}})
+                card.views.push(() => item.classList.toggle("on", card.value(key) === 1))
+                hoverable(item, p.id)
                 return item
+            },
+            // the drum machine's instruments: a column each, its name on top
+            // rows 3: a column of three cells each; rows 2: each instrument's cells as a grid of two rows (2 x 2)
+            instruments: (columns, rows = 3) => {
+                const element = div(rows === 2 ? "instruments rows-2" : "instruments")
+                const cellOf = key => {
+                    const cell = div("cell")
+                    if (key !== null) {cell.append(device.params[key].labels ? panel.flip(key) : panel.knob(key, true))}
+                    return cell
+                }
+                for (const [caption, keys] of columns) {
+                    const column = div("instrument")
+                    column.append(div("name", caption))
+                    if (rows === 2) {
+                        const block = div("block")
+                        block.append(...keys.map(cellOf))
+                        column.append(block)
+                    } else {
+                        column.append(...keys.map(cellOf))
+                    }
+                    element.append(column)
+                }
+                return element
+            },
+            drumScreen: (width, height) => {
+                const element = panel.screen("drums", width, height)
+                drumEditor(card, element.querySelector("canvas"))
+                return element
             },
             // a value in a box with arrows, dragged or stepped
             selector: key => {
@@ -405,6 +527,7 @@
         const plate = div("plate")
         plate.append(...device.build(panel))
         card.element = plate
+        if (isDrums(name)) {kitDrop(card, plate)}
         card.draw = zoom => {
             for (const {canvas, context, draw} of card.screens) {
                 const {width, height} = OpenDAWPanel.fit(canvas, context, zoom)
@@ -441,6 +564,15 @@
                 if (bytes[0] === PLUGIN.SNAPSHOT && bytes.length >= at + PATTERNS * PATTERN_BYTES && !card.editing
                     && !card.dragging.has("length")) {
                     card.patterns = Array.from({length: PATTERNS}, (_, i) => decodePattern(bytes, at + i * PATTERN_BYTES))
+                    changed = true
+                }
+                break
+            case "tr808":
+            case "tr909":
+                card.loaded = bytes[5]
+                if (bytes[0] === PLUGIN.SNAPSHOT && bytes.length >= at + PATTERNS * DRUM_PATTERN_BYTES && !card.editing
+                    && !card.dragging.has("length")) {
+                    card.patterns = Array.from({length: PATTERNS}, (_, i) => decodeDrumPattern(bytes, at + i * DRUM_PATTERN_BYTES))
                     changed = true
                 }
                 break
@@ -557,6 +689,128 @@
         canvas.addEventListener("lostpointercapture", end)
     }
 
+    // --- the drum machines' pattern on its screen, edited in place, and the kit --------------------------------------
+    // A row per column of the pattern (the accent, then the instruments), 16 steps. A click toggles a step (the 909: off,
+    // on, strong; with Alt its flam), dragging paints the same along the row. With no samples the screen says where they
+    // come from and a click picks the files.
+
+    const DRUM = {left: 24, right: 3, top: 13, row: 12}
+    const drumGeometry = width => ({cell: (width - DRUM.left - DRUM.right) / 16})
+
+    const drumEditor = (card, canvas) => {
+        canvas.classList.add("grid-steps")
+        let drag = null
+        const nine = card.name === "tr909"
+        const target = event => {
+            const rect = canvas.getBoundingClientRect()
+            const scale = rect.width / canvas.clientWidth
+            const x = (event.clientX - rect.left) / scale, y = (event.clientY - rect.top) / scale
+            const step = Math.floor((x - DRUM.left) / drumGeometry(canvas.clientWidth).cell)
+            const column = Math.floor((y - DRUM.top) / DRUM.row)
+            return step >= 0 && step < 16 && column >= 0 && column < 12 ? {step, column} : null
+        }
+        const send = index => {
+            const bytes = new Uint8Array(16)
+            bytes[0] = PAGE.STEP
+            bytes[1] = card.value("pattern")
+            bytes[2] = index
+            bytes.set(card.pattern().steps[index], 4)
+            post(bytes)
+        }
+        const next = (value, column, alt) => {
+            if (column === 0 || !nine) {return value === 0 ? 1 : 0}
+            if (alt) {return value === 0 ? 3 : value <= 2 ? value + 2 : value - 2}
+            const plain = value > 2 ? value - 2 : value
+            return [1, 2, 0][plain]
+        }
+        canvas.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            if (card.loaded === 0) {
+                card.pickFiles?.()
+                return
+            }
+            const at = target(event)
+            if (at === null) {return}
+            canvas.setPointerCapture(event.pointerId)
+            card.editing = true
+            const steps = card.pattern().steps
+            drag = {column: at.column, value: next(steps[at.step][at.column], at.column, event.altKey), last: -1}
+            apply(at)
+        })
+        const apply = at => {
+            if (drag === null || at === null || at.step === drag.last) {return}
+            drag.last = at.step
+            card.pattern().steps[at.step][drag.column] = drag.value
+            send(at.step)
+        }
+        canvas.addEventListener("pointermove", event => {
+            if (drag === null) {return}
+            const at = target(event)
+            if (at !== null) {apply({step: at.step, column: drag.column})}
+        })
+        const end = () => {
+            if (drag === null) {return}
+            drag = null
+            card.editing = false
+            post(new Uint8Array([PAGE.COMMIT]))
+        }
+        canvas.addEventListener("pointerup", end)
+        canvas.addEventListener("lostpointercapture", end)
+    }
+
+    // The samples: ReBirth.dll (the plugin reads its AIFF resources), or sample files named as their slots ("BD.wav",
+    // "sd1.aif"), decoded here at 44.1 kHz, mono, 16-bit. Dropped on the panel, or picked with a click on the screen.
+    const kitDrop = (card, plate) => {
+        const {first, names} = card.device.slots
+        const slotOf = file => {
+            const stem = file.name.replace(/\.[^.]+$/, "").toLowerCase()
+            const index = names.findIndex(name => name.toLowerCase() === stem)
+            return index < 0 ? -1 : first + index
+        }
+        const decode = async file => {
+            const context = new OfflineAudioContext(1, 1, 44100)
+            const buffer = await context.decodeAudioData(await file.arrayBuffer())
+            const data = buffer.getChannelData(0)
+            return Int16Array.from(data, x => Math.round(clamp(x, -1, 1) * 32767))
+        }
+        const load = async files => {
+            for (const file of files) {
+                if (/\.dll$/i.test(file.name)) {
+                    const bytes = new Uint8Array(4 + file.size)
+                    bytes[0] = PAGE.KIT_DLL
+                    bytes.set(new Uint8Array(await file.arrayBuffer()), 4)
+                    post(bytes)
+                    continue
+                }
+                const id = slotOf(file)
+                if (id < 0) {continue}
+                const audio = await decode(file).catch(() => null)
+                if (audio === null) {continue}
+                const bytes = new Uint8Array(8 + audio.length * 2)
+                const view = new DataView(bytes.buffer)
+                bytes[0] = PAGE.KIT_SLOT
+                view.setUint16(2, id, true)
+                view.setUint32(4, audio.length, true)
+                new Int16Array(bytes.buffer, 8, audio.length).set(audio)
+                post(bytes)
+            }
+        }
+        plate.addEventListener("dragover", event => {
+            event.preventDefault()
+            plate.classList.add("drop")
+        })
+        plate.addEventListener("dragleave", () => plate.classList.remove("drop"))
+        plate.addEventListener("drop", event => {
+            event.preventDefault()
+            plate.classList.remove("drop")
+            load([...event.dataTransfer.files])
+        })
+        const input = Object.assign(document.createElement("input"), {type: "file", multiple: true,
+            accept: ".dll,.wav,.aif,.aiff,.flac,.mp3,.ogg"})
+        input.addEventListener("change", () => load([...input.files]))
+        card.pickFiles = () => input.click()
+    }
+
     // --- the screens --------------------------------------------------------------------------------------------
 
     const text = (context, value, x, y, align = "left", color = GREY(0.55)) => {
@@ -582,6 +836,50 @@
     }
 
     const DISPLAYS = {
+        // the pattern the Pattern stepper names: the rows' names on the left, the steps lit (the 909's strong brighter,
+        // its flam with a second mark), the step playing marked; without samples where they come from
+        drums: (context, width, height, card) => {
+            const {cell} = drumGeometry(width)
+            const pattern = card.pattern(), index = card.value("pattern")
+            const live = card.value("play") === 1
+            const playing = live && card.status.playing && card.status.pattern === index && card.status.step < 16
+                ? card.status.step : -1
+            for (let i = 0; i < 16; i += 4) {
+                text(context, String(i + 1), DRUM.left + i * cell + cell / 2, 9, "center", GREY(i < pattern.length ? 0.6 : 0.2))
+            }
+            if (playing >= 0) {
+                context.fillStyle = ORANGE(0.12)
+                context.fillRect(DRUM.left + playing * cell, DRUM.top - 1, cell, DRUM.row * 12 + 2)
+            }
+            card.device.rows.forEach((name, column) => {
+                const y = DRUM.top + column * DRUM.row
+                text(context, name, 3, y + 9, "left", GREY(column === 0 ? 0.75 : 0.55))
+                for (let i = 0; i < 16; i++) {
+                    const v = pattern.steps[i][column]
+                    const fade = i < pattern.length ? 1 : 0.3
+                    const x = DRUM.left + i * cell
+                    if (v === 0) {
+                        context.fillStyle = GREY(0.07 * fade)
+                        context.fillRect(x + 1.5, y + 2, cell - 3, DRUM.row - 4)
+                        continue
+                    }
+                    const strong = v === 2 || v === 4
+                    context.fillStyle = ORANGE((strong || column === 0 ? 1 : 0.6) * fade)
+                    context.fillRect(x + 1.5, y + 2, cell - 3, DRUM.row - 4)
+                    if (v >= 3) {
+                        context.fillStyle = "rgba(21, 21, 21, 0.9)"
+                        context.fillRect(x + cell / 2 - 0.75, y + 2, 1.5, DRUM.row - 4)
+                    }
+                }
+            })
+            if (card.loaded === 0) {
+                context.fillStyle = "rgba(21, 21, 21, 0.82)"
+                context.fillRect(0, 0, width, height)
+                text(context, "NO SAMPLES", width / 2, height / 2 - 8, "center", GREY(0.85))
+                text(context, "DROP REBIRTH.DLL OR SAMPLE FILES HERE", width / 2, height / 2 + 6, "center", ORANGE(0.9))
+                text(context, "OR CLICK TO CHOOSE", width / 2, height / 2 + 18, "center", GREY(0.5))
+            }
+        },
         bass: (context, width, height, card) => {
             const g = editorGeometry(width)
             const pattern = card.pattern(), index = card.value("pattern")
@@ -774,6 +1072,24 @@
             case "delay":
                 s.delayLength = 44100 * 60 / 120 * card.value("steps") * (card.value("grid") === 0 ? 0.25 : 1 / 3)
                 break
+            case "tr808":
+            case "tr909": {
+                const p = card.patterns[0]
+                if (p.steps.every(step => step.every(v => v === 0))) {
+                    const rows = card.name === "tr808"
+                        ? {0: "x...x...x...x...", 1: "x.....x...x.....", 2: "....x.......x...", 11: "x.x.x.x.x.x.x.x."}
+                        : {0: "x...x...x...x...", 1: "x...x...x...x...", 2: "....o.......f...", 8: "x.x.x.x.x.x.x.x.", 9: "..o...o...o...o."}
+                    for (const [column, row] of Object.entries(rows)) {
+                        [...row].forEach((c, i) => p.steps[i][column] = c === "x" ? 1 : c === "o" ? 2 : c === "f" ? 3 : 0)
+                    }
+                    card.update()
+                }
+                card.loaded = card.name === "tr808" ? 24 : 21
+                s.playing = true
+                s.pattern = 0
+                s.step = Math.floor(time * 8) % 16
+                break
+            }
         }
     }
 
@@ -783,7 +1099,7 @@
     const preview = new URL(location).searchParams.has("preview") || !(name in DEVICES)
     const stage = document.getElementById("stage")
     // the widths the plugin declares (openrb.cpp *_PANEL_WIDTH)
-    const WIDTHS = {bass: 734, distortion: 230, pcf: 504, compressor: 214, delay: 412}
+    const WIDTHS = {bass: 734, distortion: 230, pcf: 504, compressor: 214, delay: 412, tr808: 1042, tr909: 1282}
 
     if (preview) {
         document.body.classList.add("preview")

@@ -1,0 +1,27 @@
+Make the drum machines' trigger public: the WebCLAP port plays the 808's and 909's instruments from notes
+(ports/openrb), not only from the step function. Nothing else changes.
+
+diff --color -ru a/crates/orb-engine/src/tr808.rs b/crates/orb-engine/src/tr808.rs
+--- a/crates/orb-engine/src/tr808.rs	2026-11-10 09:32:38
++++ b/crates/orb-engine/src/tr808.rs	2026-11-10 09:32:38
+@@ -221,7 +221,7 @@
+     }
+ 
+     /// Instrument `i` (`sub_10027894`, cases 1..11).
+-    fn trigger(&mut self, i: usize) {
++    pub fn trigger(&mut self, i: usize) {
+         let lv = self.live;
+         match i {
+             BD => self.bass_or_cymbal(true),
+diff --color -ru a/crates/orb-engine/src/tr909.rs b/crates/orb-engine/src/tr909.rs
+--- a/crates/orb-engine/src/tr909.rs	2026-11-10 09:32:38
++++ b/crates/orb-engine/src/tr909.rs	2026-11-10 09:32:38
+@@ -276,7 +276,7 @@
+ 
+     /// Instrument `i` (the switches at 0x1002AD2D, 0x1002B03C and 0x1002B359, cases 1..11) at
+     /// the gain in [`Tr909::gain`].
+-    fn trigger(&mut self, i: usize) {
++    pub fn trigger(&mut self, i: usize) {
+         let lv = self.live;
+         match i {
+             BD => self.bass(lv[BD_LEVEL], lv[BD_DECAY], lv[BD_TUNE], lv[BD_ATTACK]),

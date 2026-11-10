@@ -10,11 +10,15 @@ const SAMPLE_RATE = 48000
 const BLOCK = 128
 const EVENT = {NOTE_ON: 0, NOTE_OFF: 1, PARAM_VALUE: 5, MIDI: 10}
 const VALTYPE = {i32: 0x7f, i64: 0x7e, f32: 0x7d, f64: 0x7c}
-const KIND = {BASS: 0, DIST: 1, PCF: 2, COMP: 3, DELAY: 4}
+const KIND = {BASS: 0, DIST: 1, PCF: 2, COMP: 3, DELAY: 4, TR808: 5, TR909: 6}
 const IDS = ["studio.opendaw.openrb.bass", "studio.opendaw.openrb.distortion", "studio.opendaw.openrb.pcf",
-    "studio.opendaw.openrb.compressor", "studio.opendaw.openrb.delay"]
-const PAGE = {POLL: 1, BEGIN: 2, SET: 3, END: 4, HOVER: 7, HELLO: 8, SHOW_WINDOW: 9, STEP: 10, HEADER: 11, PATTERN: 12,
-    COMMIT: 13}
+    "studio.opendaw.openrb.compressor", "studio.opendaw.openrb.delay", "studio.opendaw.openrb.tr808",
+    "studio.opendaw.openrb.tr909"]
+const INSTRUMENT = kind => kind === KIND.BASS || kind === KIND.TR808 || kind === KIND.TR909
+const PAGE = {POLL: 1, BEGIN: 2, SET: 3, END: 4, HOVER: 7, HELLO: 8, STEP: 10, HEADER: 11, PATTERN: 12, COMMIT: 13,
+    KIT_DLL: 14, KIT_SLOT: 15}
+// the drum machines' own parameters: Play, Pattern, Shuffle, Gain, then the machine's controllers
+const R = {PLAY: 0, PATTERN: 1, SHUFFLE: 2, GAIN: 3, ACCENT: 4}
 const PLUGIN = {STATUS: 1, SNAPSHOT: 2}
 const B = {TUNE: 0, CUTOFF: 1, RESONANCE: 2, ENVMOD: 3, DECAY: 4, ACCENT: 5, WAVE: 6, SOUND: 7, PLAY: 8, PATTERN: 9,
     SHUFFLE: 10, GAIN: 11}
@@ -61,6 +65,7 @@ class Host {
         this.memory = exports.memory
         this.table = exports.__indirect_function_table
         this.malloc = exports.malloc
+        this.free = exports.free
         this.sent = []
         this.dirty = 0
         this.shown = 0
@@ -96,6 +101,7 @@ class Host {
         assert.ok(this.fn(this.plugin + 16)(this.plugin, SAMPLE_RATE, 1, BLOCK), "activate")
         assert.ok(this.fn(this.plugin + 24)(this.plugin), "start_processing")
         if (kind === KIND.BASS && notes) {this.setParam(B.PLAY, 0)}
+        if ((kind === KIND.TR808 || kind === KIND.TR909) && notes) {this.setParam(R.PLAY, 0)}
     }
 
     get view() {return new DataView(this.memory.buffer)}
@@ -251,7 +257,7 @@ class Host {
                 view.setUint32(buffer, pointers, true)
                 view.setUint32(buffer + 8, 2, true)
             }
-            const effect = this.kind !== KIND.BASS
+            const effect = !INSTRUMENT(this.kind)
             view.setBigUint64(this.process, BigInt(this.position), true)
             view.setUint32(this.process + 8, BLOCK, true)
             view.setUint32(this.process + 12, this.writeTransport(), true)
@@ -302,8 +308,11 @@ class Host {
     }
     receive(bytes) {
         this.sent = []
-        this.bytes.set(bytes, this.scratch + 1024)
-        const handled = this.fn(this.webview + 8)(this.plugin, this.scratch + 1024, bytes.length)
+        // a large message (a kit's sample) gets a buffer of its own
+        const at = bytes.length <= 7000 ? this.scratch + 1024 : this.malloc(bytes.length)
+        this.bytes.set(bytes, at)
+        const handled = this.fn(this.webview + 8)(this.plugin, at, bytes.length)
+        if (at !== this.scratch + 1024) {this.free(at)}
         return {handled, sent: this.sent}
     }
     latencyFrames() {return this.fn(this.latency)(this.plugin)}
@@ -399,20 +408,20 @@ const STEP16 = BEAT / 4
 
 // --- the module ----------------------------------------------------------------------------------------------------
 
-check("five plugins, an instrument and four effects, each with its device panel and width, no window", () => {
-    for (let kind = 0; kind < 5; kind++) {
+check("seven plugins, three instruments and four effects, each with its device panel and width, no window", () => {
+    for (let kind = 0; kind < 7; kind++) {
         const host = new Host(kind)
-        assert.equal(host.count, 5)
+        assert.equal(host.count, 7)
         assert.equal(host.id, IDS[kind])
-        assert.ok(host.features.includes(kind === KIND.BASS ? "instrument" : "audio-effect"), host.features.join())
+        assert.ok(host.features.includes(INSTRUMENT(kind) ? "instrument" : "audio-effect"), host.features.join())
         assert.ok(host.features.includes("opendaw:device-panel"))
         const width = Number(host.features.find(feature => feature.startsWith("opendaw:device-panel-width:")).split(":")[2])
-        assert.ok(width > 150 && width < 800, `${host.name} width ${width}`)
+        assert.ok(width > 150 && width < 1400, `${host.name} width ${width}`)
         const out = host.scratch
         assert.ok(host.fn(host.panel + 4)(host.plugin, 176, out))
         assert.equal(host.u32(out), width, "get_width(176) as the feature")
-        assert.equal(host.notePorts !== 0 && host.fn(host.notePorts)(host.plugin, true) === 1, kind === KIND.BASS)
-        assert.equal(host.fn(host.audioPorts)(host.plugin, true), kind === KIND.BASS ? 0 : 1)
+        assert.equal(host.notePorts !== 0 && host.fn(host.notePorts)(host.plugin, true) === 1, INSTRUMENT(kind))
+        assert.equal(host.fn(host.audioPorts)(host.plugin, true), INSTRUMENT(kind) ? 0 : 1)
         assert.equal(host.fn(host.audioPorts)(host.plugin, false), 1)
         assert.equal(host.fn(host.plugin + 40)(host.plugin, host.string("clap.gui")), 0, "the panel is the only view")
     }
@@ -560,7 +569,7 @@ check("303: bank A holds factory patterns, every one plays on the transport", ()
     }
 })
 
-check("303: shuffle moves the second 16th of each 8th later, in a pattern with its shuffle on", () => {
+check("303: Shuffle moves the second 16th of each 8th later in every pattern, at 0 nothing moves", () => {
     const onset = (shuffle, on = 1) => {
         const host = new Host(KIND.BASS)
         host.setParam(B.PLAY, 1)
@@ -575,7 +584,7 @@ check("303: shuffle moves the second 16th of each 8th later, in a pattern with i
     // 127 / 6 = 21 ticks of 48 a 16th later
     const expected = STEP16 + 21 / 48 * STEP16
     assert.ok(Math.abs(shuffled - expected) < 400, `shuffled at ${shuffled}, expected ${expected}`)
-    assert.ok(Math.abs(onset(127, 0) - STEP16) < 400, "a pattern without shuffle stays straight")
+    assert.ok(Math.abs(onset(127, 0) - expected) < 400, "the pattern's old switch has no say")
 })
 
 check("303: notes are ignored in pattern mode, the pattern is silent in note mode", () => {
@@ -607,6 +616,7 @@ check("303: the state keeps the parameters and the patterns, a step edit changes
     assert.equal(other.value(B.CUTOFF), 99)
     assert.equal(other.value(B.PATTERN), 17)
     assert.equal(other.text(B.PATTERN, 17), "C2")
+    assert.equal(edited[8 + 12 * 8 + 5 * PATTERN_BYTES], 1, "a pattern's shuffle flag is always on")
     assert.equal(other.parse(B.PATTERN, "d8"), 31)
     assert.deepEqual(other.save(), edited)
     // the snapshot carries the patterns
@@ -629,6 +639,72 @@ check("303: the page's parameter gestures reach the host, hover too", () => {
     assert.equal(host.dirty, 1)
     assert.ok(host.receive(pageParam(PAGE.HOVER, B.RESONANCE)).handled)
 })
+
+// --- the drum machines ----------------------------------------------------------------------------------------------
+
+const DRUM_PATTERN_BYTES = 194
+// a made-up test sample: a decaying tone, 16-bit at 44.1 kHz
+const testSample = (hz, seconds = 0.3) => Int16Array.from({length: Math.round(44100 * seconds)},
+    (_, i) => Math.round(20000 * Math.exp(-i / 44100 * 12) * Math.sin(2 * Math.PI * hz * i / 44100)))
+const kitSlot = (id, audio) => {
+    const message = new Uint8Array(8 + audio.length * 2)
+    const view = new DataView(message.buffer)
+    message[0] = PAGE.KIT_SLOT
+    view.setUint16(2, id, true)
+    view.setUint32(4, audio.length, true)
+    new Int16Array(message.buffer, 8, audio.length).set(audio)
+    return message
+}
+// every slot of the machine with a test sample
+const loadKit = host => {
+    const [first, last] = host.kind === KIND.TR808 ? [1000, 1023] : [1025, 1045]
+    for (let id = first; id <= last; id++) {assert.ok(host.receive(kitSlot(id, testSample(80 + (id - first) * 40))).handled)}
+}
+
+for (const [kind, name] of [[KIND.TR808, "808"], [KIND.TR909, "909"]]) {
+    check(`${name}: silent without samples; a kit's slots sound on General MIDI's drum keys, velocity above 100 louder`, () => {
+        const host = new Host(kind)
+        const [empty] = host.run([on(host.position, 36), on(host.position + 4000, 38), on(host.position + 8000, 42)], 12000)
+        assert.ok(peak(empty) < 1e-4, "no samples, no sound")
+        const status = host.receive(new Uint8Array([PAGE.POLL])).sent[0]
+        assert.equal(status[5], 0, "no slot holds a sample")
+        loadKit(host)
+        assert.equal(host.receive(new Uint8Array([PAGE.POLL])).sent[0][0], PLUGIN.SNAPSHOT, "a kit change sends the snapshot")
+        assert.equal(host.receive(new Uint8Array([PAGE.POLL])).sent[0][5], kind === KIND.TR808 ? 24 : 21)
+        for (const key of [36, 38, 41, 45, 48, 37, 39, 42, 46, 49]) {
+            const [left] = host.run([on(host.position, key)], 8000)
+            assert.ok(peak(left) > 0.005, `key ${key}`)
+        }
+        const level = velocity => peak(host.run([on(host.position, 36, velocity)], 8000)[0])
+        assert.ok(level(1) > level(0.6) * 1.05, "accented louder")
+        assert.ok(host.dirty >= 1, "a kit change marks the state dirty")
+        assert.equal(host.receive(new Uint8Array([PAGE.KIT_DLL, 0, 0, 0, 77, 90, 1, 2, 3])).handled, 0, "not a ReBirth.dll")
+    })
+
+    check(`${name}: bank A's factory patterns play on the transport, the kit and the patterns go with the state`, () => {
+        const host = new Host(kind, false)
+        assert.equal(host.value(R.PLAY), 1, "Pattern by default")
+        loadKit(host)
+        host.start(0)
+        const [left] = host.run([], BEAT * 4)
+        assert.ok(peak(left, 0, STEP16) > 0.005, "a hit on the first step")
+        const saved = host.save()
+        const other = new Host(kind, false)
+        assert.ok(other.load(saved))
+        assert.deepEqual(other.save(), saved)
+        assert.equal(other.receive(new Uint8Array([PAGE.HELLO])).sent[0][5], kind === KIND.TR808 ? 24 : 21, "the kit came back")
+        other.start(0)
+        assert.ok(peak(other.run([], BEAT)[0], 0, STEP16) > 0.005)
+        // a step edit: the snare on step 2 of A5 changes one byte of the pattern
+        const step = new Uint8Array(16)
+        step[0] = PAGE.STEP; step[1] = 4; step[2] = 1
+        step[4 + 2] = 1
+        assert.ok(other.receive(step).handled)
+        const edited = other.save()
+        const changed = [...edited].map((byte, i) => byte !== saved[i] ? i : -1).filter(i => i >= 0)
+        assert.equal(changed.length, 1, `changed ${changed}`)
+    })
+}
 
 // --- the effects ---------------------------------------------------------------------------------------------------
 
