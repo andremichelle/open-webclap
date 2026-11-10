@@ -1,5 +1,7 @@
-ZLCompressor for WebCLAP (ports/zl-compressor): its window in the colours of openDAW's device panels
-(docs/device-panel-design.md): state_definitions.hpp, the editor's default colours.
+ZLCompressor for WebCLAP (ports/zl-compressor): its window in the style of openDAW's device panels
+(docs/device-panel-design.md): state_definitions.hpp, the editor's default colours; interface_definitons.cpp, flat surfaces (the shadow helpers draw no shadows, a recessed area is a flat
+darker screen); two_value_rotary_slider.hpp, openDAW's knob (a faint track around a dark cap, the value as an
+arc and a pointer in the label cream).
 
 diff --color -ru a/source/state/state_definitions.hpp b/source/state/state_definitions.hpp
 --- a/source/state/state_definitions.hpp	2026-11-10 16:04:29
@@ -34,3 +36,286 @@ diff --color -ru a/source/state/state_definitions.hpp b/source/state/state_defin
      };
  
      inline juce::AudioProcessorValueTreeState::ParameterLayout getStateParameterLayout() {
+diff --color -ru a/source/gui/interface_definitons.cpp b/source/gui/interface_definitons.cpp
+--- a/source/gui/interface_definitons.cpp	2026-11-10 16:25:25
++++ b/source/gui/interface_definitons.cpp	2026-11-10 16:25:43
+@@ -47,19 +47,8 @@
+         mask.setUsingNonZeroWinding(false);
+         mask.addRectangle(box_bounds.withSizeKeepingCentre(box_bounds.getWidth() + corner_size * 3,
+                                                            box_bounds.getHeight() + corner_size * 3));
+-        g.saveState();
+-        g.reduceClipRegion(mask);
+-        if (args.draw_bright) {
+-            juce::DropShadow bright_shadow(args.bright_shadow_color, radius,
+-                                           {-offset, -offset});
+-            bright_shadow.drawForPath(g, path);
+-        }
+-        if (args.draw_dark) {
+-            juce::DropShadow dark_shadow(args.dark_shadow_color, radius,
+-                                         {offset, offset});
+-            dark_shadow.drawForPath(g, path);
+-        }
+-        g.restoreState();
++        // ZL_WEBCLAP: openDAW's flat surfaces, no shadows (docs/device-panel-design.md)
++        juce::ignoreUnused(mask, offset);
+         if (args.draw_main) {
+             g.setColour(args.main_colour);
+             g.fillPath(path);
+@@ -85,42 +74,15 @@
+                                  corner_size, corner_size,
+                                  args.curve_top_left, args.curve_top_right,
+                                  args.curve_bottom_left, args.curve_bottom_right);
+-        g.saveState();
+-        g.reduceClipRegion(mask);
++        // ZL_WEBCLAP: a recessed area as openDAW's flat screens, a little darker than the surface, no shadows
+         if (args.draw_main) {
+-            g.fillAll(args.main_colour);
++            g.setColour(args.main_colour.darker(0.35f));
++            g.fillPath(mask);
+         }
+-        auto offset = static_cast<int>(corner_size * args.blur_radius);
+         auto radius = juce::jmax(juce::roundToInt(corner_size * args.blur_radius * 1.5f), 1);
+-        if (!args.flip) {
+-            juce::DropShadow dark_shadow(args.dark_shadow_color.withMultipliedAlpha(0.75f), radius,
+-                                         {-offset, -offset});
+-            dark_shadow.drawForPath(g, mask);
+-            juce::DropShadow bright_shadow(args.bright_shadow_color, radius,
+-                                           {offset, offset});
+-            bright_shadow.drawForPath(g, mask);
+-        } else {
+-            juce::DropShadow bright_shadow(args.dark_shadow_color, radius,
+-                                           {offset, offset});
+-            bright_shadow.drawForPath(g, mask);
+-            juce::DropShadow dark_shadow(args.bright_shadow_color.withMultipliedAlpha(0.75f), radius,
+-                                         {-offset, -offset});
+-            dark_shadow.drawForPath(g, mask);
+-        }
+         box_bounds = box_bounds.withSizeKeepingCentre(
+             box_bounds.getWidth() - 0.75f * static_cast<float>(radius),
+             box_bounds.getHeight() - 0.75f * static_cast<float>(radius));
+-        juce::Path path;
+-        path.addRoundedRectangle(box_bounds.getX(), box_bounds.getY(),
+-                                 box_bounds.getWidth(), box_bounds.getHeight(),
+-                                 corner_size, corner_size,
+-                                 args.curve_top_left, args.curve_top_right,
+-                                 args.curve_bottom_left, args.curve_bottom_right);
+-
+-        juce::DropShadow back_shadow(args.main_colour, radius,
+-                                     {0, 0});
+-        back_shadow.drawForPath(g, path);
+-        g.restoreState();
+         return box_bounds;
+     }
+ 
+@@ -159,32 +121,8 @@
+         mask.addEllipse(box_bounds.withSizeKeepingCentre(box_bounds.getWidth() * 3, box_bounds.getHeight() * 3));
+         mask.setUsingNonZeroWinding(false);
+         mask.addEllipse(box_bounds);
+-        g.saveState();
+-        g.reduceClipRegion(mask);
+-        if (!args.flip) {
+-            if (args.draw_dark) {
+-                juce::DropShadow dark_shadow(args.dark_shadow_color, radius,
+-                                             {offset, offset});
+-                dark_shadow.drawForPath(g, path);
+-            }
+-            if (args.draw_bright) {
+-                juce::DropShadow bright_shadow(args.bright_shadow_color, radius,
+-                                               {-offset, -offset});
+-                bright_shadow.drawForPath(g, path);
+-            }
+-        } else {
+-            if (args.draw_dark) {
+-                juce::DropShadow dark_shadow(args.dark_shadow_color, radius,
+-                                             {-offset, -offset});
+-                dark_shadow.drawForPath(g, path);
+-            }
+-            if (args.draw_bright) {
+-                juce::DropShadow bright_shadow(args.bright_shadow_color, radius,
+-                                               {offset, offset});
+-                bright_shadow.drawForPath(g, path);
+-            }
+-        }
+-        g.restoreState();
++        // ZL_WEBCLAP: openDAW's flat look, an ellipse casts no shadow
++        juce::ignoreUnused(g, mask, offset);
+         return box_bounds;
+     }
+ 
+@@ -212,35 +150,9 @@
+         auto radius = juce::jmax(juce::roundToInt(corner_size * 1.5f), 1);
+         auto offset = static_cast<int>(corner_size * args.blur_radius) * 2;
+ 
+-        juce::Path mask;
+-        mask.addEllipse(box_bounds);
+-        mask.setUsingNonZeroWinding(false);
+-        mask.addEllipse(box_bounds.reduced(static_cast<float>(radius + offset)));
+-        g.saveState();
+-        g.reduceClipRegion(mask);
+-
+-        if (!args.flip) {
+-            juce::DropShadow dark_shadow(args.dark_shadow_color.withMultipliedAlpha(0.75f), radius,
+-                                         {-offset, -offset});
+-            dark_shadow.drawForPath(g, mask);
+-            juce::DropShadow bright_shadow(args.bright_shadow_color, radius,
+-                                           {offset, offset});
+-            bright_shadow.drawForPath(g, mask);
+-        } else {
+-            juce::DropShadow bright_shadow(args.dark_shadow_color, radius,
+-                                           {offset, offset});
+-            bright_shadow.drawForPath(g, mask);
+-            juce::DropShadow dark_shadow(args.bright_shadow_color.withMultipliedAlpha(0.75f), radius,
+-                                         {-offset, -offset});
+-            dark_shadow.drawForPath(g, mask);
+-        }
++        // ZL_WEBCLAP: openDAW's flat look, no inner shadow
++        juce::ignoreUnused(g, offset);
+         box_bounds = box_bounds.reduced(0.375f * static_cast<float>(radius));
+-        juce::Path path;
+-        path.addEllipse(box_bounds);
+-
+-        juce::DropShadow back_shadow(args.main_colour, radius, {0, 0});
+-        back_shadow.drawForPath(g, path);
+-        g.restoreState();
+         return box_bounds;
+     }
+ }
+diff --color -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp b/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp
+--- a/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp	2026-11-10 16:25:25
++++ b/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp	2026-11-10 16:25:43
+@@ -23,6 +23,10 @@
+                                        public juce::SettableTooltipClient {
+     public:
+         static constexpr float kStartAngle = 2.0943951023931953f, kEndAngle = 7.3303828583761845f;
++        // ZL_WEBCLAP: openDAW's knob, from 12 o'clock clockwise -135 to 135 degrees, a track of 1.5 px at 28 px, the
++        // cap 4 px inside
++        static constexpr float kArcStart = -2.356194490192345f, kArcEnd = 2.356194490192345f;
++        static constexpr float kStroke = 1.5f / 28.f, kCapInset = 4.f / 28.f;
+         std::string permitted_characters_ = "-0123456789.kK";
+         std::function<std::string(double)> value_formatter_;
+         std::function<std::optional<double>(const std::string&)> string_formatter_;
+@@ -44,22 +48,20 @@
+                     g.setColour(base_.getBackgroundColour());
+                     g.fillEllipse(getLocalBounds().toFloat());
+                 }
++                // ZL_WEBCLAP: openDAW's knob (its Knob.tsx, the device panels' knob): a faint grey track around a
++                // dark cap, 270 degrees open at the bottom; the value and the pointer are the Display's
+                 auto bounds = getLocalBounds().toFloat();
+                 const auto diameter = juce::jmin(bounds.getWidth(), bounds.getHeight());
+                 bounds = bounds.withSizeKeepingCentre(diameter, diameter);
+-                juce::Path mask;
+-                mask.addPieSegment(bounds, kStartAngle - juce::MathConstants<float>::pi * 1.5f,
+-                                   kEndAngle - juce::MathConstants<float>::pi * 1.5f,
+-                                   0);
+-                g.saveState();
+-                g.reduceClipRegion(mask);
+-                // draw knob background
+-                const auto old_bounds = base_.drawInnerShadowEllipse(
+-                    g, bounds, base_.getFontSize() * 0.5f * thick_scale_, {});
+-                const auto new_bounds = base_.drawShadowEllipse(g, old_bounds,
+-                                                                base_.getFontSize() * 0.5f * thick_scale_, {});
+-                base_.drawInnerShadowEllipse(g, new_bounds, base_.getFontSize() * 0.15f, {.flip = true});
+-                g.restoreState();
++                const auto stroke = juce::jmax(1.f, diameter * kStroke);
++                const auto radius = diameter * .5f - stroke * .5f;
++                juce::Path track;
++                track.addCentredArc(bounds.getCentreX(), bounds.getCentreY(), radius, radius, 0.f,
++                                    kArcStart, kArcEnd, true);
++                g.setColour(juce::Colour(207, 215, 219).withAlpha(.14f));
++                g.strokePath(track, juce::PathStrokeType(stroke));
++                g.setColour(juce::Colour(39, 45, 48));
++                g.fillEllipse(bounds.reduced(diameter * kCapInset));
+             }
+ 
+         private:
+@@ -75,11 +77,13 @@
+             }
+ 
+             void paint(juce::Graphics& g) override {
+-                g.saveState();
+-                g.reduceClipRegion(mask_);
+-                g.setColour(base_.getTextColour().withAlpha(0.25f));
+-                g.fillPath(filling1_);
+-                // fill the pie segment between two values
++                // ZL_WEBCLAP: openDAW's knob, the value as an arc over the track and the pointer, in the label cream
++                const juce::PathStrokeType stroke(stroke_);
++                g.setColour(juce::Colour(185, 189, 164));
++                g.strokePath(filling1_, stroke);
++                g.strokePath(pointer_, juce::PathStrokeType(stroke_ * (1.25f / 1.5f), juce::PathStrokeType::curved,
++                                                            juce::PathStrokeType::rounded));
++                // the second value: the arc between the two values
+                 if constexpr (kUseSecondSlider) {
+                     if (show_slider2_) {
+                         if (value1_ > value2_) {
+@@ -87,10 +91,9 @@
+                         } else {
+                             g.setColour(base_.getColourMap2(2).withAlpha(.75f));
+                         }
+-                        g.fillPath(filling2_);
++                        g.strokePath(filling2_, stroke);
+                     }
+                 }
+-                g.restoreState();
+             }
+ 
+             void resized() override {
+@@ -100,6 +103,9 @@
+                 old_bound_ = UIBase::getInnerShadowEllipseArea(bound_, base_.getFontSize() * 0.5f * thick_scale_, {});
+                 new_bound_ = UIBase::getShadowEllipseArea(old_bound_, base_.getFontSize() * 0.5f * thick_scale_, {});
+                 arrow_unit_ = (diameter - new_bound_.getWidth()) * 0.5f;
++                stroke_ = juce::jmax(1.f, diameter * kStroke);
++                radius_ = diameter * .5f - stroke_ * .5f;
++                cap_ = diameter * .5f - diameter * kCapInset;
+ 
+                 mask_.clear();
+                 mask_.addEllipse(bound_);
+@@ -114,13 +120,19 @@
+ 
+             void setSlider1Value(const float x) {
+                 value1_ = x;
+-                const auto rotationAngle = kStartAngle + x * (kEndAngle - kStartAngle);
++                const auto rotationAngle = kArcStart + x * (kArcEnd - kArcStart);
+                 angle1_ = rotationAngle;
+                 filling1_.clear();
+-                filling1_.addPieSegment(bound_,
+-                                        kStartAngle + juce::MathConstants<float>::pi * .5f,
+-                                        rotationAngle + juce::MathConstants<float>::pi * .5f,
+-                                        0);
++                if (x > 0.f) {
++                    filling1_.addCentredArc(bound_.getCentreX(), bound_.getCentreY(), radius_, radius_, 0.f,
++                                            kArcStart, rotationAngle, true);
++                }
++                // the pointer, from a third of the cap to its edge
++                const auto c = bound_.getCentre();
++                const auto direction = juce::Point<float>(std::sin(rotationAngle), -std::cos(rotationAngle));
++                pointer_.clear();
++                pointer_.startNewSubPath(c + direction * (cap_ * .35f));
++                pointer_.lineTo(c + direction * (cap_ - stroke_ * (1.25f / 1.5f)));
+                 if (kUseSecondSlider && show_slider2_) {
+                     setSlider2Value(value2_);
+                 } else {
+@@ -131,12 +143,10 @@
+             void setSlider2Value(const float x) {
+                 if constexpr (kUseSecondSlider) {
+                     value2_ = x;
+-                    const auto rotationAngle = kStartAngle + x * (kEndAngle - kStartAngle);
++                    const auto rotationAngle = kArcStart + x * (kArcEnd - kArcStart);
+                     filling2_.clear();
+-                    filling2_.addPieSegment(bound_,
+-                                            angle1_ + juce::MathConstants<float>::pi * .5f,
+-                                            rotationAngle + juce::MathConstants<float>::pi * .5f,
+-                                            0);
++                    filling2_.addCentredArc(bound_.getCentreX(), bound_.getCentreY(), radius_, radius_, 0.f,
++                                            angle1_, rotationAngle, true);
+                     repaint();
+                 }
+             }
+@@ -157,6 +167,8 @@
+             juce::Path mask_;
+             juce::Rectangle<float> arrow1_, arrow2_;
+             juce::Path filling1_, filling2_;
++            juce::Path pointer_;
++            float stroke_{1.f}, radius_{1.f}, cap_{1.f};
+         };
+ 
+     public:
