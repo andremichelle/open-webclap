@@ -1,0 +1,44 @@
+# OpenRB for WebCLAP
+
+OpenRB-338 by pingw33n, a reimplementation of the ReBirth RB-338 2.01 engine (TB-303, TR-808, TR-909, distortion,
+pattern controlled filter, compressor, delay), ported to WebCLAP as seven plugins in one module. This is not an
+official OpenRB-338 release, and neither OpenRB-338 nor this port is affiliated with Reason Studios.
+
+- OpenRB-338: https://github.com/pingw33n/openrb-338 (commit cbca449)
+- This port, and the complete source of this bundle: @SOURCE_URL@
+  Build it with `scripts/build-openrb.sh`, which fetches OpenRB-338 at the commit named here and applies
+  `patches/openrb-338-note-trigger.patch`.
+
+## License
+
+The bundle is licensed under the **GNU General Public License, version 3** (`LICENSE`), OpenRB-338's license.
+`module.wasm` is OpenRB-338's engine (the `orb-engine` and `rbs` crates, with the patch above) behind the port's C
+API and CLAP wrapper; the panels are the port's own web page. It contains no JUCE and none of ReBirth's samples.
+
+The TR-808 and TR-909 factory kits are built into `module.wasm` (`ports/openrb/kits`, where `README.md` lists every
+slot's source). They were changed for the port: trimmed, levelled, some retuned.
+
+- **TR-909 samples by Janne G:son Berg, cut by altemark (freesound.org/people/altemark/packs/1643), CC BY 4.0**
+  (`licenses/CC-BY-4.0.txt`): every 909 slot except the snare noise layers sdn1..sdn3.
+- 808 bass drum, cowbell, hi-hats, rim shot and claves: Karman_Lyne's "Roland TR08" pack
+  (freesound.org/people/Karman_Lyne/packs/29226), CC0 1.0 (public domain dedication).
+- 808 clap, toms and congas: the TR-808 kit of FluidR3Mono_GM (FluidR3 by Frank Wen, mono version by Michael
+  Cowgill), MIT (`licenses/FluidR3Mono_License.md`).
+- 808 snare layers, cymbal and maracas, 909 snare noise layers: synthesised by the port, GPL-3.0 as the port.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licenses for details.
+
+## Components
+
+| Component | In | Copyright | License |
+|---|---|---|---|
+| [OpenRB-338](https://github.com/pingw33n/openrb-338) `orb-engine`, `rbs` (with `patches/openrb-338-note-trigger.patch`) | module | pingw33n | GPL-3.0-only |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/openrb`, `modules/opendaw-clap`, `modules/opendaw-page`) | both | 2026 André Michelle | GPL-3.0-only |
+| TR-909 factory samples ([TR-909 JGB pack](https://freesound.org/people/altemark/packs/1643/)) | module | Janne G:son Berg, altemark | CC BY 4.0 |
+| TR-808 factory samples ([Roland TR08](https://freesound.org/people/Karman_Lyne/packs/29226/)) | module | Karman_Lyne | CC0 1.0 |
+| TR-808 factory samples (FluidR3Mono_GM, [MuseScore 3.6.2](https://github.com/musescore/MuseScore/tree/v3.6.2/share/sound)) | module | 2000-2002, 2008 Frank Wen; 2014-16 Michael Cowgill | MIT |
+| [libm](https://github.com/rust-lang/compiler-builtins) 0.2.16 | module | the Rust Project Developers and its authors | MIT (`licenses/libm-LICENSE.txt`) |
+| Rust standard library | module | the Rust Project Developers | MIT or Apache-2.0 (`licenses/Rust-library.html`, the texts in `licenses/rust/`) |
+| Resampler (`ports/openrb/plugin/resampler.h`, from the Pearls port) | module | 2026 André Michelle | MIT, as the Pearls port |
+| [CLAP](https://github.com/free-audio/clap) headers | module | 2014-2022 Alexandre Bique | MIT |
