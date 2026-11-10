@@ -18,6 +18,8 @@ const INSTRUMENT = kind => kind === KIND.BASS || kind === KIND.TR808 || kind ===
 const PAGE = {POLL: 1, BEGIN: 2, SET: 3, END: 4, HOVER: 7, HELLO: 8, STEP: 10, HEADER: 11, PATTERN: 12, COMMIT: 13,
     KIT_DLL: 14, KIT_SLOT: 15}
 // the drum machines' own parameters: Play, Pattern, Shuffle, Gain, then the machine's controllers
+// a percentage parameter at the device's byte (the host sees 0..100 %, the device 0..127)
+const pct = byte => byte * 100 / 127
 const R = {PLAY: 0, PATTERN: 1, SHUFFLE: 2, GAIN: 3, ACCENT: 4}
 const PLUGIN = {STATUS: 1, SNAPSHOT: 2}
 const B = {TUNE: 0, CUTOFF: 1, RESONANCE: 2, ENVMOD: 3, DECAY: 4, ACCENT: 5, WAVE: 6, SOUND: 7, PLAY: 8, PATTERN: 9,
@@ -33,7 +35,7 @@ const trampoline = (params, results, fn) => {
     return new WebAssembly.Instance(new WebAssembly.Module(bytes), {e: {f: fn}}).exports.f
 }
 
-const compiled = new WebAssembly.Module(readFileSync(process.argv[2]))
+const compiled = new WebAssembly.Module(readFileSync(process.argv[2] ?? new URL("../../build/openrb/web/openrb.wclap/module.wasm", import.meta.url)))
 
 class Host {
     // a 303 starts in pattern mode; notes: switched to Notes, as the note checks want it
@@ -96,6 +98,7 @@ class Host {
         this.notePorts = extension("clap.note-ports")
         this.audioPorts = extension("clap.audio-ports")
         this.latency = extension("clap.latency")
+        this.tail = extension("clap.tail")
         this.panel = extension("opendaw.device-panel/1")
         this.createProcess()
         assert.ok(this.fn(this.plugin + 16)(this.plugin, SAMPLE_RATE, 1, BLOCK), "activate")
@@ -316,6 +319,7 @@ class Host {
         return {handled, sent: this.sent}
     }
     latencyFrames() {return this.fn(this.latency)(this.plugin)}
+    tailFrames() {return this.fn(this.tail)(this.plugin) >>> 0}
     // the host's transport per block: playing, tempo, the beat position (beatBase plus the samples since baseAt)
     writeTransport() {
         this.transportPtr ??= this.malloc(104)
@@ -437,11 +441,11 @@ check("303: plays its patterns by default (Play: Pattern)", () => {
 })
 
 check("303: a note plays at its pitch (C2 is the lowest C at the middle tune), the tune transposes", () => {
-    for (const [key, tune, semis] of [[36, 64, 0], [48, 64, 0], [55, 64, 0], [45, 0, -12], [45, 127, 12], [41, 100, 7]]) {
+    for (const [key, tune, semis] of [[36, 0, 0], [48, 0, 0], [55, 0, 0], [45, -12, -12], [45, 12, 12], [41, 7, 7]]) {
         const host = new Host(KIND.BASS)
         host.setParam(B.TUNE, tune)
-        host.setParam(B.CUTOFF, 127)
-        host.setParam(B.DECAY, 127)
+        host.setParam(B.CUTOFF, 100)
+        host.setParam(B.DECAY, 100)
         const [left, right] = host.run([on(host.position, key)], SAMPLE_RATE / 2)
         assert.deepEqual(left, right, "mono to both sides")
         const hz = pitch(left, 2000)
@@ -465,8 +469,8 @@ check("303: a legato note slides (no new attack), a separate one starts over", (
     const run = (legato, cutoff = 0) => {
         const host = new Host(KIND.BASS)
         host.setParam(B.DECAY, 0)
-        host.setParam(B.ENVMOD, 127)
-        host.setParam(B.CUTOFF, cutoff)
+        host.setParam(B.ENVMOD, 100)
+        host.setParam(B.CUTOFF, pct(cutoff))
         const second = STEP16 * 4
         const events = legato ? [on(0, 48), on(second, 55), off(second + 100, 48), off(second * 2, 55)]
             : [on(0, 48), off(second - 200, 48), on(second, 55), off(second * 2, 55)]
@@ -573,7 +577,7 @@ check("303: Shuffle moves the second 16th of each 8th later in every pattern, at
     const onset = (shuffle, on = 1) => {
         const host = new Host(KIND.BASS)
         host.setParam(B.PLAY, 1)
-        host.setParam(B.SHUFFLE, shuffle)
+        host.setParam(B.SHUFFLE, pct(shuffle))
         host.receive(patternMessage(0, patternBytes({1: [0, 0, 1, 0, 0, 0]}, 16, on)))
         host.start(0)
         const [left] = host.run([], BEAT)
@@ -662,12 +666,29 @@ const loadKit = host => {
 }
 
 for (const [kind, name] of [[KIND.TR808, "808"], [KIND.TR909, "909"]]) {
-    check(`${name}: silent without samples; a kit's slots sound on General MIDI's drum keys, velocity above 100 louder`, () => {
+    check(`${name}: the factory kit sounds from the start and is saved as a reference, a slot the user brings is saved whole`, () => {
         const host = new Host(kind)
-        const [empty] = host.run([on(host.position, 36), on(host.position + 4000, 38), on(host.position + 8000, 42)], 12000)
-        assert.ok(peak(empty) < 1e-4, "no samples, no sound")
-        const status = host.receive(new Uint8Array([PAGE.POLL])).sent[0]
-        assert.equal(status[5], 0, "no slot holds a sample")
+        const slots = kind === KIND.TR808 ? 24 : 21
+        assert.equal(host.receive(new Uint8Array([PAGE.POLL])).sent[0][5], slots, "every slot holds its factory sample")
+        for (const key of [36, 38, 41, 45, 48, 37, 39, 42, 46, 49]) {
+            const [left] = host.run([on(host.position, key)], 8000)
+            assert.ok(peak(left) > 0.005, `key ${key} (factory)`)
+        }
+        const fresh = host.save()
+        assert.ok(fresh.length < 8000, `a fresh state holds no samples (${fresh.length} bytes)`)
+        const view = new DataView(fresh.buffer, fresh.byteOffset)
+        for (let i = 0; i < slots; i++) {assert.equal(view.getUint32(fresh.length - 4 * (slots - i), true), 0xFFFFFFFF)}
+        const first = kind === KIND.TR808 ? 1000 : 1025
+        assert.ok(host.receive(kitSlot(first, testSample(60))).handled)
+        const mixed = host.save()
+        assert.equal(mixed.length, fresh.length + 2 * Math.round(44100 * 0.3), "the user's slot is saved whole, the others stay references")
+        const other = new Host(kind)
+        assert.ok(other.load(mixed))
+        assert.deepEqual(other.save(), mixed)
+    })
+
+    check(`${name}: a kit's slots sound on General MIDI's drum keys, velocity above 100 louder`, () => {
+        const host = new Host(kind)
         loadKit(host)
         assert.equal(host.receive(new Uint8Array([PAGE.POLL])).sent[0][0], PLUGIN.SNAPSHOT, "a kit change sends the snapshot")
         assert.equal(host.receive(new Uint8Array([PAGE.POLL])).sent[0][5], kind === KIND.TR808 ? 24 : 21)
@@ -729,12 +750,12 @@ check("effects: report their latency, the input comes out after it (the distorti
 check("distortion: clips and shapes, harder with more amount at about the same level, its curve in the status", () => {
     const run = (amount, shape) => {
         const host = new Host(KIND.DIST)
-        host.setParam(0, amount)
+        host.setParam(0, pct(amount))
         host.setParam(1, shape)
         const [left, right] = host.run([], SAMPLE_RATE / 2, sine(220, 0.3))
         return {left, right, host}
     }
-    const gentle = run(10, 0), hard = run(127, 0), shaped = run(100, 80)
+    const gentle = run(10, 0), hard = run(127, 0), shaped = run(100, 21)
     assert.deepEqual(gentle.left, gentle.right)
     // the clipper's threshold falls as its gain rises: more amount squares the sine, the level stays
     const crest = samples => peak(samples, 4000) / rms(samples, 4000)
@@ -751,8 +772,8 @@ check("distortion: clips and shapes, harder with more amount at about the same l
     const host = shaped.host
     assert.equal(host.text(1, 0), "Clip")
     assert.equal(host.text(1, 1), "1")
-    assert.equal(host.text(1, 4), "2")
-    assert.equal(host.text(1, 127), "32")
+    assert.equal(host.text(1, 2), "2")
+    assert.equal(host.text(1, 32), "32")
     assert.equal(host.parse(1, "Clip"), 0)
     assert.equal(host.parse(1, "1"), 1)
     assert.equal(host.text(1, host.parse(1, "17")), "17")
@@ -781,12 +802,13 @@ check("PCF: its pattern follows the beat while the transport plays, runs on whil
     assert.equal(status.length, 8 + 6 * 8 + 12 + 32)
     const length = view.getUint16(8 + 48 + 8, true), resolution = view.getUint16(8 + 48 + 10, true)
     assert.ok(length > 0 && [8, 16, 32].includes(resolution), `${length} ${resolution}`)
-    assert.equal(a.host.text(3, 24), "25", "waves count from 1")
+    assert.equal(a.host.text(3, 25), "25", "waves count from 1")
+    assert.equal(a.host.value(3), 25)
 })
 
 check("compressor: turns a loud signal down, linked over both sides", () => {
     const host = new Host(KIND.COMP)
-    host.setParam(0, 127)
+    host.setParam(0, 100)
     host.setParam(1, 0)
     const [left, right] = host.run([], SAMPLE_RATE, frame => [sine(110, 0.9)(frame), sine(110, 0.2)(frame)])
     const inL = 0.9 / Math.SQRT2, inR = 0.2 / Math.SQRT2
@@ -820,15 +842,17 @@ check("delay: echoes at its length (steps of 16ths or 8th triplets at the tempo)
     // feedback repeats it, the pan to the right leaves the left dry
     const host = new Host(KIND.DELAY)
     host.setParam(0, 2)
-    host.setParam(2, 100)
-    host.setParam(3, 127)
+    host.setParam(2, pct(100))
+    host.setParam(3, 63)
     const start = host.position
     const [left, right] = host.run([], SAMPLE_RATE * 2, frame => frame === start + 1000 ? 1 : 0)
     const latency = host.latencyFrames()
     const first = 1000 + latency + 2 * STEP16, second = first + 2 * STEP16
     assert.ok(peak(right, second - 50, second + 50) > 0.05, "a repeat")
     assert.ok(peak(left, first - 50, first + 50) < 0.01 && peak(right, first - 50, first + 50) > 0.05, "panned right")
-    assert.equal(host.text(3, 127), "R63")
+    assert.equal(host.text(3, 63), "R63")
+    assert.equal(host.text(3, -12), "L12")
+    assert.equal(host.parse(3, "L12"), -12)
     assert.equal(host.text(1, 1), "1/8 T")
 })
 
@@ -842,6 +866,96 @@ check("effects: the state keeps their parameters", () => {
         assert.equal(other.value(1), 1)
         assert.deepEqual(other.save(), saved)
     }
+})
+
+check("effects: a tail of their latency and ring, the delay's repeats until -60 dB, endless at full feedback", () => {
+    for (const kind of [KIND.DIST, KIND.PCF, KIND.COMP]) {
+        const host = new Host(kind)
+        assert.ok(host.tailFrames() > host.latencyFrames(), `kind ${kind}`)
+    }
+    const host = new Host(KIND.DELAY)
+    host.setParam(0, 4)
+    host.setParam(2, pct(64))
+    const quarter = SAMPLE_RATE * 60 / 120
+    const tail = host.tailFrames()
+    assert.ok(tail > quarter * 9 && tail < quarter * 13, `tail ${tail}, about 10 repeats of a beat`)
+    host.setParam(2, 100)
+    assert.equal(host.tailFrames(), 0xFFFFFFFF)
+    for (const kind of [KIND.BASS, KIND.TR808, KIND.TR909]) {assert.equal(new Host(kind).tail, 0, "instruments: no tail")}
+})
+
+check("sleep in silence: the engine rests without notes or input, a note or input wakes it at once, the delay's late repeat comes", () => {
+    for (const kind of [KIND.BASS, KIND.TR808, KIND.TR909]) {
+        const host = new Host(kind, true)
+        host.run([], SAMPLE_RATE)
+        const [left] = host.run([on(host.position + 1000, 36)], 8000)
+        assert.ok(peak(left, 1000, 4000) > 0.005, `kind ${kind} wakes on a note`)
+        assert.ok(peak(left, 0, 1000) === 0, "silent before")
+    }
+    const host = new Host(KIND.DELAY)
+    host.setParam(0, 16)
+    host.setParam(2, 0)
+    const start = host.position
+    const [left] = host.run([], SAMPLE_RATE * 3, frame => frame === start + 1000 ? 1 : 0)
+    const at = 1000 + host.latencyFrames() + 16 * STEP16
+    assert.ok(peak(left, at - 50, at + 50) > 0.05, "a repeat after a second of silence")
+    const comp = new Host(KIND.COMP)
+    comp.run([], SAMPLE_RATE)
+    const [out] = comp.run([], 4000, sine(220, 0.5))
+    assert.ok(peak(out, 1000) > 0.1, "input wakes an effect")
+})
+
+check("speed: microseconds per 128 frames at 48 kHz, sounding and asleep", () => {
+    const report = []
+    const time = (host, blocks, events = () => [], input = undefined) => {
+        const started = process.hrtime.bigint()
+        for (let b = 0; b < blocks; b++) {host.run(events(b), 128, input)}
+        return Number(process.hrtime.bigint() - started) / 1000 / blocks
+    }
+    for (const [kind, name] of [[KIND.BASS, "303"], [KIND.TR808, "808"], [KIND.TR909, "909"]]) {
+        const playing = new Host(kind, false)
+        playing.start(0)
+        const busy = time(playing, 400)
+        const idle = time(new Host(kind, true), 400)
+        report.push(`${name} ${busy.toFixed(1)} / ${idle.toFixed(1)}`)
+        assert.ok(busy < 1000, `${name}: ${busy} µs`)
+    }
+    for (const [kind, name] of [[KIND.DIST, "dist"], [KIND.PCF, "pcf"], [KIND.COMP, "comp"], [KIND.DELAY, "delay"]]) {
+        const busy = time(new Host(kind), 400, () => [], sine(220, 0.5))
+        const idle = time(new Host(kind), 400)
+        report.push(`${name} ${busy.toFixed(1)} / ${idle.toFixed(1)}`)
+        assert.ok(busy < 1000, `${name}: ${busy} µs`)
+    }
+    console.log(`    (sounding / asleep, µs per block, the host's buffers included) ${report.join(", ")}`)
+})
+
+check("the page's widths are the plugin's (page/index.html WIDTHS, the width features)", () => {
+    const page = readFileSync(new URL("page/index.html", import.meta.url), "utf8")
+    const widths = Function(`return ${page.match(/const WIDTHS = (\{[^}]*\})/)[1]}`)()
+    const names = ["bass", "distortion", "pcf", "compressor", "delay", "tr808", "tr909"]
+    names.forEach((name, kind) => {
+        const host = new Host(kind)
+        const feature = host.features.find(f => f.startsWith("opendaw:device-panel-width:"))
+        assert.equal(Number(feature.split(":").pop()), widths[name], name)
+    })
+})
+
+check("distortion: every curve fits the screen's fixed scale (page/index.html DISTORTION_SCALE)", () => {
+    const page = readFileSync(new URL("page/index.html", import.meta.url), "utf8")
+    const scale = Number(page.match(/const DISTORTION_SCALE = ([0-9.]+)/)[1])
+    let highest = 0
+    const host = new Host(KIND.DIST)
+    for (let amount = 0; amount <= 127; amount += 7) {
+        for (let shape = 0; shape <= 32; shape++) {
+            host.setParam(0, pct(amount))
+            host.setParam(1, shape)
+            const status = host.receive(new Uint8Array([PAGE.POLL])).sent[0]
+            const view = new DataView(status.buffer, status.byteOffset)
+            for (let i = 0; i < 65; i++) {highest = Math.max(highest, Math.abs(view.getFloat32(8 + 16 + i * 4, true)))}
+        }
+    }
+    console.log(`    (the loudest curve ${highest.toFixed(3)})`)
+    assert.ok(highest <= scale, `${highest} > ${scale}`)
 })
 
 console.log(`${passed} checks passed`)

@@ -13,8 +13,10 @@ the bit-exact reimplementation of ReBirth RB-338 2.01's engine, as five WebCLAP 
 | OpenRB 808 | `studio.opendaw.openrb.tr808` | instrument |
 | OpenRB 909 | `studio.opendaw.openrb.tr909` | instrument |
 
-The TR-808 and TR-909 play ReBirth's own drum samples, which are Reason Studios' (Propellerhead's) recordings. This
-port ships none of them: the user brings them (see Behaviour).
+The TR-808 and TR-909 played ReBirth's own drum samples, which are Reason Studios' (Propellerhead's) recordings. This
+port ships none of them. It ships factory kits made of free recordings plus a few synthesised layers instead
+([kits/README.md](kits/README.md): sources, licences, the CC BY credit for the 909 samples), and the user can bring
+ReBirth's (see Behaviour).
 
 ## How
 
@@ -37,12 +39,13 @@ port ships none of them: the user brings them (see Behaviour).
   slide, rest) on the host's transport: a new pattern starts at the next bar line, Shuffle delays the second 16th of
   each 8th. Sound: 2.0 or Vintage (song-wide in the original). Gain (-24 to +6 dB, 0 the engine's own level) is the port's:
   the original's accents pass 0 dB before its mixer turns them down.
-- **808, 909**: silent until they have samples. Drop `ReBirth.dll` on the panel (the free download of the ReBirth
+- **808, 909**: play their factory kits (embedded in the module, saved in the state as a reference of 4 bytes per
+  slot). Drop `ReBirth.dll` on the panel (the free download of the ReBirth
   Museum; the plugin reads its 46 AIFF resources with the engine's own `SampleSet::from_dll`), or sample files named
   as their slots (808: `BD`, `SD1`..`SD5`, `N1`..`N4`, `CB`, `CH`, `CL`, `CP`, `CY`, `HC`, `HT`, `LC`, `LT`, `MA`,
   `MC`, `MT`, `OH`, `RS`; 909: `bd1`..`bd4`, `sd1`..`sd5`, `sdn1`..`sdn3`, `lt`, `mt`, `ht`, `rs`, `hc`, `chh`, `ohh`,
-  `ccy`, `rcy`; any format the browser decodes, taken as 44.1 kHz mono), or click the empty screen to choose them.
-  The samples live in the plugin's state (only the machine's own slots). Mods (`.rbm`) are not read: upstream's mod
+  `ccy`, `rcy`; any format the browser decodes, taken as 44.1 kHz mono).
+  Samples the user brings live in the plugin's state (only the machine's own slots). Mods (`.rbm`) are not read: upstream's mod
   crate carries ReBirth's standard kit and part of its decryption key. Notes on General MIDI's drum keys play the
   instruments in both modes (velocity above 100 accents, on the 909 its strong hit); Play: Pattern (the default) runs
   the 32 patterns on the transport, bank A with four factory patterns each. The step grid on the panel: a click
@@ -54,6 +57,11 @@ port ships none of them: the user brings them (see Behaviour).
 - **Delay**: steps of 16ths or 8th triplets at the host's tempo; Send is the mixer's send knob (the dry signal
   passes), each instance has its own line.
 - **Compressor**: linked stereo, as on the original's master.
+- **Parameters** in the units the panels show: percent for the device's 0..127 knobs (a step of 100/127), the 303's
+  Tune in semitones, Pan -63..63, the PCF's waves 1..55, the distortion's Shape 0 (Clip) and its curves 1..32.
+- **Tail and sleep**: the effects report their tail (the delay's repeats until -60 dB, endless at full feedback).
+  Every device stops its engine after 50 ms of silence, without input, notes or a running pattern (the delay waits
+  for its line as well), and wakes on the next note or input.
 
 ## Build
 

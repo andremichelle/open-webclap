@@ -1,0 +1,272 @@
+{
+ "808/BD": {
+  "source": "freesound-karman_lyne-tr08/519306_TR08_Kd01.WAV.mp3",
+  "ratio": 1.0,
+  "gain": 0.93026,
+  "score": 74.1
+ },
+ "808/SD1": {
+  "source": "sd808:0",
+  "ratio": 1.0,
+  "gain": 0.180284,
+  "score": 84.5
+ },
+ "808/SD2": {
+  "source": "sd808:1",
+  "ratio": 1.0,
+  "gain": 0.163051,
+  "score": 83.3
+ },
+ "808/SD3": {
+  "source": "sd808:2",
+  "ratio": 1.0,
+  "gain": 0.161903,
+  "score": 81.1
+ },
+ "808/SD4": {
+  "source": "sd808:3",
+  "ratio": 1.0,
+  "gain": 0.17267,
+  "score": 75.7
+ },
+ "808/SD5": {
+  "source": "sd808:4",
+  "ratio": 1.0,
+  "gain": 0.174497,
+  "score": 77.5
+ },
+ "808/N1": {
+  "source": "n808:0",
+  "ratio": 1.0,
+  "gain": 0.293659,
+  "score": 83.3
+ },
+ "808/N2": {
+  "source": "n808:1",
+  "ratio": 1.0,
+  "gain": 0.309926,
+  "score": 81.7
+ },
+ "808/N3": {
+  "source": "n808:2",
+  "ratio": 1.0,
+  "gain": 0.307929,
+  "score": 81.9
+ },
+ "808/N4": {
+  "source": "n808:3",
+  "ratio": 1.0,
+  "gain": 0.362827,
+  "score": 81.6
+ },
+ "808/CB": {
+  "source": "freesound-karman_lyne-tr08/519303_TR08_CowBell01.WAV.mp3",
+  "ratio": 1.0,
+  "gain": 0.422323,
+  "score": 81.5
+ },
+ "808/CH": {
+  "source": "freesound-karman_lyne-tr08/519308_TR08_HhClosed01.WAV.mp3",
+  "ratio": 1.0,
+  "gain": 0.550735,
+  "score": 77.9
+ },
+ "808/CL": {
+  "source": "freesound-karman_lyne-tr08/519304_TR08_Clave01.WAV.mp3",
+  "ratio": 1.0,
+  "gain": 0.386863,
+  "score": 69.1
+ },
+ "808/CP": {
+  "source": "sf-fluidr3mono/kits/025_TR_808/039-039_808_Clap.wav",
+  "ratio": 1.0,
+  "gain": 0.526257,
+  "score": 68.9
+ },
+ "808/CY": {
+  "source": "cy808",
+  "ratio": 1.0,
+  "gain": 0.808193,
+  "score": 70.6
+ },
+ "808/HC": {
+  "source": "sf-fluidr3mono/kits/025_TR_808/062-062_808_High_Conga.wav",
+  "ratio": 0.926591,
+  "gain": 0.501657,
+  "score": 81.5
+ },
+ "808/HT": {
+  "source": "sf-fluidr3mono/kits/025_TR_808/045-045_808_Tom_3.wav",
+  "ratio": 1.155556,
+  "gain": 0.525107,
+  "score": 85.2
+ },
+ "808/LC": {
+  "source": "sf-fluidr3mono/kits/025_TR_808/064-064_808_Low_Conga.wav",
+  "ratio": 0.968085,
+  "gain": 0.517377,
+  "score": 82.2
+ },
+ "808/LT": {
+  "source": "sf-fluidr3mono/kits/025_TR_808/041-041_808_Tom_1.wav",
+  "ratio": 0.873239,
+  "gain": 0.407794,
+  "score": 79.0
+ },
+ "808/MA": {
+  "source": "ma808",
+  "ratio": 1.0,
+  "gain": 0.569349,
+  "score": 65.6
+ },
+ "808/MC": {
+  "source": "sf-fluidr3mono/kits/025_TR_808/063-063_808_Mid_Conga.wav",
+  "ratio": 1.017766,
+  "gain": 0.376847,
+  "score": 87.6
+ },
+ "808/MT": {
+  "source": "sf-fluidr3mono/kits/025_TR_808/043-043_808_Tom_2.wav",
+  "ratio": 1.072626,
+  "gain": 0.504589,
+  "score": 81.8
+ },
+ "808/OH": {
+  "source": "freesound-karman_lyne-tr08/519307_TR08_HhOpen01.WAV.mp3",
+  "ratio": 1.0,
+  "gain": 0.56174,
+  "score": 82.1
+ },
+ "808/RS": {
+  "source": "freesound-karman_lyne-tr08/520172_TR08_RimShot01.WAV.mp3",
+  "ratio": 1.0,
+  "gain": 0.476441,
+  "score": 75.1
+ },
+ "909/bd1": {
+  "source": "freesound-altemark-tr909jgb/26502_bd16.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.742027,
+  "score": 77.9
+ },
+ "909/bd2": {
+  "source": "freesound-altemark-tr909jgb/26508_bd22.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.681194,
+  "score": 80.1
+ },
+ "909/bd3": {
+  "source": "freesound-altemark-tr909jgb/26509_bd23.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.644535,
+  "score": 77.1
+ },
+ "909/bd4": {
+  "source": "freesound-altemark-tr909jgb/26513_bd27.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.626545,
+  "score": 79.4
+ },
+ "909/sd1": {
+  "source": "freesound-altemark-tr909jgb/26688_sn15.wav.mp3",
+  "ratio": 1.034091,
+  "gain": 0.795445,
+  "score": 75.3
+ },
+ "909/sd2": {
+  "source": "freesound-altemark-tr909jgb/26688_sn15.wav.mp3",
+  "ratio": 1.25,
+  "gain": 0.935139,
+  "score": 70.5
+ },
+ "909/sd3": {
+  "source": "freesound-altemark-tr909jgb/26689_sn16.wav.mp3",
+  "ratio": 1.085366,
+  "gain": 0.910378,
+  "score": 70.6
+ },
+ "909/sd4": {
+  "source": "freesound-altemark-tr909jgb/26690_sn17.wav.mp3",
+  "ratio": 1.095563,
+  "gain": 0.947169,
+  "score": 74.0
+ },
+ "909/sd5": {
+  "source": "freesound-altemark-tr909jgb/26691_sn18.wav.mp3",
+  "ratio": 1.078078,
+  "gain": 0.978527,
+  "score": 73.5
+ },
+ "909/sdn1": {
+  "source": "n909:0",
+  "ratio": 1.0,
+  "gain": 0.271065,
+  "score": 86.2
+ },
+ "909/sdn2": {
+  "source": "n909:1",
+  "ratio": 1.0,
+  "gain": 0.30293,
+  "score": 86.3
+ },
+ "909/sdn3": {
+  "source": "n909:2",
+  "ratio": 1.0,
+  "gain": 0.280762,
+  "score": 84.5
+ },
+ "909/lt": {
+  "source": "freesound-altemark-tr909jgb/26610_lt15.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.879269,
+  "score": 82.8
+ },
+ "909/mt": {
+  "source": "freesound-altemark-tr909jgb/26642_mt23.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.925603,
+  "score": 87.5
+ },
+ "909/ht": {
+  "source": "freesound-altemark-tr909jgb/26577_ht04.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.887038,
+  "score": 80.7
+ },
+ "909/rs": {
+  "source": "freesound-altemark-tr909jgb/26672_rs03.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.874834,
+  "score": 78.3
+ },
+ "909/hc": {
+  "source": "freesound-altemark-tr909jgb/26555_clp04.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.804728,
+  "score": 79.5
+ },
+ "909/chh": {
+  "source": "freesound-altemark-tr909jgb/26523_ch04.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.870824,
+  "score": 80.2
+ },
+ "909/ohh": {
+  "source": "freesound-altemark-tr909jgb/26644_oh02.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.967439,
+  "score": 90.0
+ },
+ "909/ccy": {
+  "source": "freesound-altemark-tr909jgb/26662_ride05.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.843296,
+  "score": 78.1
+ },
+ "909/rcy": {
+  "source": "freesound-altemark-tr909jgb/26663_ride06.wav.mp3",
+  "ratio": 1.0,
+  "gain": 0.989381,
+  "score": 90.6
+ }
+}

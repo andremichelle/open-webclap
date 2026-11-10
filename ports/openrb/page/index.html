@@ -28,8 +28,8 @@
             --led-on: #ff3d2e;
         }
         * {box-sizing: border-box}
-        html, body {margin: 0; height: 100%; overflow: hidden; background: transparent}
-        body {background: transparent; font-family: Rubik, sans-serif; color: var(--text); user-select: none;
+        html, body {margin: 0; height: 100%; overflow: hidden; background: hsl(197, 14%, 12%)}
+        body {font-family: Rubik, sans-serif; color: var(--text); user-select: none;
             -webkit-user-select: none}
         body.preview {overflow: auto; background: hsl(197, 14%, 12%)}
         #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
@@ -76,6 +76,12 @@
         .selector.active .value {color: var(--orange)}
         .selector .label {font-size: 9px; line-height: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim)}
 
+        /* a button in a selector's box: the pattern's Clear */
+        .button-box {height: 22px; padding: 0 10px; display: grid; place-items: center; border-radius: 3px;
+            background: var(--screen); font-size: 9px; font-weight: 500; letter-spacing: 0.04em; color: var(--dim);
+            cursor: pointer}
+        .button-box:active {color: var(--orange)}
+
         /* the drum machines: a column per instrument, its name on top, small knobs below */
         .instrument {display: flex; flex-direction: column; align-items: center; height: 160px}
         .instrument > .name {height: 12px; font-size: 9px; line-height: 12px; font-weight: 500; letter-spacing: 0.05em;
@@ -110,31 +116,33 @@
 <script>
     "use strict"
     const clamp = (value, low, high) => Math.min(high, Math.max(low, value))
+    // a value on its parameter's steps: whole numbers, or a percentage's bytes
+    const quantise = (p, value) => p.step ? Math.round(clamp(value, p.low, p.high) / p.step) * p.step
+        : Math.round(clamp(value, p.low, p.high))
     const ORANGE = alpha => `rgba(240, 138, 36, ${alpha})`
     const GREY = alpha => `rgba(207, 207, 207, ${alpha})`
 
     // --- the devices ------------------------------------------------------------------------------------------------
-    // As plugin/openrb.cpp: the parameters in id order, their values the device's own numbers. A pattern's Length is
+    // As plugin/openrb.cpp: the parameters in id order, their values in the units shown (percent of the device's
+    // 0..127 on a step of a byte, semitones, pan -63..63, waves 1..55, shape 0 Clip and curves 1..32). A pattern's Length is
     // the pattern's, not a parameter: the page keeps it and sends the pattern's header. Shuffle is a knob alone (every
     // pattern shuffles, at 0 nothing moves).
 
-    const TUNE = [-12, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-        11, 12, 12]
-    const percent = value => `${Math.round(value * 100 / 127)}%`
+    const percent = value => `${Math.round(value)}%`
+    // a percentage moves in the device's bytes (127 to 100 %)
+    const BYTE = 100 / 127
     const patternName = index => `${"ABCD"[index >> 3]}${(index & 7) + 1}`
-    // a knob from 0 to 127 on a scale of 0 to 10
+    // a knob from 0 to 100 % on a scale of 0 to 10, its default the device's byte
     const knob = (label, def, text = percent, extra = {}) =>
-        ({label, low: 0, high: 127, def, text, scale: ["0", "10"], ...extra})
+        ({label, low: 0, high: 100, def: def * BYTE, step: BYTE, text, scale: ["0", "10"], ...extra})
     const choice = (label, labels, def = 0) => ({label, low: 0, high: labels.length - 1, def, labels, text: v => labels[v]})
 
     const DEVICES = {
         bass: {
             title: "OpenRB 303",
             params: {
-                tune: knob("Tune", 64, value => {
-                    const semis = TUNE[value >> 2]
-                    return semis === 0 ? "0 st" : `${semis > 0 ? "+" : ""}${semis} st`
-                }, {scale: ["-12", "12"], bipolar: true}),
+                tune: {label: "Tune", low: -12, high: 12, def: 0, scale: ["-12", "12"], bipolar: true,
+                    text: value => value === 0 ? "0 st" : `${value > 0 ? "+" : ""}${value} st`},
                 cutoff: knob("Cutoff", 20),
                 resonance: knob("Reso", 90),
                 envmod: knob("Env Mod", 20),
@@ -150,7 +158,7 @@
             },
             build: panel => panel.row([
                 panel.stepScreen(240, 160),
-                panel.stack([panel.selector("pattern"), panel.selector("length")], "steppers"),
+                panel.stack([panel.selector("pattern"), panel.selector("length"), panel.clear()], "steppers"),
                 panel.grid(["cutoff", "resonance", "envmod", "decay", "accent", "tune"]),
                 panel.stack([panel.choice("play", ["Pattern", "Notes"], {values: [1, 0]}),
                     panel.choice("sound", ["2.0", "Vintage"]), panel.choice("wave", ["Saw", "Sqr"])]),
@@ -159,14 +167,15 @@
         },
         distortion: {
             title: "OpenRB Distortion",
-            params: {amount: knob("Amount", 70), shape: knob("Shape", 0, value => value === 0 ? "Clip" : String((value >> 2) + 1))},
+            params: {amount: knob("Amount", 70), shape: {label: "Shape", low: 0, high: 32, def: 0, scale: ["0", "32"],
+                text: value => value === 0 ? "Clip" : String(value)}},
             build: panel => panel.row([panel.screen("distortion", 136, 160), panel.grid(["amount", "shape"])])
         },
         pcf: {
             title: "OpenRB PCF",
             params: {
                 frequency: knob("Freq", 70), resonance: knob("Reso", 64), amount: knob("Amount", 40),
-                wave: {label: "Wave", low: 0, high: 54, def: 24, text: value => String(value + 1), scale: ["1", "55"]},
+                wave: {label: "Wave", low: 1, high: 55, def: 25, text: String, scale: ["1", "55"]},
                 decay: knob("Decay", 90),
                 mode: choice("Mode", ["Low Pass", "Band Pass"])
             },
@@ -185,8 +194,8 @@
                 steps: {label: "Steps", low: 1, high: 32, def: 3, text: String, scale: ["1", "32"]},
                 grid: choice("Grid", ["1/16", "1/8 T"]),
                 feedback: knob("Feedback", 80),
-                pan: knob("Pan", 64, value => value === 64 ? "C" : value < 64 ? `L${64 - value}` : `R${value - 64}`,
-                    {scale: ["L", "R"], bipolar: true}),
+                pan: {label: "Pan", low: -63, high: 63, def: 0, scale: ["L", "R"], bipolar: true,
+                    text: value => value === 0 ? "C" : value < 0 ? `L${-value}` : `R${value}`},
                 send: knob("Send", 100)
             },
             build: panel => panel.row([panel.screen("delay", 140, 160),
@@ -208,7 +217,7 @@
             [key, labels ? {...choice(label, labels, def), short} : knob(label, def)]))},
         build: panel => panel.row([
             panel.drumScreen(236, 160),
-            panel.stack([panel.selector("pattern"), panel.selector("length")], "steppers"),
+            panel.stack([panel.selector("pattern"), panel.selector("length"), panel.clear()], "steppers"),
             panel.instruments(columns, gridRows),
             panel.stack([panel.choice("play", ["Pattern", "Notes"], {values: [1, 0], column: true})]),
             panel.grid(["amount", "gain"])
@@ -263,7 +272,7 @@
 
     // --- the messages (plugin/openrb.cpp) -----------------------------------------------------------------------
 
-    const PAGE = {HELLO: 8, STEP: 10, HEADER: 11, COMMIT: 13, KIT_DLL: 14, KIT_SLOT: 15}
+    const PAGE = {HELLO: 8, STEP: 10, HEADER: 11, PATTERN: 12, COMMIT: 13, KIT_DLL: 14, KIT_SLOT: 15}
     const PLUGIN = {STATUS: 1, SNAPSHOT: 2}
     const PATTERN_BYTES = 98, DRUM_PATTERN_BYTES = 194, PATTERNS = 32
     const post = bytes => window.parent.postMessage(bytes.buffer, "*")
@@ -317,7 +326,7 @@
         card.update = () => card.views.forEach(view => view())
         const set = (key, value) => {
             const p = device.params[key]
-            const next = Math.round(clamp(value, p.low, p.high))
+            const next = quantise(p, value)
             if (card.values[p.id] === next) {return}
             card.values[p.id] = next
             host.set(p.id, next)
@@ -330,10 +339,10 @@
             set(key, value)
             host.end(p.id)
         }
+        // the pattern's header to the plugin; the edit is committed (one undo step) at the end of the drag or click
         const sendHeader = () => {
             const p = card.pattern()
             post(new Uint8Array([PAGE.HEADER, card.value("pattern"), 0, p.length]))
-            post(new Uint8Array([PAGE.COMMIT]))
             card.update()
         }
         // the pattern's own Length as the controls see it
@@ -341,12 +350,18 @@
             length: {get: () => card.pattern().length, set: v => {card.pattern().length = v; sendHeader()}, low: 1, high: 16,
                 label: "Length", text: String}
         }
+        // the parameter under the pointer, to openDAW: on enter, move and press (it keeps it while a drag runs)
         const hoverable = (element, id) => {
             element.addEventListener("pointerenter", () => host.hover(id))
+            element.addEventListener("pointermove", () => host.hover(id))
+            element.addEventListener("pointerdown", () => host.hover(id), true)
             element.addEventListener("pointerleave", () => host.hover(null))
         }
+        // a press that changes a value: the left button, not macOS's ctrl+click (a right-click) nor a double-click's
+        // second press (openDAW's value entry)
+        const pressed = event => event.button === 0 && !event.ctrlKey && event.detail < 2
         // a vertical drag changes the value; Shift or Alt for fine steps
-        const dragging = (element, key, get, apply, low, high) => {
+        const dragging = (element, key, get, apply, low, high, step = 0) => {
             let drag = null
             element.addEventListener("pointerdown", event => {
                 if (event.button !== 0 || event.ctrlKey) {return}
@@ -359,7 +374,8 @@
             element.addEventListener("pointermove", event => {
                 if (drag === null) {return}
                 drag.unit = clamp(drag.unit - event.movementY / 128 * (event.shiftKey || event.altKey ? 0.2 : 1.2), 0, 1)
-                const value = Math.round(low + drag.unit * (high - low))
+                const raw = low + drag.unit * (high - low)
+                const value = step ? Math.round(raw / step) * step : Math.round(raw)
                 if (value !== get()) {apply(value)}
             })
             const end = () => {
@@ -425,7 +441,7 @@
                     pointer.setAttribute("transform", `rotate(${START + (value - p.low) / (p.high - p.low) * SWEEP} ${cx} ${cy})`)
                     readout.textContent = p.text(value)
                 })
-                dragging(element, key, () => card.value(key), value => set(key, value), p.low, p.high)
+                dragging(element, key, () => card.value(key), value => set(key, value), p.low, p.high, p.step)
                 hoverable(element, p.id)
                 return element
             },
@@ -435,7 +451,7 @@
                 const element = panel.switches(labels.map((label, index) => {
                     const item = div("switch")
                     item.append(div("led"), div("button"), div("label", label))
-                    item.addEventListener("pointerdown", event => {if (event.button === 0) {pick(key, values[index])}})
+                    item.addEventListener("pointerdown", event => {if (pressed(event)) {pick(key, values[index])}})
                     card.views.push(() => item.classList.toggle("on", card.value(key) === values[index]))
                     return item
                 }), column)
@@ -447,7 +463,7 @@
                 const p = device.params[key]
                 const item = div("switch small")
                 item.append(div("led"), div("button"), div("label", p.short))
-                item.addEventListener("pointerdown", event => {if (event.button === 0) {pick(key, 1 - card.value(key))}})
+                item.addEventListener("pointerdown", event => {if (pressed(event)) {pick(key, 1 - card.value(key))}})
                 card.views.push(() => item.classList.toggle("on", card.value(key) === 1))
                 hoverable(item, p.id)
                 return item
@@ -492,11 +508,14 @@
                 element.append(box, div("label", p.label))
                 const stepBy = delta => {
                     const next = clamp(get() + delta, p.low, p.high)
-                    if (isParam) {pick(key, next)} else {apply(next)}
+                    if (isParam) {pick(key, next)} else if (next !== get()) {
+                        apply(next)
+                        post(new Uint8Array([PAGE.COMMIT]))
+                    }
                 }
                 for (const [arrow, delta] of [[left, -1], [right, 1]]) {
                     arrow.addEventListener("pointerdown", event => {
-                        if (event.button !== 0) {return}
+                        if (event.button !== 0 || event.ctrlKey) {return}
                         event.stopPropagation()
                         stepBy(delta)
                     })
@@ -506,6 +525,29 @@
                 value.addEventListener("lostpointercapture", () => element.classList.remove("active"))
                 if (isParam) {hoverable(element, p.id)}
                 card.views.push(() => value.textContent = p.text(get()))
+                return element
+            },
+            // Clear: the pattern the Pattern selector names, all rests or no hits, its length kept; one undo step
+            clear: () => {
+                const element = div("button-box", "CLEAR")
+                element.addEventListener("pointerdown", event => {
+                    if (!pressed(event)) {return}
+                    const index = card.value("pattern"), length = card.pattern().length
+                    const drums = isDrums(name)
+                    const cleared = drums ? emptyDrumPattern() : emptyPattern()
+                    cleared.length = length
+                    card.patterns[index] = cleared
+                    const size = drums ? DRUM_PATTERN_BYTES : PATTERN_BYTES
+                    const message = new Uint8Array(4 + size)
+                    message[0] = PAGE.PATTERN
+                    message[1] = index
+                    message[4] = 1
+                    message[5] = length
+                    if (!drums) {cleared.steps.forEach((step, i) => message.set(encodeStep(step), 6 + i * 6))}
+                    post(message)
+                    post(new Uint8Array([PAGE.COMMIT]))
+                    card.update()
+                })
                 return element
             },
             screen: (kind, width, height) => {
@@ -835,6 +877,11 @@
         context.restore()
     }
 
+    // the distortion's curves on one scale for every Amount and Shape (the loudest reaches 4.06, check.mjs), on a
+    // square root axis so the gentle ones show too
+    const DISTORTION_SCALE = 4.1
+    // the delay's time axis in beats: the longest delay's three repeats
+    const DELAY_BEATS = 32
     const DISPLAYS = {
         // the pattern the Pattern stepper names: the rows' names on the left, the steps lit (the 909's strong brighter,
         // its flam with a second mark), the step playing marked; without samples where they come from
@@ -923,15 +970,18 @@
             }
             if (!live) {text(context, "NOTES", width - 4, height - 3, "right", GREY(0.35))}
         },
-        // the transfer curve from -1 to 1, unity dashed, the input level on it
+        // the transfer curve from -1 to 1 on a fixed axis, zero and full scale dashed, the input level on it
         distortion: (context, width, height, card) => {
             const curve = card.status.curve
             if (!curve) {return}
             const size = Math.min(width, height) - 16, left = (width - size) / 2, top = (height - size) / 2
-            const scale = Math.max(1e-6, ...curve.map(Math.abs)) / 0.9
-            dashed(context, left, top + size, left + size, top)
-            dashed(context, left, top + size / 2, left + size, top + size / 2)
-            const points = curve.map((value, i) => [left + i / 64 * size, top + size / 2 - value / scale * size / 2])
+            const scale = DISTORTION_SCALE
+            const axis = value => Math.sign(value) * Math.sqrt(Math.min(1, Math.abs(value) / scale))
+            for (const level of [-1, 0, 1]) {
+                const y = top + size / 2 - axis(level) * size / 2
+                dashed(context, left, y, left + size, y)
+            }
+            const points = curve.map((value, i) => [left + i / 64 * size, top + size / 2 - axis(value) * size / 2])
             line(context, points)
             const level = Math.min(1, card.status.meters[0] / 127)
             if (level > 0.01) {
@@ -946,7 +996,7 @@
         pcf: (context, width, height, card) => {
             const wave = card.status.wave
             if (!wave || wave.length === 0) {return}
-            text(context, `WAVE ${card.value("wave") + 1}`, 6, 12)
+            text(context, `WAVE ${card.value("wave")}`, 6, 12)
             text(context, `1/${wave.resolution}`, width - 6, 12, "right")
             const top = 22, bottom = height - 8, left = 6, count = wave.length
             const cell = (width - 12) / count
@@ -1002,10 +1052,11 @@
             const at = steps * (grid === 0 ? 0.25 : 1 / 3)
             text(context, grid === 0 ? `${steps}/16` : `${steps}/8T`, 6, 12)
             if (length > 0) {text(context, `${Math.round(length / 44.1)} ms`, width - 6, 12, "right")}
-            const beats = Math.max(2, Math.ceil(at * 3))
-            const x = t => left + t / beats * (right - left)
-            for (let b = 1; b < beats; b++) {dashed(context, x(b), top, x(b), bottom)}
-            const fb = card.value("feedback") / 127
+            // a fixed axis, the longest delay's three repeats (32 steps of 1/8T, 10 2/3 beats each): a bar per dash
+            const beats = DELAY_BEATS
+            const x = t => left + Math.sqrt(t / beats) * (right - left)
+            for (let b = 4; b < beats; b += 4) {dashed(context, x(b), top, x(b), bottom)}
+            const fb = card.value("feedback") / 100
             context.fillStyle = GREY(0.4)
             context.fillRect(x(0) - 1, top, 2, bottom - top)
             let level = 1
@@ -1040,7 +1091,7 @@
                 s.step = Math.floor(time * 8) % 16
                 break
             case "distortion": {
-                const amount = card.value("amount"), shape = card.value("shape")
+                const amount = card.value("amount") * 1.27, shape = card.value("shape") * 4
                 s.curve = Array.from({length: 65}, (_, i) => {
                     const x = -1 + i / 32, g = 1 + amount / 8
                     return shape === 0 ? clamp(g * x, -0.4, 0.4) : Math.tanh(g * x * (1 + shape / 40))

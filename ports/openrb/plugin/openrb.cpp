@@ -121,15 +121,18 @@ static bool is_drums(uint8_t kind) {return kind == KIND_TR808 || kind == KIND_TR
 static bool is_instrument(uint8_t kind) {return kind == KIND_BASS || is_drums(kind);}
 
 enum Format : uint8_t {
-    F_PERCENT,  // 0..127 as 0..100 %
-    F_TUNE,     // 0..127 as the tune table's semitones
+    F_PERCENT,  // 0..100 %, the device's 0..127
+    F_TUNE,     // -12..+12 semitones, the device's 0..127 through the tune table
     F_CHOICE,   // labels
     F_PATTERN,  // A1..D8
     F_NUMBER,   // as it is
-    F_PAN,      // L63..C..R63
+    F_PAN,      // -63 (L63) .. 0 (C) .. +63 (R63), the device's 1..127
     F_DB,       // whole decibels
-    F_SHAPE     // the distortion's shape: Clip at 0, then the 32 curves (shape >> 2) as 1..32
+    F_SHAPE     // the distortion's shape: 0 Clip, then its 32 curves 1..32 (the device's 0, then shape >> 2)
 };
+
+// a percentage of the device's byte (0..127 as 0..100 %): the host sees percent, the device gets the byte
+#define PC(byte) ((byte) * 100.0 / 127.0)
 
 struct Param {
     const char *name;
@@ -146,49 +149,49 @@ static const int8_t tune_table[32] = {-12, -12, -11, -10, -9, -8, -7, -6, -5, -4
 enum : clap_id {B_TUNE, B_CUTOFF, B_RESONANCE, B_ENVMOD, B_DECAY, B_ACCENT, B_WAVE, B_SOUND, B_PLAY, B_PATTERN,
                 B_SHUFFLE, B_GAIN, B_COUNT};
 static const Param bass_params[B_COUNT] = {
-    {"Tune", 0, 127, 64, 2, F_TUNE, {}},
-    {"Cutoff", 0, 127, 20, 3, F_PERCENT, {}},
-    {"Resonance", 0, 127, 90, 4, F_PERCENT, {}},
-    {"Env Mod", 0, 127, 20, 5, F_PERCENT, {}},
-    {"Decay", 0, 127, 100, 6, F_PERCENT, {}},
-    {"Accent", 0, 127, 64, 7, F_PERCENT, {}},
+    {"Tune", -12, 12, 0, 2, F_TUNE, {}},
+    {"Cutoff", 0, 100, PC(20), 3, F_PERCENT, {}},
+    {"Resonance", 0, 100, PC(90), 4, F_PERCENT, {}},
+    {"Env Mod", 0, 100, PC(20), 5, F_PERCENT, {}},
+    {"Decay", 0, 100, PC(100), 6, F_PERCENT, {}},
+    {"Accent", 0, 100, PC(64), 7, F_PERCENT, {}},
     {"Wave", 0, 1, 0, 8, F_CHOICE, {"Saw", "Square"}},
     {"Sound", 0, 1, 0, 255, F_CHOICE, {"2.0", "Vintage"}},
     {"Play", 0, 1, 1, 255, F_CHOICE, {"Notes", "Pattern"}},
     {"Pattern", 0, PATTERNS - 1, 0, 1, F_PATTERN, {}},
-    {"Shuffle", 0, 127, 0, 255, F_PERCENT, {}},
+    {"Shuffle", 0, 100, PC(0), 255, F_PERCENT, {}},
     {"Gain", -24, 6, 0, 255, F_DB, {}},
 };
 
 enum : clap_id {D_AMOUNT, D_SHAPE, D_COUNT};
 static const Param dist_params[D_COUNT] = {
-    {"Amount", 0, 127, 70, 1, F_PERCENT, {}},
-    {"Shape", 0, 127, 0, 2, F_SHAPE, {}},
+    {"Amount", 0, 100, PC(70), 1, F_PERCENT, {}},
+    {"Shape", 0, 32, 0, 2, F_SHAPE, {}},
 };
 
 enum : clap_id {P_FREQUENCY, P_RESONANCE, P_AMOUNT, P_WAVE, P_DECAY, P_MODE, P_COUNT};
 static const Param pcf_params[P_COUNT] = {
-    {"Frequency", 0, 127, 70, 1, F_PERCENT, {}},
-    {"Resonance", 0, 127, 64, 2, F_PERCENT, {}},
-    {"Amount", 0, 127, 40, 3, F_PERCENT, {}},
-    {"Wave", 0, 54, 24, 4, F_NUMBER, {}},
-    {"Decay", 0, 127, 90, 5, F_PERCENT, {}},
+    {"Frequency", 0, 100, PC(70), 1, F_PERCENT, {}},
+    {"Resonance", 0, 100, PC(64), 2, F_PERCENT, {}},
+    {"Amount", 0, 100, PC(40), 3, F_PERCENT, {}},
+    {"Wave", 1, 55, 25, 4, F_NUMBER, {}},
+    {"Decay", 0, 100, PC(90), 5, F_PERCENT, {}},
     {"Mode", 0, 1, 0, 6, F_CHOICE, {"Low Pass", "Band Pass"}},
 };
 
 enum : clap_id {C_AMOUNT, C_THRESHOLD, C_COUNT};
 static const Param comp_params[C_COUNT] = {
-    {"Amount", 0, 127, 70, 1, F_PERCENT, {}},
-    {"Threshold", 0, 127, 64, 2, F_PERCENT, {}},
+    {"Amount", 0, 100, PC(70), 1, F_PERCENT, {}},
+    {"Threshold", 0, 100, PC(64), 2, F_PERCENT, {}},
 };
 
 enum : clap_id {E_STEPS, E_GRID, E_FEEDBACK, E_PAN, E_SEND, E_COUNT};
 static const Param delay_params[E_COUNT] = {
     {"Steps", 1, 32, 3, 1, F_NUMBER, {}},
     {"Grid", 0, 1, 0, 2, F_CHOICE, {"1/16", "1/8 T"}},
-    {"Feedback", 0, 127, 80, 3, F_PERCENT, {}},
-    {"Pan", 0, 127, 64, 4, F_PAN, {}},
-    {"Send", 0, 127, 100, 255, F_PERCENT, {}},
+    {"Feedback", 0, 100, PC(80), 3, F_PERCENT, {}},
+    {"Pan", -63, 63, 0, 4, F_PAN, {}},
+    {"Send", 0, 100, PC(100), 255, F_PERCENT, {}},
 };
 
 // The 808: the controllers of the machine (tr808.rs, RBS order) after the plugin's own Play, Pattern, Shuffle and
@@ -197,71 +200,71 @@ enum : clap_id {R_PLAY, R_PATTERN, R_SHUFFLE, R_GAIN};
 static const Param tr808_params[] = {
     {"Play", 0, 1, 1, 255, F_CHOICE, {"Notes", "Pattern"}},
     {"Pattern", 0, PATTERNS - 1, 0, 1, F_PATTERN, {}},
-    {"Shuffle", 0, 127, 0, 255, F_PERCENT, {}},
+    {"Shuffle", 0, 100, PC(0), 255, F_PERCENT, {}},
     {"Gain", -24, 6, 0, 255, F_DB, {}},
-    {"Accent", 0, 127, 40, 2, F_PERCENT, {}},
-    {"BD Level", 0, 127, 100, 3, F_PERCENT, {}},
-    {"BD Tone", 0, 127, 64, 4, F_PERCENT, {}},
-    {"BD Decay", 0, 127, 64, 5, F_PERCENT, {}},
-    {"SD Level", 0, 127, 100, 6, F_PERCENT, {}},
-    {"SD Tone", 0, 127, 64, 7, F_PERCENT, {}},
-    {"SD Snappy", 0, 127, 64, 8, F_PERCENT, {}},
-    {"LT Level", 0, 127, 100, 9, F_PERCENT, {}},
-    {"LT Tuning", 0, 127, 64, 10, F_PERCENT, {}},
+    {"Accent", 0, 100, PC(40), 2, F_PERCENT, {}},
+    {"BD Level", 0, 100, PC(100), 3, F_PERCENT, {}},
+    {"BD Tone", 0, 100, PC(64), 4, F_PERCENT, {}},
+    {"BD Decay", 0, 100, PC(64), 5, F_PERCENT, {}},
+    {"SD Level", 0, 100, PC(100), 6, F_PERCENT, {}},
+    {"SD Tone", 0, 100, PC(64), 7, F_PERCENT, {}},
+    {"SD Snappy", 0, 100, PC(64), 8, F_PERCENT, {}},
+    {"LT Level", 0, 100, PC(100), 9, F_PERCENT, {}},
+    {"LT Tuning", 0, 100, PC(64), 10, F_PERCENT, {}},
     {"LT Select", 0, 1, 0, 11, F_CHOICE, {"Conga", "Tom"}},
-    {"MT Level", 0, 127, 100, 12, F_PERCENT, {}},
-    {"MT Tuning", 0, 127, 64, 13, F_PERCENT, {}},
+    {"MT Level", 0, 100, PC(100), 12, F_PERCENT, {}},
+    {"MT Tuning", 0, 100, PC(64), 13, F_PERCENT, {}},
     {"MT Select", 0, 1, 0, 14, F_CHOICE, {"Conga", "Tom"}},
-    {"HT Level", 0, 127, 100, 15, F_PERCENT, {}},
-    {"HT Tuning", 0, 127, 64, 16, F_PERCENT, {}},
+    {"HT Level", 0, 100, PC(100), 15, F_PERCENT, {}},
+    {"HT Tuning", 0, 100, PC(64), 16, F_PERCENT, {}},
     {"HT Select", 0, 1, 0, 17, F_CHOICE, {"Conga", "Tom"}},
-    {"RS Level", 0, 127, 100, 18, F_PERCENT, {}},
+    {"RS Level", 0, 100, PC(100), 18, F_PERCENT, {}},
     {"RS Select", 0, 1, 0, 19, F_CHOICE, {"Claves", "Rim Shot"}},
-    {"CP Level", 0, 127, 100, 20, F_PERCENT, {}},
+    {"CP Level", 0, 100, PC(100), 20, F_PERCENT, {}},
     {"CP Select", 0, 1, 0, 21, F_CHOICE, {"Maracas", "Clap"}},
-    {"CB Level", 0, 127, 100, 22, F_PERCENT, {}},
-    {"CY Level", 0, 127, 100, 23, F_PERCENT, {}},
-    {"CY Tone", 0, 127, 0, 24, F_PERCENT, {}},
-    {"CY Decay", 0, 127, 100, 25, F_PERCENT, {}},
-    {"OH Level", 0, 127, 100, 26, F_PERCENT, {}},
-    {"OH Decay", 0, 127, 100, 27, F_PERCENT, {}},
-    {"CH Level", 0, 127, 100, 28, F_PERCENT, {}},
+    {"CB Level", 0, 100, PC(100), 22, F_PERCENT, {}},
+    {"CY Level", 0, 100, PC(100), 23, F_PERCENT, {}},
+    {"CY Tone", 0, 100, PC(0), 24, F_PERCENT, {}},
+    {"CY Decay", 0, 100, PC(100), 25, F_PERCENT, {}},
+    {"OH Level", 0, 100, PC(100), 26, F_PERCENT, {}},
+    {"OH Decay", 0, 100, PC(100), 27, F_PERCENT, {}},
+    {"CH Level", 0, 100, PC(100), 28, F_PERCENT, {}},
 };
 
 // The 909: its controllers (tr909.rs, RBS order: 20 rim shot, 21 clap, 22 hi-hat level) after the plugin's own.
 static const Param tr909_params[] = {
     {"Play", 0, 1, 1, 255, F_CHOICE, {"Notes", "Pattern"}},
     {"Pattern", 0, PATTERNS - 1, 0, 1, F_PATTERN, {}},
-    {"Shuffle", 0, 127, 0, 255, F_PERCENT, {}},
+    {"Shuffle", 0, 100, PC(0), 255, F_PERCENT, {}},
     {"Gain", -24, 6, 0, 255, F_DB, {}},
-    {"Accent", 0, 127, 32, 2, F_PERCENT, {}},
-    {"BD Level", 0, 127, 100, 3, F_PERCENT, {}},
-    {"BD Tune", 0, 127, 64, 4, F_PERCENT, {}},
-    {"BD Attack", 0, 127, 64, 5, F_PERCENT, {}},
-    {"BD Decay", 0, 127, 127, 6, F_PERCENT, {}},
-    {"SD Level", 0, 127, 100, 7, F_PERCENT, {}},
-    {"SD Tune", 0, 127, 64, 8, F_PERCENT, {}},
-    {"SD Tone", 0, 127, 64, 9, F_PERCENT, {}},
-    {"SD Snappy", 0, 127, 64, 10, F_PERCENT, {}},
-    {"LT Level", 0, 127, 100, 11, F_PERCENT, {}},
-    {"LT Tune", 0, 127, 64, 12, F_PERCENT, {}},
-    {"LT Decay", 0, 127, 127, 13, F_PERCENT, {}},
-    {"MT Level", 0, 127, 100, 14, F_PERCENT, {}},
-    {"MT Tune", 0, 127, 64, 15, F_PERCENT, {}},
-    {"MT Decay", 0, 127, 127, 16, F_PERCENT, {}},
-    {"HT Level", 0, 127, 100, 17, F_PERCENT, {}},
-    {"HT Tune", 0, 127, 64, 18, F_PERCENT, {}},
-    {"HT Decay", 0, 127, 127, 19, F_PERCENT, {}},
-    {"RS Level", 0, 127, 100, 20, F_PERCENT, {}},
-    {"CP Level", 0, 127, 100, 21, F_PERCENT, {}},
-    {"HH Level", 0, 127, 100, 22, F_PERCENT, {}},
-    {"CH Decay", 0, 127, 32, 23, F_PERCENT, {}},
-    {"OH Decay", 0, 127, 127, 24, F_PERCENT, {}},
-    {"Crash Level", 0, 127, 100, 25, F_PERCENT, {}},
-    {"Crash Tune", 0, 127, 64, 26, F_PERCENT, {}},
-    {"Ride Level", 0, 127, 100, 27, F_PERCENT, {}},
-    {"Ride Tune", 0, 127, 64, 28, F_PERCENT, {}},
-    {"Flam", 0, 127, 64, 29, F_PERCENT, {}},
+    {"Accent", 0, 100, PC(32), 2, F_PERCENT, {}},
+    {"BD Level", 0, 100, PC(100), 3, F_PERCENT, {}},
+    {"BD Tune", 0, 100, PC(64), 4, F_PERCENT, {}},
+    {"BD Attack", 0, 100, PC(64), 5, F_PERCENT, {}},
+    {"BD Decay", 0, 100, PC(127), 6, F_PERCENT, {}},
+    {"SD Level", 0, 100, PC(100), 7, F_PERCENT, {}},
+    {"SD Tune", 0, 100, PC(64), 8, F_PERCENT, {}},
+    {"SD Tone", 0, 100, PC(64), 9, F_PERCENT, {}},
+    {"SD Snappy", 0, 100, PC(64), 10, F_PERCENT, {}},
+    {"LT Level", 0, 100, PC(100), 11, F_PERCENT, {}},
+    {"LT Tune", 0, 100, PC(64), 12, F_PERCENT, {}},
+    {"LT Decay", 0, 100, PC(127), 13, F_PERCENT, {}},
+    {"MT Level", 0, 100, PC(100), 14, F_PERCENT, {}},
+    {"MT Tune", 0, 100, PC(64), 15, F_PERCENT, {}},
+    {"MT Decay", 0, 100, PC(127), 16, F_PERCENT, {}},
+    {"HT Level", 0, 100, PC(100), 17, F_PERCENT, {}},
+    {"HT Tune", 0, 100, PC(64), 18, F_PERCENT, {}},
+    {"HT Decay", 0, 100, PC(127), 19, F_PERCENT, {}},
+    {"RS Level", 0, 100, PC(100), 20, F_PERCENT, {}},
+    {"CP Level", 0, 100, PC(100), 21, F_PERCENT, {}},
+    {"HH Level", 0, 100, PC(100), 22, F_PERCENT, {}},
+    {"CH Decay", 0, 100, PC(32), 23, F_PERCENT, {}},
+    {"OH Decay", 0, 100, PC(127), 24, F_PERCENT, {}},
+    {"Crash Level", 0, 100, PC(100), 25, F_PERCENT, {}},
+    {"Crash Tune", 0, 100, PC(64), 26, F_PERCENT, {}},
+    {"Ride Level", 0, 100, PC(100), 27, F_PERCENT, {}},
+    {"Ride Tune", 0, 100, PC(64), 28, F_PERCENT, {}},
+    {"Flam", 0, 100, PC(64), 29, F_PERCENT, {}},
 };
 #define TR808_COUNT (sizeof(tr808_params) / sizeof(tr808_params[0]))
 #define TR909_COUNT (sizeof(tr909_params) / sizeof(tr909_params[0]))
@@ -358,6 +361,7 @@ struct Plugin {
     Echo *delay;
     Drums *drums;
     Kit *kit;
+    uint64_t factory; // the kit's slots that hold the factory sample (bit: id - the machine's first id)
 
     // the rates: the host's, the resamplers to the engine's and back, a block in, the output's queue
     double host_rate;
@@ -383,6 +387,10 @@ struct Plugin {
     bool pattern_mode;
 
     bool snapshot_due;
+    // sleep in silence: the blocks in a row with silent input and output; past a kind's limit the engine rests
+    uint32_t quiet;
+    // the meters' peaks since the page's last poll
+    uint8_t meter_peak[2];
     float gain; // an instrument's output gain at the end of the last block
 };
 
@@ -391,12 +399,33 @@ static Plugin *plugin_of(const clap_plugin_t *plugin) {return static_cast<Plugin
 static double clamp_value(const Param &p, double value) {
     if (!(value == value)) {value = p.def;}
     value = value < p.min ? p.min : value > p.max ? p.max : value;
-    return std::round(value);
+    return p.format == F_PERCENT ? value : std::round(value); // a percentage keeps its exact value
 }
 
 // a parameter's value as the device's controller byte
+static int tune_byte(int semis) {
+    // the tune table's value nearest the middle for the semitones
+    int best = -1;
+    for (int v = 0; v < 128; v++) {
+        if (tune_table[v >> 2] == semis && (best < 0 || std::abs(v - 64) < std::abs(best - 64))) {best = v;}
+    }
+    return best >= 0 ? best : semis < 0 ? 0 : 127;
+}
+
 static int byte_of(const Plugin *self, clap_id id) {
-    const int v = static_cast<int>(self->values[id]);
+    const double value = self->values[id];
+    switch (self->info->params[id].format) {
+        case F_PERCENT: return static_cast<int>(std::lround(value * 1.27));
+        case F_TUNE: return tune_byte(static_cast<int>(std::lround(value)));
+        case F_PAN: return 64 + static_cast<int>(std::lround(value));
+        case F_SHAPE: {
+            const int curve = static_cast<int>(std::lround(value));
+            return curve <= 1 ? curve : 4 * (curve - 1);
+        }
+        default: break;
+    }
+    const int v = static_cast<int>(value);
+    if (self->kind == KIND_PCF && id == P_WAVE) {return v - 1;} // the device's waves 0..54
     if (self->kind == KIND_PCF && id == P_MODE) {return v == 0 ? 1 : 0;} // the device: 1 low pass, else band pass
     if (self->kind == KIND_DELAY && id == E_GRID) {return v == 0 ? 1 : 0;} // the device: 0 triplets, else 16ths
     return v;
@@ -647,6 +676,7 @@ static void note_off(Plugin *self, int key) {
 
 static void handle_event(Plugin *self, const clap_event_header_t *header) {
     if (header->space_id != CLAP_CORE_EVENT_SPACE_ID) {return;}
+    if (header->type != CLAP_EVENT_PARAM_VALUE && header->type != CLAP_EVENT_PARAM_MOD) {self->quiet = 0;} // a note wakes
     switch (header->type) {
         case CLAP_EVENT_PARAM_VALUE: {
             const clap_event_param_value_t *param = reinterpret_cast<const clap_event_param_value_t *>(header);
@@ -719,6 +749,19 @@ static void run_transport(Plugin *self, uint32_t frame, int32_t *tick, bool *adv
     *tick = static_cast<int32_t>(self->free_tick);
 }
 
+// below this an engine block counts as silent (-100 dB; the engine's denormal guards stay below it)
+#define SILENT 1e-5f
+
+// the engine's blocks of silence before it sleeps: 50 ms, the delay its line's length on top
+static uint32_t sleep_after(const Plugin *self) {
+    uint32_t blocks = ENGINE_RATE / 20 / BLOCK;
+    if (self->kind == KIND_DELAY) {
+        blocks += orb_delay_length(engine_tempo(self), static_cast<uint8_t>(byte_of(self, E_STEPS)),
+                                   static_cast<uint8_t>(byte_of(self, E_GRID))) / BLOCK + 1;
+    }
+    return blocks;
+}
+
 static void run_block(Plugin *self, uint32_t frame) {
     sync_params(self);
     int32_t tick;
@@ -734,17 +777,34 @@ static void run_block(Plugin *self, uint32_t frame) {
         }
     }
     run_transport(self, frame, &tick, &advanced);
+    // sleep in silence: an instrument without a pattern running, an effect without input, once their output has been
+    // silent for a while (the delay: longer than its line, whose repeats come after silence)
+    const bool running = is_instrument(self->kind) && self->pattern_mode && self->transport_playing;
+    bool input = false;
+    if (!is_instrument(self->kind)) {
+        for (int c = 0; c < 2 && !input; c++) {
+            for (int i = 0; i < BLOCK; i++) {if (std::fabs(self->in[c][i]) > SILENT) {input = true; break;}}
+        }
+    }
+    if (running || input) {self->quiet = 0;}
+    if (self->quiet > sleep_after(self)) {
+        std::memset(self->out, 0, sizeof(self->out));
+        for (int i = 0; i < BLOCK; i++) {
+            self->up.push(0.0f, 0.0f, [self](float l, float r) {push_out(self, l, r);});
+        }
+        return;
+    }
     switch (self->kind) {
         case KIND_BASS:
             if (self->pattern_mode && self->transport_playing && advanced && tick >= 0) {
-                orb_bass_step(self->bass, tick, static_cast<uint8_t>(self->values[B_SHUFFLE]), engine_tempo(self));
+                orb_bass_step(self->bass, tick, static_cast<uint8_t>(byte_of(self, B_SHUFFLE)), engine_tempo(self));
             }
             orb_bass_process(self->bass, self->out[0]);
             break;
         case KIND_TR808:
         case KIND_TR909:
             if (self->pattern_mode && self->transport_playing && advanced && tick >= 0) {
-                orb_drums_step(self->drums, tick, static_cast<uint8_t>(self->values[R_SHUFFLE]), engine_tempo(self));
+                orb_drums_step(self->drums, tick, static_cast<uint8_t>(byte_of(self, R_SHUFFLE)), engine_tempo(self));
             }
             orb_drums_process(self->drums, self->out[0]);
             break;
@@ -766,7 +826,7 @@ static void run_block(Plugin *self, uint32_t frame) {
             break;
         case KIND_DELAY: {
             // the send as the mixer's send knob: the level curve's gain on the input, mono
-            const float send_gain = orb_level(static_cast<uint8_t>(self->values[E_SEND]));
+            const float send_gain = orb_level(static_cast<uint8_t>(byte_of(self, E_SEND)));
             float send[BLOCK];
             for (int i = 0; i < BLOCK; i++) {send[i] = (self->in[0][i] + self->in[1][i]) * 0.5f * send_gain;}
             std::memcpy(self->out, self->in, sizeof(self->in));
@@ -775,6 +835,20 @@ static void run_block(Plugin *self, uint32_t frame) {
         }
         default: break;
     }
+    bool sounding = false;
+    for (int c = 0; c < 2 && !sounding; c++) {
+        for (int i = 0; i < BLOCK; i++) {if (std::fabs(self->out[c][i]) > SILENT) {sounding = true; break;}}
+    }
+    self->quiet = sounding ? 0 : self->quiet + 1;
+    // the meters' peaks until the page reads them
+    uint8_t meters[2] = {0, 0};
+    switch (self->kind) {
+        case KIND_DIST: meters[0] = orb_dist_meter(self->dist[0]); meters[1] = orb_dist_meter(self->dist[1]); break;
+        case KIND_COMP: orb_comp_meters(self->comp, &meters[0], &meters[1]); break;
+        case KIND_DELAY: meters[0] = orb_delay_meter(self->delay); break;
+        default: break;
+    }
+    for (int m = 0; m < 2; m++) {if (meters[m] > self->meter_peak[m]) {self->meter_peak[m] = meters[m];}}
     if (is_instrument(self->kind)) {
         // the output gain, ramped over the block; mono to both sides
         const float target = static_cast<float>(std::pow(10.0, self->values[self->info->gain] / 20.0));
@@ -963,7 +1037,7 @@ static bool params_get_info(const clap_plugin_t *plugin, uint32_t index, clap_pa
     const Param &p = self->info->params[index];
     std::memset(info, 0, sizeof(*info));
     info->id = index;
-    info->flags = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_STEPPED;
+    info->flags = CLAP_PARAM_IS_AUTOMATABLE | (p.format == F_PERCENT ? 0 : CLAP_PARAM_IS_STEPPED);
     if (p.format == F_CHOICE || p.format == F_PATTERN) {info->flags |= CLAP_PARAM_IS_ENUM;}
     std::snprintf(info->name, sizeof(info->name), "%s", p.name);
     info->min_value = p.min;
@@ -987,28 +1061,22 @@ static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id, double
     const Plugin *self = plugin_of(plugin);
     if (id >= self->info->count || size == 0) {return false;}
     const Param &p = self->info->params[id];
-    const int v = static_cast<int>(clamp_value(p, value));
+    const double exact = clamp_value(p, value);
+    const int v = static_cast<int>(exact);
     switch (p.format) {
-        case F_PERCENT: std::snprintf(text, size, "%d %%", static_cast<int>(std::lround(v * 100.0 / 127.0))); break;
-        case F_TUNE: {
-            const int semis = tune_table[v >> 2];
-            std::snprintf(text, size, semis == 0 ? "0 st" : "%+d st", semis);
-            break;
-        }
+        case F_PERCENT: std::snprintf(text, size, "%d %%", static_cast<int>(std::lround(exact))); break;
+        case F_TUNE: std::snprintf(text, size, v == 0 ? "0 st" : "%+d st", v); break;
         case F_CHOICE: std::snprintf(text, size, "%s", p.labels[v]); break;
         case F_PATTERN: pattern_name(v, text, size); break;
         case F_DB: std::snprintf(text, size, v > 0 ? "+%d dB" : "%d dB", v); break;
         case F_SHAPE:
-            if (v == 0) {std::snprintf(text, size, "Clip");} else {std::snprintf(text, size, "%d", (v >> 2) + 1);}
+            if (v == 0) {std::snprintf(text, size, "Clip");} else {std::snprintf(text, size, "%d", v);}
             break;
         case F_PAN:
-            if (v == 64) {std::snprintf(text, size, "C");}
-            else {std::snprintf(text, size, "%c%d", v < 64 ? 'L' : 'R', v < 64 ? 64 - v : v - 64);}
+            if (v == 0) {std::snprintf(text, size, "C");}
+            else {std::snprintf(text, size, "%c%d", v < 0 ? 'L' : 'R', v < 0 ? -v : v);}
             break;
-        default:
-            if (self->kind == KIND_PCF && id == P_WAVE) {std::snprintf(text, size, "%d", v + 1);}
-            else {std::snprintf(text, size, "%d", v);}
-            break;
+        default: std::snprintf(text, size, "%d", v); break;
     }
     return true;
 }
@@ -1031,38 +1099,20 @@ static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id, const 
             *value = clamp_value(p, (bank - 'A') * 8 + std::atoi(text + 1) - 1);
             return true;
         }
-        case F_PERCENT: *value = clamp_value(p, std::atof(text) * 127.0 / 100.0); return true;
-        case F_TUNE: {
-            const int semis = std::atoi(text);
-            int best = 64;
-            for (int v = 0; v < 128; v++) {
-                if (tune_table[v >> 2] == semis && std::abs(v - 64) < std::abs(best - 64)) {best = v;}
-            }
-            if (tune_table[best >> 2] != semis) {best = semis < 0 ? 0 : 127;}
-            *value = best;
-            return true;
-        }
+        case F_PERCENT:
+        case F_TUNE:
         case F_DB: *value = clamp_value(p, std::atof(text)); return true;
-        case F_SHAPE: {
-            // Clip, or a curve 1..32: its first value (curve 1 starts at 1, curve n at 4 * (n - 1))
-            if ((text[0] & ~0x20) == 'C') {*value = 0; return true;}
-            const int curve = std::atoi(text);
-            if (curve < 1) {*value = 0; return true;}
-            *value = curve == 1 ? 1 : clamp_value(p, 4.0 * (curve - 1));
+        case F_SHAPE:
+            *value = (text[0] & ~0x20) == 'C' ? 0 : clamp_value(p, std::atof(text));
             return true;
-        }
         case F_PAN: {
+            // L12, R12, C, or a signed number
             const char side = static_cast<char>(text[0] & ~0x20);
-            const int amount = std::atoi(text + 1);
-            *value = clamp_value(p, side == 'L' ? 64 - amount : side == 'R' ? 64 + amount : 64);
+            const double amount = side == 'L' || side == 'R' ? std::atof(text + 1) : std::atof(text);
+            *value = clamp_value(p, side == 'L' ? -amount : side == 'C' ? 0 : amount);
             return true;
         }
-        default: {
-            double parsed = std::atof(text);
-            if (self->kind == KIND_PCF && id == P_WAVE) {parsed -= 1.0;}
-            *value = clamp_value(p, parsed);
-            return true;
-        }
+        default: *value = clamp_value(p, std::atof(text)); return true;
     }
 }
 
@@ -1108,6 +1158,23 @@ static bool write_all(const clap_ostream_t *stream, const uint8_t *bytes, uint64
     return true;
 }
 
+// the factory kits (kits/README.md), embedded by build.sh
+#include "factory_kits.h"
+
+// a slot that holds its factory sample is saved as this frame count, without its samples
+#define FACTORY_FRAMES 0xFFFFFFFFu
+
+static void load_factory_slot(Plugin *self, uint16_t id) {
+    const uint32_t index = id - kit_first(self);
+    const FactorySample &entry = self->kind == KIND_TR808 ? factory_kit_808[index] : factory_kit_909[index];
+    orb_kit_set(self->kit, id, entry.audio, entry.frames);
+    self->factory |= 1ull << index;
+}
+
+static void load_factory_kit(Plugin *self) {
+    for (uint16_t id = kit_first(self); id <= kit_last(self); id++) {load_factory_slot(self, id);}
+}
+
 static bool state_save(const clap_plugin_t *plugin, const clap_ostream_t *stream) {
     Plugin *self = plugin_of(plugin);
     uint8_t bytes[STATE_HEADER + MAX_PARAMS * 8 + PATTERNS * MAX_PATTERN_BYTES] = {};
@@ -1123,6 +1190,11 @@ static bool state_save(const clap_plugin_t *plugin, const clap_ostream_t *stream
     for (uint16_t id = kit_first(self); id <= kit_last(self); id++) {
         uint32_t frames = 0;
         const int16_t *audio = orb_kit_get(self->kit, id, &frames);
+        if ((self->factory >> (id - kit_first(self)) & 1) != 0) {
+            const uint32_t factory = FACTORY_FRAMES;
+            if (!write_all(stream, reinterpret_cast<const uint8_t *>(&factory), 4)) {return false;}
+            continue;
+        }
         if (!write_all(stream, reinterpret_cast<const uint8_t *>(&frames), 4)) {return false;}
         if (frames > 0 && !write_all(stream, reinterpret_cast<const uint8_t *>(audio), frames * 2ull)) {return false;}
     }
@@ -1159,10 +1231,16 @@ static bool state_load(const clap_plugin_t *plugin, const clap_istream_t *stream
         for (int p = 0; p < PATTERNS; p++) {sanitize_any(self, patterns + p * each);}
     }
     if (is_drums(self->kind)) {
-        // the kit: a slot the state lacks (an older or shorter one) stays empty
+        // the kit: a slot the state lacks (an older or shorter one) stays empty, a factory slot gets its sample
+        self->factory = 0;
         for (uint16_t id = kit_first(self); id <= kit_last(self); id++) {
             uint32_t frames = 0;
-            if (read_all(stream, reinterpret_cast<uint8_t *>(&frames), 4) < 4 || frames > 44100u * 60u) {frames = 0;}
+            if (read_all(stream, reinterpret_cast<uint8_t *>(&frames), 4) < 4) {frames = 0;}
+            if (frames == FACTORY_FRAMES) {
+                load_factory_slot(self, id);
+                continue;
+            }
+            if (frames > 44100u * 60u) {frames = 0;}
             int16_t *audio = frames > 0 ? static_cast<int16_t *>(std::malloc(frames * 2ull)) : nullptr;
             if (audio != nullptr && read_all(stream, reinterpret_cast<uint8_t *>(audio), frames * 2ull) < frames * 2ull) {
                 frames = 0;
@@ -1212,10 +1290,10 @@ static uint32_t write_status(Plugin *self, uint8_t *message, uint8_t type) {
             break;
         }
         case KIND_DIST: {
-            message[5] = orb_dist_meter(self->dist[0]);
-            message[6] = orb_dist_meter(self->dist[1]);
+            message[5] = self->meter_peak[0];
+            message[6] = self->meter_peak[1];
             float curve[TRANSFER_POINTS];
-            orb_dist_transfer(static_cast<uint8_t>(self->values[D_AMOUNT]), static_cast<uint8_t>(self->values[D_SHAPE]),
+            orb_dist_transfer(static_cast<uint8_t>(byte_of(self, D_AMOUNT)), static_cast<uint8_t>(byte_of(self, D_SHAPE)),
                               TRANSFER_POINTS, curve);
             std::memcpy(message + at, curve, sizeof(curve));
             at += sizeof(curve);
@@ -1227,7 +1305,7 @@ static uint32_t write_status(Plugin *self, uint8_t *message, uint8_t type) {
             int32_t step;
             orb_pcf_status(self->pcf[0], &env, &step);
             uint16_t length, resolution;
-            orb_pcf_wave(static_cast<uint8_t>(self->values[P_WAVE]), &length, &resolution, message + at + 12);
+            orb_pcf_wave(static_cast<uint8_t>(byte_of(self, P_WAVE)), &length, &resolution, message + at + 12);
             std::memcpy(message + at, &env, 4);
             std::memcpy(message + at + 4, &step, 4);
             std::memcpy(message + at + 8, &length, 2);
@@ -1236,7 +1314,8 @@ static uint32_t write_status(Plugin *self, uint8_t *message, uint8_t type) {
             break;
         }
         case KIND_COMP:
-            orb_comp_meters(self->comp, message + 5, message + 6);
+            message[5] = self->meter_peak[0];
+            message[6] = self->meter_peak[1];
             break;
         case KIND_TR808:
         case KIND_TR909: {
@@ -1253,7 +1332,7 @@ static uint32_t write_status(Plugin *self, uint8_t *message, uint8_t type) {
             break;
         }
         case KIND_DELAY: {
-            message[5] = orb_delay_meter(self->delay);
+            message[5] = self->meter_peak[0];
             const uint32_t length = orb_delay_length(engine_tempo(self), static_cast<uint8_t>(byte_of(self, E_STEPS)),
                                                      static_cast<uint8_t>(byte_of(self, E_GRID)));
             std::memcpy(message + at, &length, 4);
@@ -1262,6 +1341,8 @@ static uint32_t write_status(Plugin *self, uint8_t *message, uint8_t type) {
         }
         default: break;
     }
+    // the page has the peaks, the next poll gets the ones from here on
+    self->meter_peak[0] = self->meter_peak[1] = 0;
     return at;
 }
 
@@ -1336,6 +1417,7 @@ static bool webview_receive(const clap_plugin_t *plugin, const void *buffer, uin
             // u8 type, 3 bytes 0, ReBirth.dll: every slot from its AIFF resources
             if (!is_drums(self->kind) || size < 5) {return false;}
             if (!orb_kit_load_dll(self->kit, bytes + 4, size - 4)) {return false;}
+            self->factory = 0;
             orb_drums_set_kit(self->drums, self->kit);
             self->snapshot_due = true;
             if (self->page.state != nullptr) {self->page.state->mark_dirty(self->page.host);}
@@ -1353,6 +1435,7 @@ static bool webview_receive(const clap_plugin_t *plugin, const void *buffer, uin
             if (audio != nullptr) {std::memcpy(audio, bytes + 8, frames * 2ull);}
             orb_kit_set(self->kit, id, audio, audio != nullptr ? frames : 0);
             std::free(audio);
+            self->factory &= ~(1ull << (id - kit_first(self)));
             orb_drums_set_kit(self->drums, self->kit);
             self->snapshot_due = true;
             if (self->page.state != nullptr) {self->page.state->mark_dirty(self->page.host);}
@@ -1383,11 +1466,31 @@ static bool panel_get_width(const clap_plugin_t *plugin, uint32_t height, uint32
 
 static const opendaw_plugin_device_panel_t device_panel = {panel_get_uri, panel_get_width};
 
+// the tail: an effect's latency and its ring; the delay's repeats until -60 dB (endless at full feedback)
+static uint32_t tail_get(const clap_plugin_t *plugin) {
+    const Plugin *self = plugin_of(plugin);
+    if (is_instrument(self->kind)) {return 0;}
+    const double ratio = self->host_rate / ENGINE_RATE;
+    uint32_t ring = static_cast<uint32_t>(0.1 * self->host_rate); // the filters and the compressor's release
+    if (self->kind == KIND_DELAY) {
+        const int feedback = byte_of(self, E_FEEDBACK);
+        if (feedback >= 127) {return UINT32_MAX;}
+        const double length = orb_delay_length(engine_tempo(self), static_cast<uint8_t>(byte_of(self, E_STEPS)),
+                                               static_cast<uint8_t>(byte_of(self, E_GRID))) * ratio;
+        const double repeats = feedback == 0 ? 1.0 : 1.0 + std::ceil(std::log(0.001) / std::log(feedback / 127.0));
+        ring += static_cast<uint32_t>(std::fmin(length * repeats, 600.0 * self->host_rate));
+    }
+    return self->latency + ring;
+}
+
+static const clap_plugin_tail_t tail = {tail_get};
+
 static const void *plugin_get_extension(const clap_plugin_t *plugin, const char *id) {
     const Plugin *self = plugin_of(plugin);
     if (std::strcmp(id, CLAP_EXT_AUDIO_PORTS) == 0) {return &audio_ports;}
     if (std::strcmp(id, CLAP_EXT_NOTE_PORTS) == 0 && is_instrument(self->kind)) {return &note_ports;}
     if (std::strcmp(id, CLAP_EXT_LATENCY) == 0) {return &latency;}
+    if (std::strcmp(id, CLAP_EXT_TAIL) == 0 && !is_instrument(self->kind)) {return &tail;}
     if (std::strcmp(id, CLAP_EXT_PARAMS) == 0) {return &params;}
     if (std::strcmp(id, CLAP_EXT_STATE) == 0) {return &state;}
     if (std::strcmp(id, CLAP_EXT_WEBVIEW) == 0) {return &webview;}
@@ -1458,8 +1561,9 @@ static const clap_plugin_t *create(const clap_plugin_factory_t *factory, const c
         case KIND_DELAY: self->delay = orb_delay_new(); break;
         case KIND_TR808:
         case KIND_TR909:
-            // no samples until the user brings them
+            // the factory kit until the user brings samples
             self->kit = orb_kit_new();
+            load_factory_kit(self);
             self->drums = orb_drums_new(self->kind == KIND_TR808 ? 0 : 1, self->kit);
             load_factory_patterns(self);
             break;

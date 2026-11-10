@@ -525,7 +525,8 @@ pub unsafe extern "C" fn orb_delay_meter(delay: *const Echo) -> u8 {
 // --- the drum kit: the samples the user brings ---------------------------------------------------------------------
 // The 808 and 909 play ReBirth's own drum samples, which this port does not ship. The user brings them: the 46 AIFF
 // resources of ReBirth.dll (ids 1000..1045, read by the engine's own `SampleSet::from_dll`), or single samples per
-// slot (16-bit mono at 44.1 kHz, decoded by the page). A slot without a sample is silent.
+// slot (16-bit mono at 44.1 kHz, decoded by the page). The plugin fills the slots with its factory kits
+// (ports/openrb/kits) first. A slot without a sample is silent.
 
 use orb_engine::samples::{COUNT as KIT_SLOTS, FIRST_ID, Sample, SampleSet};
 use orb_engine::tr808::{self, Tr808};

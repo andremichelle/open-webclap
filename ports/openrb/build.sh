@@ -17,12 +17,15 @@ OBJCOPY="$(dirname "$(command -v emcc)")/../bin/llvm-objcopy"
 [ -x "$OBJCOPY" ] || OBJCOPY="${EMSDK:-}/upstream/bin/llvm-objcopy"
 "$OBJCOPY" --remove-section=target_features "$ENGINE"
 
+# the factory kits (kits/README.md) as a header
+python3 kits/embed.py kits "$TARGET/factory_kits.h"
+
 cp page/index.html "$OUT/index.html"
 # the shared device panel controls (modules/opendaw-page), next to the page
 mkdir -p "$OUT/opendaw-page"
 cp ../../modules/opendaw-page/panel.css ../../modules/opendaw-page/panel.js "$OUT/opendaw-page/"
 cp LICENSE "$OUT/LICENSE"
-em++ plugin/openrb.cpp "$ENGINE" -std=c++17 -O3 -fno-rtti -I"$CLAP_INCLUDE" -I../../modules/opendaw-clap \
+em++ plugin/openrb.cpp "$ENGINE" -std=c++17 -O3 -fno-rtti -I"$CLAP_INCLUDE" -I../../modules/opendaw-clap -I"$TARGET" \
     -mbulk-memory -mnontrapping-fptoint -fwasm-exceptions \
     -o "$OUT/module.wasm" -sSTANDALONE_WASM=1 --no-entry \
     -sEXPORTED_FUNCTIONS=_malloc,_free -Wl,--export=clap_entry \
