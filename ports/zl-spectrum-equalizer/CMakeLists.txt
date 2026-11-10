@@ -43,6 +43,8 @@ include("${KIT_ROOT}/ports/zl-common/zl_common.cmake")
 
 file(GLOB_RECURSE ZL_ASSET_FILES "${ZL}/assets/*")
 list(SORT ZL_ASSET_FILES)
+# openDAW's font for the restyled window (patches/zl-spectrum-equalizer-webclap.style.patch)
+list(APPEND ZL_ASSET_FILES "${EXT}/fonts/Rubik-Medium.ttf")
 set(WEB_FONT_FILES "${EXT}/fonts/DejaVuSans.ttf" "${EXT}/fonts/DejaVuSans-Bold.ttf")
 set(GENERATED "${CMAKE_CURRENT_BINARY_DIR}/generated")
 

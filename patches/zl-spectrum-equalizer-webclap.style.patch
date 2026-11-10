@@ -1,44 +1,33 @@
-ZLCompressor for WebCLAP (ports/zl-compressor): its window in the style of openDAW's device panels
-(docs/device-panel-design.md): state_definitions.hpp, the editor's default colours; interface_definitons.cpp, flat surfaces (the shadow helpers draw no shadows, a recessed area is a flat
-darker screen); two_value_rotary_slider.hpp, openDAW's knob (a faint track around a dark cap, the value as an
-arc and a pointer in the label cream).
+ZLSpectrumEqualizer for WebCLAP (ports/zl-spectrum-equalizer): its window in the style of openDAW's device panels
+(docs/device-panel-design.md), applied after zl-spectrum-equalizer-webclap.patch: state_definitions.hpp, the editor's
+default colours; ui_state.hpp, the default band and curve colours; interface_definitons.cpp, flat surfaces
+(the shadow helpers draw no shadows, a recessed area is a flat darker screen);
+two_value_rotary_slider.hpp, openDAW's knob (a faint track around a dark cap, the value as an arc in the label
+cream, no pointer); compact_linear_slider.hpp, a value as a thin cream bar; PluginEditor.cpp,
+openDAW's font, Rubik Medium.
 
-diff --color -ru a/source/state/state_definitions.hpp b/source/state/state_definitions.hpp
---- a/source/state/state_definitions.hpp	2026-11-10 16:04:29
-+++ b/source/state/state_definitions.hpp	2026-11-10 16:08:26
-@@ -628,16 +628,19 @@
-     };
- 
-     static constexpr std::array<ColourDefaultSetting, 10> kColourDefaults{
--        ColourDefaultSetting{255 - 8, 255 - 9, 255 - 11, true, 1.f},
--        ColourDefaultSetting{(255 - 214) / 2, (255 - 223) / 2, (255 - 236) / 2, true, 1.f},
--        ColourDefaultSetting{0, 0, 0, true, 1.f},
--        ColourDefaultSetting{70, 66, 62, true, 1.f},
--        ColourDefaultSetting{255 - 8, 255 - 9, 255 - 11, true, .25f},
--        ColourDefaultSetting{205, 205, 205, true, 1.f},
--        ColourDefaultSetting{252, 18, 197, true, 1.f},
--        ColourDefaultSetting{23, 255, 244, true, 1.f},
--        ColourDefaultSetting{255, 165, 0, true, 1.f},
--        ColourDefaultSetting{255 - 8, 255 - 9, 255 - 11, true, .1f}
-+        // openDAW's device panel colours (docs/device-panel-design.md): text, the panel's background, flat shadow
-+        // and glow, the levels in grey, the transfer curve in openDAW's blue (as the panel draws it), gain reduction
-+        // in its cream, the side chain in its orange
-+        ColourDefaultSetting{225, 235, 239, true, 1.f},
-+        ColourDefaultSetting{26, 32, 35, true, 1.f},
-+        ColourDefaultSetting{14, 18, 20, true, 1.f},
-+        ColourDefaultSetting{44, 52, 56, true, 1.f},
-+        ColourDefaultSetting{225, 235, 239, true, .25f},
-+        ColourDefaultSetting{176, 190, 196, true, 1.f},
-+        ColourDefaultSetting{225, 228, 196, true, 1.f},
-+        ColourDefaultSetting{255, 153, 51, true, 1.f},
-+        ColourDefaultSetting{77, 228, 255, true, 1.f},
-+        ColourDefaultSetting{225, 235, 239, true, .1f}
-     };
- 
-     inline juce::AudioProcessorValueTreeState::ParameterLayout getStateParameterLayout() {
-diff --color -ru a/source/gui/interface_definitons.cpp b/source/gui/interface_definitons.cpp
---- a/source/gui/interface_definitons.cpp	2026-11-10 16:25:25
-+++ b/source/gui/interface_definitons.cpp	2026-11-10 16:25:43
+diff -ru a/source/PluginEditor.cpp b/source/PluginEditor.cpp
+--- a/source/PluginEditor.cpp	2026-11-10 16:35:58
++++ b/source/PluginEditor.cpp	2026-11-10 16:35:58
+@@ -26,13 +26,9 @@
+                     zlpanel::getValue(state_, zlstate::PTooltipLang::kID)))) {
+ #endif
+     // set font
+-#if defined(JUCE_WINDOWS)
++    // ZL_WEBCLAP: openDAW's font, Rubik Medium (external/fonts, embedded by the port's build)
+     base_.gui.font_ = juce::Typeface::createSystemTypefaceFor(
+-        BinaryData::InterSubsetMediumNoHinting_ttf, BinaryData::InterSubsetMediumNoHinting_ttfSize);
+-#else
+-    base_.gui.font_ = juce::Typeface::createSystemTypefaceFor(
+-        BinaryData::InterSubsetMedium_ttf, BinaryData::InterSubsetMedium_ttfSize);
+-#endif
++        BinaryData::RubikMedium_ttf, BinaryData::RubikMedium_ttfSize);
+     juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypeface(base_.gui.font_);
+     // add the main panel
+     addAndMakeVisible(main_panel_);
+diff -ru a/source/gui/interface_definitons.cpp b/source/gui/interface_definitons.cpp
+--- a/source/gui/interface_definitons.cpp	2026-11-10 16:35:58
++++ b/source/gui/interface_definitons.cpp	2026-11-10 16:35:58
 @@ -47,19 +47,8 @@
          mask.setUsingNonZeroWinding(false);
          mask.addRectangle(box_bounds.withSizeKeepingCentre(box_bounds.getWidth() + corner_size * 3,
@@ -180,9 +169,29 @@ diff --color -ru a/source/gui/interface_definitons.cpp b/source/gui/interface_de
          return box_bounds;
      }
  }
-diff --color -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp b/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp
---- a/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp	2026-11-10 16:25:25
-+++ b/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp	2026-11-10 16:25:43
+diff -ru a/source/gui/slider/compact_linear_slider/compact_linear_slider.hpp b/source/gui/slider/compact_linear_slider/compact_linear_slider.hpp
+--- a/source/gui/slider/compact_linear_slider/compact_linear_slider.hpp	2026-11-10 16:35:58
++++ b/source/gui/slider/compact_linear_slider/compact_linear_slider.hpp	2026-11-10 16:35:58
+@@ -49,11 +49,14 @@
+             }
+ 
+             void paint(juce::Graphics& g) override {
++                // ZL_WEBCLAP: openDAW's parameter rows, the value as a thin bar in the label cream along the bottom
++                // of the flat box, not a filled block
+                 auto bound = getLocalBounds().toFloat();
+-                bound = bound.withWidth(value_ * bound.getWidth());
++                const auto thickness = juce::jmax(1.5f, bound.getHeight() * .08f);
++                bound = bound.withTop(bound.getBottom() - thickness).withWidth(value_ * bound.getWidth());
+                 g.saveState();
+                 g.reduceClipRegion(mask_);
+-                g.setColour(base_.getTextColour().withAlpha(0.25f));
++                g.setColour(juce::Colour(185, 189, 164));
+                 g.fillRect(bound);
+                 g.restoreState();
+             }
+diff -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp b/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp
+--- a/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp	2026-11-10 16:35:58
++++ b/source/gui/slider/two_value_rotary_slider/two_value_rotary_slider.hpp	2026-11-10 16:35:58
 @@ -23,6 +23,10 @@
                                         public juce::SettableTooltipClient {
      public:
@@ -199,7 +208,7 @@ diff --color -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_sl
                      g.fillEllipse(getLocalBounds().toFloat());
                  }
 +                // ZL_WEBCLAP: openDAW's knob (its Knob.tsx, the device panels' knob): a faint grey track around a
-+                // dark cap, 270 degrees open at the bottom; the value and the pointer are the Display's
++                // dark cap, 270 degrees open at the bottom; the value's arc is the Display's
                  auto bounds = getLocalBounds().toFloat();
                  const auto diameter = juce::jmin(bounds.getWidth(), bounds.getHeight());
                  bounds = bounds.withSizeKeepingCentre(diameter, diameter);
@@ -228,7 +237,7 @@ diff --color -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_sl
              }
  
          private:
-@@ -75,11 +77,13 @@
+@@ -75,11 +77,12 @@
              }
  
              void paint(juce::Graphics& g) override {
@@ -237,17 +246,16 @@ diff --color -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_sl
 -                g.setColour(base_.getTextColour().withAlpha(0.25f));
 -                g.fillPath(filling1_);
 -                // fill the pie segment between two values
-+                // ZL_WEBCLAP: openDAW's knob, the value as an arc over the track and the pointer, in the label cream
++                // ZL_WEBCLAP: openDAW's knob, the value as an arc over the track in the label cream; no pointer, the
++                // value's text sits on the cap
 +                const juce::PathStrokeType stroke(stroke_);
 +                g.setColour(juce::Colour(185, 189, 164));
 +                g.strokePath(filling1_, stroke);
-+                g.strokePath(pointer_, juce::PathStrokeType(stroke_ * (1.25f / 1.5f), juce::PathStrokeType::curved,
-+                                                            juce::PathStrokeType::rounded));
 +                // the second value: the arc between the two values
                  if constexpr (kUseSecondSlider) {
                      if (show_slider2_) {
                          if (value1_ > value2_) {
-@@ -87,10 +91,9 @@
+@@ -87,10 +90,9 @@
                          } else {
                              g.setColour(base_.getColourMap2(2).withAlpha(.75f));
                          }
@@ -259,7 +267,7 @@ diff --color -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_sl
              }
  
              void resized() override {
-@@ -100,6 +103,9 @@
+@@ -100,6 +102,9 @@
                  old_bound_ = UIBase::getInnerShadowEllipseArea(bound_, base_.getFontSize() * 0.5f * thick_scale_, {});
                  new_bound_ = UIBase::getShadowEllipseArea(old_bound_, base_.getFontSize() * 0.5f * thick_scale_, {});
                  arrow_unit_ = (diameter - new_bound_.getWidth()) * 0.5f;
@@ -269,7 +277,7 @@ diff --color -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_sl
  
                  mask_.clear();
                  mask_.addEllipse(bound_);
-@@ -114,13 +120,19 @@
+@@ -114,13 +119,13 @@
  
              void setSlider1Value(const float x) {
                  value1_ = x;
@@ -285,16 +293,10 @@ diff --color -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_sl
 +                    filling1_.addCentredArc(bound_.getCentreX(), bound_.getCentreY(), radius_, radius_, 0.f,
 +                                            kArcStart, rotationAngle, true);
 +                }
-+                // the pointer, from a third of the cap to its edge
-+                const auto c = bound_.getCentre();
-+                const auto direction = juce::Point<float>(std::sin(rotationAngle), -std::cos(rotationAngle));
-+                pointer_.clear();
-+                pointer_.startNewSubPath(c + direction * (cap_ * .35f));
-+                pointer_.lineTo(c + direction * (cap_ - stroke_ * (1.25f / 1.5f)));
                  if (kUseSecondSlider && show_slider2_) {
                      setSlider2Value(value2_);
                  } else {
-@@ -131,12 +143,10 @@
+@@ -131,12 +136,10 @@
              void setSlider2Value(const float x) {
                  if constexpr (kUseSecondSlider) {
                      value2_ = x;
@@ -310,12 +312,56 @@ diff --color -ru a/source/gui/slider/two_value_rotary_slider/two_value_rotary_sl
                      repaint();
                  }
              }
-@@ -157,6 +167,8 @@
+@@ -157,6 +160,7 @@
              juce::Path mask_;
              juce::Rectangle<float> arrow1_, arrow2_;
              juce::Path filling1_, filling2_;
-+            juce::Path pointer_;
 +            float stroke_{1.f}, radius_{1.f}, cap_{1.f};
          };
  
      public:
+diff -ru a/source/state/state_definitions.hpp b/source/state/state_definitions.hpp
+--- a/source/state/state_definitions.hpp	2026-11-10 16:35:58
++++ b/source/state/state_definitions.hpp	2026-11-10 16:35:58
+@@ -733,10 +733,12 @@
+     };
+ 
+     inline constexpr std::array<ColourDefaultSetting, 9> kColourDefaults{
+-        ColourDefaultSetting{247, 246, 244, true, 1.f},
+-        ColourDefaultSetting{20, 16, 9, true, 1.f},
+-        ColourDefaultSetting{0, 0, 0, true, 1.f},
+-        ColourDefaultSetting{70, 66, 62, true, 1.f},
++        // openDAW's device panel colours (docs/device-panel-design.md): text, the panel's background, flat shadow
++        // and glow
++        ColourDefaultSetting{225, 235, 239, true, 1.f},
++        ColourDefaultSetting{26, 32, 35, true, 1.f},
++        ColourDefaultSetting{14, 18, 20, true, 1.f},
++        ColourDefaultSetting{44, 52, 56, true, 1.f},
+         ColourDefaultSetting{112, 112, 112, true, .25f},
+         ColourDefaultSetting{112, 112, 112, true, .2f},
+         ColourDefaultSetting{112, 112, 112, true, .2f},
+diff -ru a/source/state/ui_state.hpp b/source/state/ui_state.hpp
+--- a/source/state/ui_state.hpp	2026-11-10 16:35:58
++++ b/source/state/ui_state.hpp	2026-11-10 16:35:58
+@@ -85,8 +85,9 @@
+             juce::Colour(23, 189, 206)
+         },
+         std::vector<juce::Colour>{
+-            juce::Colour(214, 126, 65),
+-            juce::Colour(6, 134, 247),
++            // the default band colours (colour map 1): openDAW's blue first, then its cream and orange
++            juce::Colour(77, 228, 255),
++            juce::Colour(225, 228, 196),
+             juce::Colour(211, 95, 211),
+             juce::Colour(23, 198, 197),
+             juce::Colour(107, 152, 66),
+@@ -121,7 +122,8 @@
+             juce::Colour(0, 215, 255),
+         },
+         std::vector<juce::Colour>{
+-            juce::Colour(225, 162, 0),
++            // the default curve colours (colour map 2): openDAW's blue first, as the panel draws the response
++            juce::Colour(77, 228, 255),
+             juce::Colour(253, 19, 198),
+             juce::Colour(0, 231, 220),
+             juce::Colour(114, 209, 26),

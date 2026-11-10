@@ -34,6 +34,7 @@ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the license
 | WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-compressor`, `ports/zl-common`) | both | André Michelle | AGPL-3.0 |
 | [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
 | [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
+| [Rubik](https://github.com/googlefonts/rubik) Medium font, the window's font (patches/zl-compressor-webclap.style.patch) | ui | 2015 The Rubik Project Authors | OFL-1.1 (`licenses/OFL-1.1-Rubik.txt`) |
 | [Material Symbols](https://github.com/google/material-design-icons) icons | ui | Google LLC | Apache-2.0 (`licenses/Apache-2.0.txt`) |
 | [Inter](https://github.com/rsms/inter) font (subset) | ui | 2016 The Inter Project Authors | OFL-1.1 (`licenses/OFL-1.1.txt`) |
 | [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |

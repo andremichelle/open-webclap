@@ -298,6 +298,11 @@ FONT_PACKAGES = [
       "package/500Medium/Inter_500Medium.ttf": "Inter-Medium.ttf",
       "package/500Medium_Italic/Inter_500Medium_Italic.ttf": "Inter-MediumItalic.ttf",
       "package/LICENSE_FONT": "Inter-LICENSE"}),
+    # Rubik (Hubert and Fischer), OFL-1.1: openDAW's font, in the windows restyled after its device panels
+    ("https://registry.npmjs.org/@expo-google-fonts/rubik/-/rubik-0.4.2.tgz",
+     {"package/400Regular/Rubik_400Regular.ttf": "Rubik-Regular.ttf",
+      "package/500Medium/Rubik_500Medium.ttf": "Rubik-Medium.ttf",
+      "package/LICENSE_FONT": "Rubik-LICENSE"}),
 ]
 
 

@@ -6,4 +6,5 @@ PORT=zl-compressor
 source "$(dirname "$0")/zl-build.sh"
 zl_build "$@"
 zl_bundle "$ROOT/external/zl-compressor/zldsp_fft/LICENSE.md" Apache-2.0-zldsp_fft.txt \
-    "$ROOT/external/zl-highway/LICENSE" Apache-2.0-Highway.txt
+    "$ROOT/external/zl-highway/LICENSE" Apache-2.0-Highway.txt \
+    "$ROOT/external/fonts/Rubik-LICENSE" OFL-1.1-Rubik.txt
