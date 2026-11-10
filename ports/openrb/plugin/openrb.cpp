@@ -1,6 +1,7 @@
-// OpenRB: the TB-303 and the four effects of OpenRB-338 (pingw33n/openrb-338, GPL-3.0-only), the reimplementation of
-// ReBirth RB-338 2.01's engine, as five CLAP plugins in one module: the 303 an instrument, Distortion, PCF, Compressor
-// and Delay audio effects. The engine (external/openrb-338/crates/orb-engine) is Rust, linked unchanged as a static
+// OpenRB: the TB-303, TR-808, TR-909 and the four effects of OpenRB-338 (pingw33n/openrb-338, GPL-3.0-only), the
+// reimplementation of ReBirth RB-338 2.01's engine, as seven CLAP plugins, each in a module and bundle of its own:
+// this file is compiled once per device with OPENRB_KIND set to its kind (scripts/build-openrb.sh); the module's
+// factory then holds that device alone (and the drum machines their own factory kit). The engine (external/openrb-338/crates/orb-engine) is Rust, linked unchanged as a static
 // library behind a small C API (engine/src/lib.rs). It runs at its own rate (44.1 kHz) in its own blocks (64 frames),
 // as in the original: every control value, every note and every pattern step lands on a block. The host's audio is
 // resampled to that rate and back.
@@ -1158,16 +1159,19 @@ static bool write_all(const clap_ostream_t *stream, const uint8_t *bytes, uint64
     return true;
 }
 
-// the factory kits (kits/README.md), embedded by build.sh
-#include "factory_kits.h"
+// the machine's factory kit (kits/README.md), embedded by build.sh into the 808's and the 909's modules
+#if OPENRB_KIND == 5 || OPENRB_KIND == 6
+#include "factory_kit.h"
+#endif
 
 // a slot that holds its factory sample is saved as this frame count, without its samples
 #define FACTORY_FRAMES 0xFFFFFFFFu
 
 static void load_factory_slot(Plugin *self, uint16_t id) {
     const uint32_t index = id - kit_first(self);
-    const FactorySample &entry = self->kind == KIND_TR808 ? factory_kit_808[index] : factory_kit_909[index];
-    orb_kit_set(self->kit, id, entry.audio, entry.frames);
+#if OPENRB_KIND == 5 || OPENRB_KIND == 6
+    orb_kit_set(self->kit, id, factory_kit[index].audio, factory_kit[index].frames);
+#endif
     self->factory |= 1ull << index;
 }
 
@@ -1532,15 +1536,15 @@ static const clap_plugin_descriptor_t descriptors[KIND_COUNT] = {
     {CLAP_VERSION_INIT, "studio.opendaw.openrb.delay", "OpenRB Delay", "open-webclap", URL, URL, "", "0.1.0",
      "OpenRB-338's tempo synced delay in 16ths or 8th triplets", delay_features},
     {CLAP_VERSION_INIT, "studio.opendaw.openrb.tr808", "OpenRB 808", "open-webclap", URL, URL, "", "0.1.0",
-     "OpenRB-338's TR-808 on the samples you bring (ReBirth.dll), played by notes or by its own patterns", tr808_features},
+     "OpenRB-338's TR-808 with its factory kit or the samples you bring, played by notes or by its own patterns", tr808_features},
     {CLAP_VERSION_INIT, "studio.opendaw.openrb.tr909", "OpenRB 909", "open-webclap", URL, URL, "", "0.1.0",
-     "OpenRB-338's TR-909 on the samples you bring (ReBirth.dll), played by notes or by its own patterns", tr909_features},
+     "OpenRB-338's TR-909 with its factory kit or the samples you bring, played by notes or by its own patterns", tr909_features},
 };
 
 static const clap_plugin_t *create(const clap_plugin_factory_t *factory, const clap_host_t *host, const char *plugin_id) {
     (void) factory;
     int kind = -1;
-    for (int k = 0; k < KIND_COUNT; k++) {if (std::strcmp(plugin_id, descriptors[k].id) == 0) {kind = k;}}
+    if (std::strcmp(plugin_id, descriptors[OPENRB_KIND].id) == 0) {kind = OPENRB_KIND;}
     if (kind < 0) {return nullptr;}
     orb_init();
     void *memory = std::calloc(1, sizeof(Plugin));
@@ -1589,11 +1593,12 @@ static const clap_plugin_t *create(const clap_plugin_factory_t *factory, const c
     return &self->plugin;
 }
 
-static uint32_t plugin_count(const clap_plugin_factory_t *factory) {(void) factory; return KIND_COUNT;}
+// the module's one device
+static uint32_t plugin_count(const clap_plugin_factory_t *factory) {(void) factory; return 1;}
 
 static const clap_plugin_descriptor_t *plugin_descriptor(const clap_plugin_factory_t *factory, uint32_t index) {
     (void) factory;
-    return index < KIND_COUNT ? &descriptors[index] : nullptr;
+    return index == 0 ? &descriptors[OPENRB_KIND] : nullptr;
 }
 
 static const clap_plugin_factory_t factory = {plugin_count, plugin_descriptor, create};

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds module.wasm and the page into $OUT. Needs emcc, cargo with the wasm32-unknown-emscripten target, the CLAP
+# Builds one device's module.wasm and the page into $OUT: KIND is the device (0 303, 1 distortion, 2 PCF,
+# 3 compressor, 4 delay, 5 808, 6 909; plugin/openrb.cpp's Kind). Needs emcc, cargo with the wasm32-unknown-emscripten target, the CLAP
 # headers in $CLAP_INCLUDE and OpenRB-338 in external/openrb-338 (scripts/fetch-deps.py).
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -17,15 +18,20 @@ OBJCOPY="$(dirname "$(command -v emcc)")/../bin/llvm-objcopy"
 [ -x "$OBJCOPY" ] || OBJCOPY="${EMSDK:-}/upstream/bin/llvm-objcopy"
 "$OBJCOPY" --remove-section=target_features "$ENGINE"
 
-# the factory kits (kits/README.md) as a header
-python3 kits/embed.py kits "$TARGET/factory_kits.h"
+# a drum machine's factory kit (kits/README.md) as a header
+KIT_DIR="$TARGET/kit-$KIND"
+mkdir -p "$KIT_DIR"
+case "$KIND" in
+    5) python3 kits/embed.py kits 808 "$KIT_DIR/factory_kit.h" ;;
+    6) python3 kits/embed.py kits 909 "$KIT_DIR/factory_kit.h" ;;
+esac
 
 cp page/index.html "$OUT/index.html"
 # the shared device panel controls (modules/opendaw-page), next to the page
 mkdir -p "$OUT/opendaw-page"
 cp ../../modules/opendaw-page/panel.css ../../modules/opendaw-page/panel.js "$OUT/opendaw-page/"
 cp LICENSE "$OUT/LICENSE"
-em++ plugin/openrb.cpp "$ENGINE" -std=c++17 -O3 -fno-rtti -I"$CLAP_INCLUDE" -I../../modules/opendaw-clap -I"$TARGET" \
+em++ plugin/openrb.cpp "$ENGINE" -std=c++17 -O3 -fno-rtti -I"$CLAP_INCLUDE" -I../../modules/opendaw-clap -I"$KIT_DIR" -DOPENRB_KIND="$KIND" \
     -mbulk-memory -mnontrapping-fptoint -fwasm-exceptions \
     -o "$OUT/module.wasm" -sSTANDALONE_WASM=1 --no-entry \
     -sEXPORTED_FUNCTIONS=_malloc,_free -Wl,--export=clap_entry \

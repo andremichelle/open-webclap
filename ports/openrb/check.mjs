@@ -1,8 +1,9 @@
-// OpenRB in node: a minimal CLAP host with audio and a transport runs the five plugins of the module and checks what
+// OpenRB in node: a minimal CLAP host with audio and a transport runs the seven plugins, each in its own bundle's
+// module, and checks what
 // they do: the 303's pitch, accent, slide, release and its patterns on the transport, the effects on test signals
 // (the delay's echo at its length, the PCF following the beat, the compressor's gain, the distortion's curve), the
 // latency, repeatability, the state and the page's messages.
-// Usage: node check.mjs <module.wasm>
+// Usage: node check.mjs [<the bundles' directory>]   (default build/openrb/web, its <id>.wclap/module.wasm)
 import assert from "node:assert/strict"
 import {readFileSync} from "node:fs"
 
@@ -35,11 +36,15 @@ const trampoline = (params, results, fn) => {
     return new WebAssembly.Instance(new WebAssembly.Module(bytes), {e: {f: fn}}).exports.f
 }
 
-const compiled = new WebAssembly.Module(readFileSync(process.argv[2] ?? new URL("../../build/openrb/web/openrb.wclap/module.wasm", import.meta.url)))
+// the bundles in the order of KIND, each a module with its one plugin
+const BUNDLES = ["openrb-bass", "openrb-distortion", "openrb-pcf", "openrb-compressor", "openrb-delay", "openrb-808", "openrb-909"]
+const directory = process.argv[2] ?? new URL("../../build/openrb/web", import.meta.url).pathname
+const modules = BUNDLES.map(id => new WebAssembly.Module(readFileSync(`${directory}/${id}.wclap/module.wasm`)))
 
 class Host {
     // a 303 starts in pattern mode; notes: switched to Notes, as the note checks want it
     constructor(kind, notes = true) {
+        const compiled = modules[kind]
         const imports = {}
         for (const entry of WebAssembly.Module.imports(compiled)) {
             (imports[entry.module] ??= {})[entry.name] = () => {throw new Error(`${entry.module}.${entry.name} called`)}
@@ -82,7 +87,7 @@ class Host {
         assert.ok(this.fn(entry + 12)(this.string("/")), "entry init")
         const factory = this.fn(entry + 20)(this.string("clap.plugin-factory"))
         this.count = this.fn(factory)(factory)
-        const descriptor = this.fn(factory + 4)(factory, kind)
+        const descriptor = this.fn(factory + 4)(factory, 0)
         this.id = this.cstr(this.u32(descriptor + 12))
         this.name = this.cstr(this.u32(descriptor + 16))
         this.features = []
@@ -412,10 +417,10 @@ const STEP16 = BEAT / 4
 
 // --- the module ----------------------------------------------------------------------------------------------------
 
-check("seven plugins, three instruments and four effects, each with its device panel and width, no window", () => {
+check("seven bundles of one plugin each, three instruments and four effects, each with its device panel and width, no window", () => {
     for (let kind = 0; kind < 7; kind++) {
         const host = new Host(kind)
-        assert.equal(host.count, 7)
+        assert.equal(host.count, 1)
         assert.equal(host.id, IDS[kind])
         assert.ok(host.features.includes(INSTRUMENT(kind) ? "instrument" : "audio-effect"), host.features.join())
         assert.ok(host.features.includes("opendaw:device-panel"))

@@ -231,57 +231,57 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         id: "openrb-bass", name: "OpenRB 303", kind: "instrument",
         description: "Bass line synth from OpenRB-338's ReBirth engine: the TB-303, played by notes or by its own 32 patterns",
         clapId: "studio.opendaw.openrb.bass",
-        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        archive: "build/openrb/openrb-bass.wclap.tar.gz", build: "scripts/build-openrb.sh",
         credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
-        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+        bundled: "/bundled/openrb-bass.wclap.tar.gz", panel: true, window: false
     },
     {
         id: "openrb-distortion", name: "OpenRB Distortion", kind: "audio-fx",
         description: "OpenRB-338's distortion: a clipper and a family of waveshapers",
         clapId: "studio.opendaw.openrb.distortion",
-        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        archive: "build/openrb/openrb-distortion.wclap.tar.gz", build: "scripts/build-openrb.sh",
         credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
-        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+        bundled: "/bundled/openrb-distortion.wclap.tar.gz", panel: true, window: false
     },
     {
         id: "openrb-pcf", name: "OpenRB PCF", kind: "audio-fx",
         description: "OpenRB-338's pattern controlled filter: 55 rhythmic envelope patterns on a low or band pass",
         clapId: "studio.opendaw.openrb.pcf",
-        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        archive: "build/openrb/openrb-pcf.wclap.tar.gz", build: "scripts/build-openrb.sh",
         credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
-        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+        bundled: "/bundled/openrb-pcf.wclap.tar.gz", panel: true, window: false
     },
     {
         id: "openrb-compressor", name: "OpenRB Compressor", kind: "audio-fx",
         description: "OpenRB-338's compressor, linked stereo",
         clapId: "studio.opendaw.openrb.compressor",
-        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        archive: "build/openrb/openrb-compressor.wclap.tar.gz", build: "scripts/build-openrb.sh",
         credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
-        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+        bundled: "/bundled/openrb-compressor.wclap.tar.gz", panel: true, window: false
     },
     {
         id: "openrb-delay", name: "OpenRB Delay", kind: "audio-fx",
         description: "OpenRB-338's tempo synced delay in 16ths or 8th triplets",
         clapId: "studio.opendaw.openrb.delay",
-        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        archive: "build/openrb/openrb-delay.wclap.tar.gz", build: "scripts/build-openrb.sh",
         credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
-        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+        bundled: "/bundled/openrb-delay.wclap.tar.gz", panel: true, window: false
     },
     {
         id: "openrb-808", name: "OpenRB 808", kind: "instrument",
-        description: "OpenRB-338's TR-808 on the samples you bring (ReBirth.dll or sample files), played by notes or by its own patterns",
+        description: "OpenRB-338's TR-808 with its factory kit or the samples you bring (ReBirth.dll or sample files), played by notes or by its own patterns",
         clapId: "studio.opendaw.openrb.tr808",
-        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        archive: "build/openrb/openrb-808.wclap.tar.gz", build: "scripts/build-openrb.sh",
         credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
-        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+        bundled: "/bundled/openrb-808.wclap.tar.gz", panel: true, window: false
     },
     {
         id: "openrb-909", name: "OpenRB 909", kind: "instrument",
-        description: "OpenRB-338's TR-909 on the samples you bring (ReBirth.dll or sample files), played by notes or by its own patterns",
+        description: "OpenRB-338's TR-909 with its factory kit or the samples you bring (ReBirth.dll or sample files), played by notes or by its own patterns",
         clapId: "studio.opendaw.openrb.tr909",
-        archive: "build/openrb/openrb.wclap.tar.gz", build: "scripts/build-openrb.sh",
+        archive: "build/openrb/openrb-909.wclap.tar.gz", build: "scripts/build-openrb.sh",
         credit: "https://github.com/pingw33n/openrb-338", source: port("openrb"), license: "GPL-3.0-only",
-        bundled: "/bundled/openrb.wclap.tar.gz", panel: true, window: false
+        bundled: "/bundled/openrb-909.wclap.tar.gz", panel: true, window: false
     },
     {
         id: "glitchfest", name: "Glitchfest", kind: "audio-fx",

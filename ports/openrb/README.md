@@ -1,17 +1,18 @@
 # OpenRB
 
-The TB-303 and the four effects of [OpenRB-338](https://github.com/pingw33n/openrb-338) (pingw33n, GPL-3.0-only),
-the bit-exact reimplementation of ReBirth RB-338 2.01's engine, as five WebCLAP plugins in one module:
+The TB-303, TR-808, TR-909 and the four effects of [OpenRB-338](https://github.com/pingw33n/openrb-338) (pingw33n,
+GPL-3.0-only), the bit-exact reimplementation of ReBirth RB-338 2.01's engine, as seven WebCLAP plugins, each in a
+bundle of its own (`build/openrb/<bundle>.wclap.tar.gz`):
 
-| Plugin | CLAP id | Kind |
-|---|---|---|
-| OpenRB 303 | `studio.opendaw.openrb.bass` | instrument |
-| OpenRB Distortion | `studio.opendaw.openrb.distortion` | audio effect |
-| OpenRB PCF | `studio.opendaw.openrb.pcf` | audio effect |
-| OpenRB Compressor | `studio.opendaw.openrb.compressor` | audio effect |
-| OpenRB Delay | `studio.opendaw.openrb.delay` | audio effect |
-| OpenRB 808 | `studio.opendaw.openrb.tr808` | instrument |
-| OpenRB 909 | `studio.opendaw.openrb.tr909` | instrument |
+| Plugin | Bundle | CLAP id | Kind |
+|---|---|---|---|
+| OpenRB 303 | `openrb-bass` | `studio.opendaw.openrb.bass` | instrument |
+| OpenRB Distortion | `openrb-distortion` | `studio.opendaw.openrb.distortion` | audio effect |
+| OpenRB PCF | `openrb-pcf` | `studio.opendaw.openrb.pcf` | audio effect |
+| OpenRB Compressor | `openrb-compressor` | `studio.opendaw.openrb.compressor` | audio effect |
+| OpenRB Delay | `openrb-delay` | `studio.opendaw.openrb.delay` | audio effect |
+| OpenRB 808 | `openrb-808` | `studio.opendaw.openrb.tr808` | instrument |
+| OpenRB 909 | `openrb-909` | `studio.opendaw.openrb.tr909` | instrument |
 
 The TR-808 and TR-909 played ReBirth's own drum samples, which are Reason Studios' (Propellerhead's) recordings. This
 port ships none of them. It ships factory kits made of free recordings plus a few synthesised layers instead
@@ -22,7 +23,8 @@ ReBirth's (see Behaviour).
 
 - `engine/`: upstream's `orb-engine` crate (fetched into `external/openrb-338`), unchanged, behind a small C API
   (`engine/src/lib.rs`), built as a static library for `wasm32-unknown-emscripten`.
-- `plugin/openrb.cpp`: the CLAP side on `modules/opendaw-clap/opendaw_page.h`. The engine runs at its own 44.1 kHz in
+- `plugin/openrb.cpp`: the CLAP side on `modules/opendaw-clap/opendaw_page.h`, compiled once per device
+  (`OPENRB_KIND`): each module's factory holds its one plugin, the 808's and 909's their own factory kit. The engine runs at its own 44.1 kHz in
   64-frame blocks, as the original does; the host's audio is resampled to it and back (`plugin/resampler.h`, the
   effects report the latency).
 - `page/index.html`: the device panels. Every device is its panel, there is no window (no `clap.gui`): the 303's
@@ -67,7 +69,7 @@ ReBirth's (see Behaviour).
 
 ```sh
 rustup target add wasm32-unknown-emscripten
-scripts/build-openrb.sh   # build/openrb/openrb.wclap.tar.gz, then node ports/openrb/check.mjs (24 checks)
+scripts/build-openrb.sh   # the seven build/openrb/<bundle>.wclap.tar.gz, then node ports/openrb/check.mjs (31 checks)
 ```
 
 Rust's std carries wasm target features newer than emsdk 3.1.51's wasm-opt knows, so `build.sh` strips the
