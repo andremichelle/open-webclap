@@ -20,7 +20,7 @@ set(RADAR_VERSION "1.0.0")
 # The window's size, and the device panel's at openDAW's panel height (176)
 set(RADAR_WINDOW_WIDTH 900)
 set(RADAR_WINDOW_HEIGHT 600)
-set(RADAR_PANEL_WIDTH 440)
+set(RADAR_PANEL_WIDTH 435)
 set(RADAR_PANEL_HEIGHT 176)
 
 # ---------------------------------------------------------------------------------------------------------------

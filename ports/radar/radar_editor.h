@@ -1,15 +1,14 @@
 /*
-    Radar's editors, in the dark panel style of the port's TapElectric and oXygen editors.
+    Radar's editor, in the dark panel style of the port's TapElectric and oXygen editors.
 
     The window: the circle large, the sample's waveform around it, the ray of the moment and the grain that plays;
     tools on the left to select, draw lines, arcs and curves and to duplicate, mirror, rotate and delete; the
     sound's dials on the right; the twelve patterns along the bottom to pick, copy, paste and clear.
 
-    The device panel (openDAW's, 176 pixels high): the circle of the playing pattern with its grain, the patterns to
-    pick, and the main dials.
-
-    Both read the patterns from the stand-in processor and send what they change (Frame::pattern); the sample, the
+    It reads the patterns from the stand-in processor and sends what it changes (Frame::pattern); the sample, the
     waveform and the playback come in frames from the DSP side (Session).
+
+    openDAW's device panel is not this editor but ui/panel.html, an HTML page on modules/opendaw-page.
 */
 
 #pragma once
@@ -26,7 +25,7 @@ struct Waveform
     std::vector<std::int8_t> bins; // lowest and highest per bin
 };
 
-/** What the editors know beside the stand-in's parameters and patterns, and what they ask of the page and the DSP
+/** What the editor knows beside the stand-in's parameters and patterns, and what it asks of the page and the DSP
     side. ui_main.cpp fills it. */
 struct Session
 {
@@ -43,9 +42,7 @@ struct Session
 
     std::function<void (int index, bool live)> sendPattern; // live: a drag's frame, the edit is not finished
     std::function<void()> openSampleFile;
-    std::function<void()> openWindow; // the device panel asks the host for the window
 };
 
 juce::AudioProcessorEditor* createWindowEditor (Processor&, Session&);
-juce::AudioProcessorEditor* createPanelEditor (Processor&, Session&);
 } // namespace radar

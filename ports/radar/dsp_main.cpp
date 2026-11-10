@@ -182,7 +182,7 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         RADAR_WINDOW_WIDTH,
         RADAR_WINDOW_HEIGHT,
         true,
-        "/ui/index.html?panel",
+        "/ui/panel.html", // openDAW's device panel (ui/panel.html, on modules/opendaw-page)
         RADAR_PANEL_WIDTH,
         RADAR_PANEL_HEIGHT
     };

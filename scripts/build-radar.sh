@@ -19,8 +19,10 @@ python3 "$ROOT/scripts/fetch-deps.py" # JUCE, CLAP and the fonts: the port is a 
 emcmake cmake -S "$ROOT/ports/radar" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release "$@"
 cmake --build "$BUILD" -j "$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 
-# The bundle's page (ui/)
+# The bundle's pages (ui/: the window's, the device panel's), the panel's shared controls beside them (ui/opendaw-page)
 cp "$ROOT/modules/juce_webclap/js/"*.js "$ROOT/ports/radar/ui/"* "$BUNDLE/ui/"
+mkdir -p "$BUNDLE/ui/opendaw-page"
+cp "$ROOT/modules/opendaw-page/panel.css" "$ROOT/modules/opendaw-page/panel.js" "$BUNDLE/ui/opendaw-page/"
 
 # License and notices (LICENSE, NOTICES.md, licenses/)
 source "$ROOT/scripts/bundle-license.sh"

@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Radar</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <link rel="stylesheet" href="opendaw-page/panel.css">
+    <style>
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+    </style>
+</head>
+<body>
+<!--
+    openDAW's device panel for Radar, in the design of docs/device-panel-design.md. The display: the circle of the
+    pattern that plays (else the picked one) with the sample around it, the grain that plays, the ray of the moment
+    and its sweep, the sample's name; beside it the twelve patterns to pick, the grid as high as the circle (a click
+    picks one, a click on the circle or on Edit in its corner opens the window). Two columns of controls: the
+    selectors Play and Keys together on the first row, as rows with every step as the window shows them; Bars, Grain,
+    Pitch and Volume as a square of knobs below. A sample dropped on the panel goes to openDAW where it keeps samples, else it is decoded here.
+
+    The frames (radar_frames.h) after the kit's 4 byte header: pattern (u32 source, u8 index, the pattern),
+    waveform, playback; to the plugin sample and sampleName. The ray is radar_model.cpp's trace.
+-->
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script>
+    const {caption, ink, clamp, dot} = OpenDAWPanel
+    const FRAME = {PATTERN: 64, SAMPLE: 65, WAVEFORM: 66, PLAYBACK: 67, SAMPLE_NAME: 68}
+    const PATTERNS = 12, MAX_SECONDS = 30, RATE = 48000
+    const TURN = Math.PI * 2
+
+    const state = {
+        patterns: Array.from({length: PATTERNS}, () => ({origin: [0, 0], segments: []})),
+        waveform: null, // {name, seconds, bins: Int8Array (low, high per bin)}
+        playback: {phase: 0, headA: 0, headB: 0, mix: 0, grain: 0, pattern: 0, playing: 0, escaped: 1},
+        hostKeepsSamples: false, loading: false, dragging: false
+    }
+
+    // --- the model (radar_model.cpp): x right, y down, the unit circle -------------------------------------------
+
+    const onCircle = (turns, radius = 1) => [Math.sin(turns * TURN) * radius, -Math.cos(turns * TURN) * radius]
+    const turnsOf = ([x, y]) => {
+        const turns = Math.atan2(x, -y) / TURN
+        return turns < 0 ? turns + 1 : turns
+    }
+    const inside = ([x, y], radius = 1) => {
+        const length = Math.hypot(x, y)
+        return length > radius ? [x * radius / length, y * radius / length] : [x, y]
+    }
+    const add = (a, b) => [a[0] + b[0], a[1] + b[1]]
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1]]
+    const mul = (a, s) => [a[0] * s, a[1] * s]
+    const dotOf = (a, b) => a[0] * b[0] + a[1] * b[1]
+    const cross = (a, b) => a[0] * b[1] - a[1] * b[0]
+    const normalised = v => {
+        const length = Math.hypot(v[0], v[1])
+        return length > 0 ? mul(v, 1 / length) : v
+    }
+    const EPSILON = 1e-5, MAX_BOUNCES = 12
+    const bulge = s => {
+        const d = sub(s.b, s.a)
+        return add(mul(add(s.a, s.b), 0.5), mul([d[1], -d[0]], 0.5 * s.bend))
+    }
+    const circleThrough = (a, b, c) => {
+        const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]))
+        if (Math.abs(d) < 1e-9) {return null}
+        const aa = dotOf(a, a), bb = dotOf(b, b), cc = dotOf(c, c)
+        const centre = [(aa * (b[1] - c[1]) + bb * (c[1] - a[1]) + cc * (a[1] - b[1])) / d,
+            (aa * (c[0] - b[0]) + bb * (a[0] - c[0]) + cc * (b[0] - a[0])) / d]
+        return {centre, radius: Math.hypot(...sub(a, centre))}
+    }
+    const hitLine = (a, b, origin, direction) => {
+        const d = sub(b, a), denominator = cross(direction, d)
+        if (Math.abs(denominator) < 1e-12) {return null}
+        const w = sub(a, origin), t = cross(w, d) / denominator, u = cross(w, direction) / denominator
+        return t <= EPSILON || u < 0 || u > 1 ? null : {distance: t, normal: normalised([-d[1], d[0]])}
+    }
+    const hitArc = (s, origin, direction) => {
+        const peak = bulge(s), circle = circleThrough(s.a, s.b, peak)
+        if (Math.abs(s.bend) < 1e-4 || circle === null) {return hitLine(s.a, s.b, origin, direction)}
+        const {centre, radius} = circle, chord = sub(s.b, s.a), side = cross(chord, sub(peak, s.a)) > 0
+        const e = sub(origin, centre), half = dotOf(e, direction)
+        const discriminant = half * half - (dotOf(e, e) - radius * radius)
+        if (discriminant < 0) {return null}
+        const root = Math.sqrt(discriminant)
+        for (const t of [-half - root, -half + root]) {
+            if (t <= EPSILON) {continue}
+            const point = add(origin, mul(direction, t))
+            if ((cross(chord, sub(point, s.a)) > 0) === side) {return {distance: t, normal: mul(sub(point, centre), 1 / radius)}}
+        }
+        return null
+    }
+    const hitCurve = (s, origin, direction) => {
+        const {a, b, c} = s, normal = [-direction[1], direction[0]]
+        const qa = dotOf(normal, add(sub(a, mul(c, 2)), b)), qb = dotOf(normal, mul(sub(c, a), 2)), qc = dotOf(normal, sub(a, origin))
+        const roots = []
+        if (Math.abs(qa) < 1e-12) {
+            if (Math.abs(qb) > 1e-12) {roots.push(-qc / qb)}
+        } else {
+            const discriminant = qb * qb - 4 * qa * qc
+            if (discriminant >= 0) {
+                const root = Math.sqrt(discriminant)
+                roots.push((-qb - root) / (2 * qa), (-qb + root) / (2 * qa))
+            }
+        }
+        let nearest = null
+        for (const t of roots) {
+            if (t < 0 || t > 1) {continue}
+            const point = add(add(mul(a, (1 - t) * (1 - t)), mul(c, 2 * t * (1 - t))), mul(b, t * t))
+            const distance = dotOf(direction, sub(point, origin))
+            const tangent = add(mul(sub(c, a), 1 - t), mul(sub(b, c), t))
+            if (distance <= EPSILON || dotOf(tangent, tangent) < 1e-18 || (nearest !== null && nearest.distance <= distance)) {continue}
+            nearest = {distance, normal: normalised([-tangent[1], tangent[0]])}
+        }
+        return nearest
+    }
+    const hit = (s, origin, direction) =>
+        s.shape === 1 ? hitArc(s, origin, direction) : s.shape === 2 ? hitCurve(s, origin, direction) : hitLine(s.a, s.b, origin, direction)
+    // the ray of a phase: every point it touched, and whether it left the circle
+    const trace = (pattern, phase) => {
+        let origin = inside(pattern.origin, 0.98), direction = onCircle(phase)
+        const path = [origin]
+        for (let bounce = 0; bounce <= MAX_BOUNCES; bounce++) {
+            const along = dotOf(origin, direction)
+            let nearest = -along + Math.sqrt(Math.max(0, along * along - (dotOf(origin, origin) - 1))), normal = null
+            for (const segment of pattern.segments) {
+                const h = hit(segment, origin, direction)
+                if (h !== null && h.distance < nearest) {
+                    nearest = h.distance
+                    normal = h.normal
+                }
+            }
+            origin = add(origin, mul(direction, nearest))
+            path.push(origin)
+            if (normal === null) {return {path, escaped: true}}
+            direction = normalised(sub(direction, mul(normal, 2 * dotOf(direction, normal))))
+        }
+        return {path, escaped: false}
+    }
+    // points along a segment, for drawing
+    const sample = (s, steps = 48) => {
+        if (s.shape === 2) {
+            return Array.from({length: steps + 1}, (_, i) => {
+                const t = i / steps
+                return add(add(mul(s.a, (1 - t) * (1 - t)), mul(s.c, 2 * t * (1 - t))), mul(s.b, t * t))
+            })
+        }
+        const circle = s.shape === 1 && Math.abs(s.bend) >= 1e-4 ? circleThrough(s.a, s.b, bulge(s)) : null
+        if (circle === null) {return [s.a, s.b]}
+        const {centre, radius} = circle
+        const angleOf = p => Math.atan2(p[1] - centre[1], p[0] - centre[0])
+        const wrap = angle => angle - TURN * Math.floor(angle / TURN)
+        const start = angleOf(s.a), sweep = wrap(angleOf(s.b) - start)
+        const through = wrap(angleOf(bulge(s)) - start) < sweep ? sweep : sweep - TURN
+        return Array.from({length: steps + 1}, (_, i) => {
+            const angle = start + through * i / steps
+            return [centre[0] + Math.cos(angle) * radius, centre[1] + Math.sin(angle) * radius]
+        })
+    }
+    // Pattern::write: f32 origin x, y, i16 count, per segment u8 shape and f32 a, b, c (x, y), bend
+    const readPattern = (view, at) => {
+        if (view.byteLength < at + 10) {return null}
+        const origin = [view.getFloat32(at, true), view.getFloat32(at + 4, true)]
+        const count = view.getUint16(at + 8, true)
+        if (count > 96 || view.byteLength < at + 10 + count * 29) {return null}
+        const segments = []
+        for (let index = 0, p = at + 10; index < count; index++, p += 29) {
+            const v = Array.from({length: 7}, (_, k) => view.getFloat32(p + 1 + k * 4, true))
+            if (!v.every(value => Number.isFinite(value) && Math.abs(value) < 16)) {return null}
+            segments.push({shape: Math.min(2, view.getUint8(p)), a: inside([v[0], v[1]]), b: inside([v[2], v[3]]), c: [v[4], v[5]], bend: v[6]})
+        }
+        return {origin: inside(origin, 0.98), segments}
+    }
+
+    // --- the display --------------------------------------------------------------------------------------------
+
+    const SCREEN = 304, SIZE = 160
+    // the patterns' grid spans the display's height: its first and last circles' edges are the big circle's
+    const GRID = {x: SIZE + 12, columns: 3, rows: 4, width: 44, radius: 14} // a number, its circle, 7 px to the next
+    const rowCentre = row => 1 + GRID.radius + row * (SIZE - 2 - 2 * GRID.radius) / (GRID.rows - 1)
+    const shownIndex = panel => state.playback.playing !== 0 ? clamp(state.playback.pattern, 0, PATTERNS - 1)
+        : Math.round(panel.value("pattern") * (PATTERNS - 1))
+    const cellAt = index => ({x: GRID.x + (index % GRID.columns) * GRID.width, cy: rowCentre(Math.floor(index / GRID.columns))})
+    const faint = alpha => `rgba(200, 225, 240, ${alpha})`
+    const message = (context, text, x, y) => {
+        context.save()
+        context.font = "400 9px Rubik, sans-serif"
+        context.textAlign = "center"
+        context.fillStyle = "hsla(197, 10%, 60%, 0.7)"
+        context.fillText(text, x, y)
+        context.restore()
+    }
+    const stroke = (context, points, toView, width, colour) => {
+        context.beginPath()
+        points.forEach((point, index) => {
+            const [x, y] = toView(point)
+            index === 0 ? context.moveTo(x, y) : context.lineTo(x, y)
+        })
+        context.lineWidth = width
+        context.strokeStyle = colour
+        context.stroke()
+    }
+
+    // the sample around the circle, the grain that plays brighter, as bright as its head is loud
+    const drawRing = (context, cx, cy, outer, ringWidth, from, to, colour) => {
+        const bins = state.waveform.bins, count = bins.length / 2
+        const middle = outer - ringWidth / 2, amplitude = ringWidth / 2 - 1
+        context.beginPath()
+        for (let i = 0; i < count; i++) {
+            const turns = (i + 0.5) / count
+            if (from !== undefined && !(((turns - from) % 1 + 1) % 1 < to)) {continue}
+            let low = middle + amplitude * bins[i * 2] / 127, high = middle + amplitude * bins[i * 2 + 1] / 127
+            if (high - low < 0.6) {
+                low -= 0.3
+                high += 0.3
+            }
+            const [dx, dy] = onCircle(turns)
+            context.moveTo(cx + dx * low, cy + dy * low)
+            context.lineTo(cx + dx * high, cy + dy * high)
+        }
+        context.lineWidth = 0.75
+        context.strokeStyle = colour
+        context.stroke()
+    }
+
+    const drawRadar = (context, panel) => {
+        const cx = SIZE / 2, cy = SIZE / 2, outer = SIZE / 2 - 1, ringWidth = 15, radius = outer - ringWidth - 5
+        const toView = ([x, y]) => [cx + x * radius, cy + y * radius]
+        const index = shownIndex(panel), pattern = state.patterns[index], playback = state.playback
+        const playing = playback.playing !== 0 && playback.pattern === index
+
+        // the circle the ray leaves, the quarters of the loop on it
+        context.lineCap = "round"
+        context.lineJoin = "round"
+        context.beginPath()
+        context.arc(cx, cy, radius, 0, TURN)
+        context.lineWidth = 1
+        context.strokeStyle = state.dragging ? ink(0.8) : faint(0.14)
+        context.stroke()
+        for (let i = 0; i < 4; i++) {
+            const [dx, dy] = onCircle(i / 4)
+            context.beginPath()
+            context.moveTo(cx + dx * (radius - 4), cy + dy * (radius - 4))
+            context.lineTo(cx + dx * radius, cy + dy * radius)
+            context.strokeStyle = faint(0.3)
+            context.stroke()
+        }
+
+        if (state.waveform === null || state.waveform.bins.length === 0) {
+            // no sample: the ring's middle line, where a silent one would lie, keeps the display's size
+            context.beginPath()
+            context.arc(cx, cy, outer - ringWidth / 2, 0, TURN)
+            context.lineWidth = 1
+            context.strokeStyle = ink(0.28)
+            context.stroke()
+        } else {
+            drawRing(context, cx, cy, outer, ringWidth, undefined, 0, ink(0.28))
+            if (playing) {
+                const grain = clamp(playback.grain, 0.002, 0.5)
+                const mixA = Math.cos(playback.mix * Math.PI / 2), mixB = Math.sin(playback.mix * Math.PI / 2)
+                for (const [head, level] of [[playback.headA, mixA], [playback.headB, mixB]]) {
+                    if (level < 0.02) {continue}
+                    drawRing(context, cx, cy, outer, ringWidth, head, grain, ink(0.9 * level))
+                    context.beginPath()
+                    context.arc(cx, cy, radius + 2.5, head * TURN - Math.PI / 2, (head + grain) * TURN - Math.PI / 2)
+                    context.lineWidth = 2
+                    context.strokeStyle = ink(level)
+                    context.stroke()
+                }
+            }
+        }
+
+        // the sweep: the directions the ray just pointed in, fading behind it
+        if (playing) {
+            const origin = inside(pattern.origin, 0.98)
+            const hitCircle = turns => {
+                const d = onCircle(turns), along = dotOf(origin, d)
+                return toView(add(origin, mul(d, -along + Math.sqrt(Math.max(0, along * along - (dotOf(origin, origin) - 1))))))
+            }
+            const slices = 16, width = 0.004
+            for (let i = 0; i < slices; i++) {
+                const from = playback.phase - (i + 1) * width
+                context.beginPath()
+                context.moveTo(...toView(origin))
+                context.lineTo(...hitCircle(from))
+                context.lineTo(...hitCircle(from + width))
+                context.closePath()
+                context.fillStyle = ink(0.07 * (1 - i / slices))
+                context.fill()
+            }
+        }
+
+        for (const segment of pattern.segments) {stroke(context, sample(segment), toView, 1.25, ink(0.85))}
+
+        // the ray, each reflection a little dimmer; grey when it is trapped
+        const {path, escaped} = trace(pattern, playback.phase)
+        let alpha = 0.9
+        for (let i = 1; i < path.length; i++, alpha *= 0.8) {
+            stroke(context, [path[i - 1], path[i]], toView, 1, escaped ? `rgba(230, 240, 245, ${alpha})` : `hsla(197, 10%, 60%, ${alpha * 0.7})`)
+        }
+        if (escaped) {dot(context, ...toView(path[path.length - 1]))}
+
+        // the origin
+        const [ox, oy] = toView(pattern.origin)
+        context.beginPath()
+        context.arc(ox, oy, 2.5, 0, TURN)
+        context.fillStyle = "hsl(197, 14%, 12%)"
+        context.fill()
+        context.lineWidth = 1
+        context.strokeStyle = faint(0.6)
+        context.stroke()
+
+        const text = state.dragging ? "Drop to load" : state.loading ? "Loading…" : state.waveform === null || state.waveform.bins.length === 0 ? "Drop a sample" : ""
+        if (text !== "") {
+            message(context, text, cx, cy + radius * 0.5 + 3)
+        } else {
+            // the sample's name and length below the origin, shortened to the circle's width there
+            context.save()
+            context.font = "400 7px Rubik, sans-serif"
+            const seconds = ` ${state.waveform.seconds.toFixed(2)} s`, room = radius * 1.4
+            let name = state.waveform.name
+            while (name.length > 1 && context.measureText(name + "…" + seconds).width > room) {name = name.slice(0, -1)}
+            if (name !== state.waveform.name) {name += "…"}
+            context.restore()
+            caption(context, name + seconds, cx, cy + radius * 0.5 + 3, "center")
+        }
+    }
+
+    // the twelve patterns, the picked one bright, the one that plays with its ray's direction on its circle
+    const drawPatterns = (context, panel) => {
+        const picked = Math.round(panel.value("pattern") * (PATTERNS - 1)), playback = state.playback
+        for (let index = 0; index < PATTERNS; index++) {
+            const {x, cy} = cellAt(index), r = GRID.radius, cx = x + 10 + r
+            const toView = ([px, py]) => [cx + px * r, cy + py * r]
+            const on = index === picked
+            caption(context, String(index + 1), x, cy - r + 6, "left", on ? 1.6 : 0.85)
+            context.beginPath()
+            context.arc(cx, cy, r, 0, TURN)
+            context.lineWidth = 1
+            context.strokeStyle = on ? faint(0.4) : faint(0.12)
+            context.stroke()
+            const pattern = state.patterns[index]
+            for (const segment of pattern.segments) {stroke(context, sample(segment, 16), toView, 1, ink(on ? 0.95 : 0.45))}
+            if (playback.playing !== 0 && playback.pattern === index) {dot(context, ...toView(onCircle(playback.phase)), 1.5)}
+        }
+    }
+
+    // --- the sample: to openDAW where it keeps samples, else decoded here (at most 30 seconds, 16 bit) -----------
+
+    const encoder = new TextEncoder()
+    const frame = (type, payload) => {
+        const bytes = new Uint8Array(4 + payload.length)
+        bytes[0] = type
+        bytes.set(payload, 4)
+        return bytes.buffer
+    }
+    let panelRef = null
+    const nameOf = file => encoder.encode(file.name.replace(/\.[^.]+$/, "")).slice(0, 1024)
+    const load = async file => {
+        state.dragging = false
+        state.loading = true
+        if (state.hostKeepsSamples) {
+            panelRef.send(frame(FRAME.SAMPLE_NAME, nameOf(file)))
+            window.parent.postMessage({webclapSample: {key: 0, file}}, "*")
+            return
+        }
+        try {
+            const decoded = await new OfflineAudioContext(1, 1, RATE).decodeAudioData(await file.arrayBuffer())
+            const channels = Math.min(2, decoded.numberOfChannels)
+            const frames = Math.min(decoded.length, Math.floor(MAX_SECONDS * decoded.sampleRate))
+            const name = nameOf(file), header = 12 + name.length
+            const bytes = new Uint8Array(header + frames * channels * 2), view = new DataView(bytes.buffer)
+            view.setUint32(0, decoded.sampleRate, true)
+            view.setUint32(4, frames, true)
+            view.setUint16(8, channels, true)
+            view.setUint16(10, name.length, true)
+            bytes.set(name, 12)
+            let at = header
+            for (let channel = 0; channel < channels; channel++) {
+                const data = decoded.getChannelData(channel)
+                for (let i = 0; i < frames; i++, at += 2) {
+                    view.setInt16(at, Math.max(-32768, Math.min(32767, Math.round(data[i] * 32767))), true)
+                }
+            }
+            panelRef.send(frame(FRAME.SAMPLE, bytes))
+        } catch (error) {
+            state.loading = false
+            window.parent.postMessage({webclapDebug: "error", message: `Could not load ${file.name}: ${error.message || error}`}, "*")
+        }
+    }
+    // files dropped from the desktop, and samples from openDAW's browser (its frame replays them as file drags)
+    const isFileDrag = event => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes("Files")
+    document.addEventListener("dragenter", event => {
+        if (!isFileDrag(event)) {return}
+        event.preventDefault()
+        state.dragging = true
+    })
+    document.addEventListener("dragover", event => {
+        if (!isFileDrag(event)) {return}
+        event.preventDefault()
+        event.dataTransfer.dropEffect = "copy"
+    })
+    document.addEventListener("dragleave", event => {
+        if (event.relatedTarget === null) {state.dragging = false}
+    })
+    document.addEventListener("drop", event => {
+        event.preventDefault()
+        const file = event.dataTransfer && event.dataTransfer.files[0]
+        if (file) {load(file)} else {state.dragging = false}
+    })
+
+    // --- the panel ----------------------------------------------------------------------------------------------
+
+    const decoder = new TextDecoder()
+    panelRef = OpenDAWPanel.kitPanel({
+        width: 435, screen: SCREEN, // the plugin declares it (RADAR_PANEL_WIDTH)
+        params: {
+            pattern: {param: "pattern", label: "Pattern", kind: "steps", labels: Array.from({length: PATTERNS}, (_, i) => String(i + 1))},
+            bars: {param: "bars", label: "Bars", format: text => `${text} ${text === "1" ? "bar" : "bars"}`},
+            grain: {param: "grain", label: "Grain"},
+            pitch: {param: "pitch", label: "Pitch", bipolar: true},
+            play: {param: "play", label: "Play", kind: "steps", labels: ["Note", "Free"]},
+            keys: {param: "keys", label: "Keys", kind: "steps", labels: ["Pattern", "Pitch"]},
+            volume: {param: "volume", label: "Volume"}
+        },
+        // the selectors together on the first row (every step on the line, as the window shows them), the knobs as
+        // a square below
+        layout: [{choices: ["play", "keys"], square: [["bars", "M"], ["grain", "M"], ["pitch", "M"], ["volume", "M"]]}],
+        edit: "Edit",
+        hit: (x, y) => {
+            const column = Math.floor((x - GRID.x) / GRID.width), row = Math.floor(y / (SIZE / GRID.rows))
+            return x < GRID.x || column >= GRID.columns || row < 0 || row >= GRID.rows ? null
+                : {key: "pattern", value: row * GRID.columns + column}
+        },
+        onFrame: (type, view) => {
+            if (type === FRAME.PATTERN && view.byteLength >= 9) {
+                const index = view.getUint8(8) & 0x7f, pattern = readPattern(view, 9)
+                if (index < PATTERNS && pattern !== null) {state.patterns[index] = pattern}
+            } else if (type === FRAME.WAVEFORM && view.byteLength >= 18) {
+                const frames = view.getUint32(4, true), rate = view.getUint32(8, true), nameBytes = view.getUint16(14, true)
+                const name = decoder.decode(new Uint8Array(view.buffer, 16, Math.min(nameBytes, view.byteLength - 16)))
+                const at = 16 + nameBytes
+                if (view.byteLength < at + 2) {return}
+                const bins = view.getUint16(at, true)
+                if (view.byteLength < at + 2 + bins * 2) {return}
+                state.waveform = {name, seconds: frames / Math.max(1, rate), bins: new Int8Array(view.buffer.slice(at + 2, at + 2 + bins * 2))}
+                const flags = view.byteLength > at + 2 + bins * 2 ? view.getUint8(at + 2 + bins * 2) : 0
+                state.hostKeepsSamples = (flags & 1) !== 0
+                state.loading = false
+            } else if (type === FRAME.PLAYBACK && view.byteLength >= 36) {
+                const f = k => view.getFloat32(4 + k * 4, true), i = k => view.getInt32(4 + k * 4, true)
+                state.playback = {phase: f(0), headA: f(1), headB: f(2), mix: f(3), grain: f(4), pattern: i(5), playing: i(6), escaped: i(7)}
+            }
+        },
+        draw: (context, width, height, panel) => {
+            drawRadar(context, panel)
+            drawPatterns(context, panel)
+        }
+    })
+</script>
+</body>
+</html>

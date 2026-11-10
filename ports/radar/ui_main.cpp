@@ -1,13 +1,13 @@
 /*
-    Radar's editors as ui.wasm: the window's or, with "panel" in the page's query (wclap_ui_configure), the device
-    panel's (radar_editor.h). The stand-in processor is the port's own, never processing audio; the Session holds
-    what the DSP side sends beside parameters (radar_frames.h). Inter is the default font.
+    Radar's editor as ui.wasm, the window's (radar_editor.h); the device panel is ui/panel.html. The stand-in
+    processor is the port's own, never processing audio; the Session holds what the DSP side sends beside parameters
+    (radar_frames.h). Inter is the default font.
 
     The page decodes a dropped or picked sample and hands it over (wclap_ui_page_input), the editor asks the page to
-    pick one (host.toPage). The panel never resizes the window: both pages share the plugin's size.
+    pick one (host.toPage).
 
     Exports (called from webclap-ui.js):
-        wclap_ui_configure, wclap_ui_init, wclap_ui_frame, wclap_ui_set_desktop, wclap_ui_mouse, wclap_ui_wheel,
+        wclap_ui_init, wclap_ui_frame, wclap_ui_set_desktop, wclap_ui_mouse, wclap_ui_wheel,
         wclap_ui_key, wclap_ui_focus, wclap_ui_clipboard, wclap_ui_receive, wclap_ui_page_input,
         wclap_ui_framebuffer, wclap_ui_dirty_rects, wclap_ui_describe, wclap_ui_value_text
 */
@@ -43,7 +43,7 @@ struct App
     std::unique_ptr<radar::Processor> processor;
     radar::Session session;
     std::uint32_t pageId = 0;
-    bool panel = false, toldHostKeeps = false;
+    bool toldHostKeeps = false;
     std::unique_ptr<juce::AudioProcessorEditor> editor;
     std::unique_ptr<juce::webclap::ProcessorBridge> bridge;
     std::unique_ptr<juce::webclap::ParameterHover> hover; // after the editor and the bridge: destroyed first
@@ -52,7 +52,6 @@ struct App
 };
 
 App* app = nullptr;
-bool wclap_ui_panel_mode = false;
 
 void sendToHost (const void* data, size_t size) { wclap_js_send (data, (int) size); }
 
@@ -124,12 +123,6 @@ void receiveFrame (juce::uint8 type, const juce::uint8* payload, size_t size)
 
 extern "C"
 {
-/** The page's mode before init: "panel" anywhere in it makes the device panel's editor. */
-EMSCRIPTEN_KEEPALIVE void wclap_ui_configure (const char* config)
-{
-    wclap_ui_panel_mode = juce::String::fromUTF8 (config).contains ("panel");
-}
-
 EMSCRIPTEN_KEEPALIVE void wclap_ui_set_screen (int width, int height)
 {
     juce::webclap::setScreenSize (width, height);
@@ -149,7 +142,6 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_init (double pixelRatio)
     app->juce = std::make_unique<juce::ScopedJuceInitialiser_GUI>();
 
     app->processor = std::make_unique<radar::Processor>();
-    app->panel = wclap_ui_panel_mode;
     app->pageId = (std::uint32_t) juce::Random::getSystemRandom().nextInt (0x7fffffff) + 1;
     app->processor->setRateAndBufferSizeDetails (48000.0, 512);
     app->processor->prepareToPlay (48000.0, 512);
@@ -158,9 +150,7 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_init (double pixelRatio)
 
     app->session.sendPattern = [] (int index, bool live) { sendPattern (index, live); };
     app->session.openSampleFile = [] { toPage ("open-sample"); };
-    app->session.openWindow = [] { app->bridge->requestWindow(); };
-    app->editor.reset (app->panel ? radar::createPanelEditor (*app->processor, app->session)
-                                  : radar::createWindowEditor (*app->processor, app->session));
+    app->editor.reset (radar::createWindowEditor (*app->processor, app->session));
     app->bridge->onPluginFrame = [] (juce::uint8 type, const juce::uint8* payload, size_t size) { receiveFrame (type, payload, size); };
 
     if (app->editor != nullptr)
@@ -176,8 +166,7 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_init (double pixelRatio)
     app->editor->addToDesktop (0);
     app->editor->setVisible (true);
 
-    if (! app->panel)
-        app->bridge->sendResize (app->lastWidth, app->lastHeight);
+    app->bridge->sendResize (app->lastWidth, app->lastHeight);
 
     app->bridge->sendHello();
     return 1;
@@ -192,7 +181,7 @@ EMSCRIPTEN_KEEPALIVE int wclap_ui_frame (double timeMs)
     const auto changed = juce::webclap::tick (timeMs);
     app->bridge->flush();
 
-    if (app->editor != nullptr && ! app->panel && (app->editor->getWidth() != app->lastWidth || app->editor->getHeight() != app->lastHeight))
+    if (app->editor != nullptr && (app->editor->getWidth() != app->lastWidth || app->editor->getHeight() != app->lastHeight))
     {
         app->lastWidth = app->editor->getWidth();
         app->lastHeight = app->editor->getHeight();

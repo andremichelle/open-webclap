@@ -9,7 +9,7 @@ namespace
 namespace colours
 {
     const juce::Colour background { 0xff232323 }, header { 0xff1b1b1b }, panel { 0xff2c2c2c }, divider { 0xff191919 };
-    const juce::Colour text { 0xffd8d8d8 }, label { 0xffa6a6a6 }, caption { 0xff7c7c7c };
+    const juce::Colour text { 0xffd8d8d8 }, label { 0xffa6a6a6 }, caption { 0xff969696 };
     const juce::Colour track { 0xff3c3c3c }, pill { 0xff383838 }, pillHover { 0xff444444 };
     const juce::Colour teal { 0xff38c7b0 }, violet { 0xffa77bff }, orange { 0xfff2a33a }, pink { 0xffff7aa8 };
 }
@@ -70,7 +70,7 @@ int patternIndexOf (Processor& processor)
     return juce::jlimit (0, numPatterns - 1, juce::roundToInt (processor.state.getRawParameterValue ("pattern")->load()) - 1);
 }
 
-/** A control of one parameter: the editors tell the host which parameter is under the mouse
+/** A control of one parameter: the editor tells the host which parameter is under the mouse
     (getControlParameterIndex), which offers its menu there (openDAW: automation, MIDI learn). */
 struct ParameterControl
 {
@@ -217,7 +217,16 @@ public:
         for (int index = 0; index < parameter.choices.size(); ++index)
         {
             const auto area = bounds.removeFromLeft (widthOf (index));
-            g.setColour (index == parameter.getIndex() ? colours::text : colours::caption);
+            const auto current = index == parameter.getIndex();
+
+            if (current) // a shape as well as a brighter colour: the step is told apart without colour
+            {
+                const auto pill = area.toFloat().reduced (1.0f, juce::jmax (0.0f, (float) area.getHeight() * 0.5f - 9.0f));
+                g.setColour (colours::pill);
+                g.fillRoundedRectangle (pill, pill.getHeight() * 0.5f);
+            }
+
+            g.setColour (current ? colours::text : colours::caption);
             g.drawText (parameter.choices[index], area, juce::Justification::centred);
         }
     }
@@ -537,18 +546,18 @@ private:
 
 //==============================================================================
 /** The circle: the sample's waveform around it, the grid, the radar's sweep and ray, the pattern's segments and its
-    origin, the grain that plays lit on the waveform. Editable in the window: tools to select, draw and change
-    segments, the origin to drag. */
+    origin, the grain that plays lit on the waveform. Editable: tools to select, draw and change segments, the
+    origin to drag. */
 class RadarView final : public juce::Component
 {
 public:
     enum class Tool { select, line, arc, curve };
 
-    RadarView (Processor& p, Session& s, bool editable)
-        : processor (p), session (s), canEdit (editable)
+    RadarView (Processor& p, Session& s)
+        : processor (p), session (s)
     {
-        setWantsKeyboardFocus (editable);
-        setMouseClickGrabsKeyboardFocus (editable);
+        setWantsKeyboardFocus (true);
+        setMouseClickGrabsKeyboardFocus (true);
     }
 
     std::function<int()> shownPattern;                // the one drawn and edited
@@ -659,8 +668,8 @@ public:
         const auto bounds = getLocalBounds().toFloat();
         centre = bounds.getCentre();
         outer = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f - 2.0f;
-        ringWidth = canEdit ? 30.0f : 15.0f;
-        radius = outer - ringWidth - (canEdit ? 10.0f : 5.0f);
+        ringWidth = 30.0f;
+        radius = outer - ringWidth - 10.0f;
         waveformImage = {};
     }
 
@@ -689,9 +698,7 @@ public:
         }
 
         paintOrigin (g, shown);
-
-        if (canEdit)
-            paintEditing (g, shown);
+        paintEditing (g, shown);
 
         paintMessage (g);
     }
@@ -699,9 +706,6 @@ public:
     //==========================================================================
     void mouseMove (const juce::MouseEvent& event) override
     {
-        if (! canEdit)
-            return;
-
         if (tool == Tool::select)
         {
             const auto handle = handleAt (event.position);
@@ -733,14 +737,6 @@ public:
 
     void mouseDown (const juce::MouseEvent& event) override
     {
-        if (! canEdit)
-        {
-            if (session.waveform.frames == 0 && session.openSampleFile)
-                session.openSampleFile();
-
-            return;
-        }
-
         drag = {};
         before = pattern();
 
@@ -812,9 +808,6 @@ public:
 
     void mouseDrag (const juce::MouseEvent& event) override
     {
-        if (! canEdit)
-            return;
-
         switch (drag.mode)
         {
             case Drag::Mode::handle: dragHandle (event); break;
@@ -827,9 +820,6 @@ public:
 
     void mouseUp (const juce::MouseEvent&) override
     {
-        if (! canEdit)
-            return;
-
         if (drag.mode == Drag::Mode::create && ! selection.empty())
         {
             // A click without a drag draws nothing
@@ -856,9 +846,6 @@ public:
 
     bool keyPressed (const juce::KeyPress& key) override
     {
-        if (! canEdit)
-            return false;
-
         if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
         {
             deleteSelection();
@@ -1232,9 +1219,9 @@ private:
     void paintRing (juce::Graphics& g)
     {
         const auto& waveform = session.waveform;
-        const auto trackRadius = radius + (canEdit ? 4.0f : 2.0f);
+        const auto trackRadius = radius + 4.0f;
         g.setColour (colours::track);
-        g.drawEllipse (juce::Rectangle<float> (trackRadius * 2.0f, trackRadius * 2.0f).withCentre (centre), canEdit ? 2.0f : 1.5f);
+        g.drawEllipse (juce::Rectangle<float> (trackRadius * 2.0f, trackRadius * 2.0f).withCentre (centre), 2.0f);
 
         if (waveform.frames == 0 || waveform.bins.empty())
             return;
@@ -1290,7 +1277,7 @@ private:
             juce::Path arc;
             arc.addCentredArc (centre.x, centre.y, trackRadius, trackRadius, 0.0f, from, from + grain, true);
             g.setColour (colours::violet.withAlpha (level));
-            g.strokePath (arc, juce::PathStrokeType (canEdit ? 3.0f : 2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.strokePath (arc, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
     }
 
@@ -1319,14 +1306,14 @@ private:
         }
 
         g.setColour (colour);
-        g.strokePath (lines, juce::PathStrokeType (canEdit ? 1.0f : 0.8f));
+        g.strokePath (lines, juce::PathStrokeType (1.0f));
     }
 
-    /** Where points snap to: a dot per angle step on every ring (the window only), and the quarters of the loop as
-        ticks on the edge. */
+    /** Where points snap to: a dot per angle step on every ring, and the quarters of the loop as ticks on the
+        edge. */
     void paintGrid (juce::Graphics& g)
     {
-        if (canEdit && snapping)
+        if (snapping)
         {
             g.setColour (colours::track);
 
@@ -1339,7 +1326,7 @@ private:
         {
             const auto d = onCircle ((float) i / 4.0f);
             g.setColour (colours::caption);
-            g.drawLine ({ centre + juce::Point<float> (d.x, d.y) * (radius - (canEdit ? 7.0f : 4.0f)), centre + juce::Point<float> (d.x, d.y) * radius }, 1.0f);
+            g.drawLine ({ centre + juce::Point<float> (d.x, d.y) * (radius - 7.0f), centre + juce::Point<float> (d.x, d.y) * radius }, 1.0f);
         }
     }
 
@@ -1377,7 +1364,7 @@ private:
 
         // Each reflection dims the ray a little more
         const auto colour = traced.escaped ? colours::text : colours::pink;
-        const juce::PathStrokeType stroke (canEdit ? 1.2f : 1.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+        const juce::PathStrokeType stroke (1.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
         auto alpha = 0.9f;
 
         for (size_t i = 1; i < path.size(); ++i, alpha *= 0.8f)
@@ -1392,7 +1379,7 @@ private:
         if (traced.escaped)
         {
             g.setColour (colours::violet);
-            g.fillEllipse (juce::Rectangle<float> (canEdit ? 6.0f : 4.0f, canEdit ? 6.0f : 4.0f).withCentre (toView (path.back())));
+            g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre (toView (path.back())));
         }
     }
 
@@ -1407,20 +1394,20 @@ private:
             for (size_t k = 1; k < points.size(); ++k)
                 stroke.lineTo (toView (points[k]));
 
-            const auto selected = canEdit && isSelected (i);
-            g.setColour (selected ? colours::orange : canEdit && i == hovered ? colours::text : colours::label);
-            g.strokePath (stroke, juce::PathStrokeType (canEdit ? 2.0f : 1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            const auto selected = isSelected (i);
+            g.setColour (selected ? colours::orange : i == hovered ? colours::text : colours::label);
+            g.strokePath (stroke, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
     }
 
     void paintOrigin (juce::Graphics& g, const Pattern& shown)
     {
         const auto at = toView (shown.origin);
-        const auto size = canEdit ? 10.0f : 6.0f;
+        const auto size = 10.0f;
         g.setColour (colours::background);
         g.fillEllipse (juce::Rectangle<float> (size, size).withCentre (at));
-        g.setColour (canEdit && hovered == -1 && hoveringHandle ? colours::text : colours::label);
-        g.drawEllipse (juce::Rectangle<float> (size, size).withCentre (at), canEdit ? 1.5f : 1.0f);
+        g.setColour (hovered == -1 && hoveringHandle ? colours::text : colours::label);
+        g.drawEllipse (juce::Rectangle<float> (size, size).withCentre (at), 1.5f);
     }
 
     void paintEditing (juce::Graphics& g, const Pattern& shown)
@@ -1485,9 +1472,9 @@ private:
         if (session.dragging)
             message = "Drop to load";
         else if (session.loading)
-            message = "Loading...";
+            message = juce::String::fromUTF8 ("Loading\xe2\x80\xa6");
         else if (waveform.frames == 0)
-            message = canEdit ? "Drop a sample here" : "Drop a sample";
+            message = "Drop a sample here";
 
         if (session.dragging)
         {
@@ -1501,7 +1488,7 @@ private:
         if (message.isEmpty())
             return;
 
-        g.setFont (font (canEdit ? 13.0f : 10.5f, Face::italic));
+        g.setFont (font (13.0f, Face::italic));
         g.setColour (colours::label);
         const auto area = juce::Rectangle<float> (radius * 1.6f, 20.0f).withCentre ({ centre.x, centre.y + radius * 0.5f });
         g.drawText (message, area, juce::Justification::centred);
@@ -1509,7 +1496,6 @@ private:
 
     Processor& processor;
     Session& session;
-    const bool canEdit;
 
     juce::Point<float> centre;
     float outer = 100.0f, ringWidth = 20.0f, radius = 80.0f;
@@ -1531,8 +1517,8 @@ private:
 class PatternCell final : public juce::Component, public ParameterControl
 {
 public:
-    PatternCell (Processor& p, Session& s, int slot, bool compact)
-        : processor (p), session (s), index (slot), small (compact)
+    PatternCell (Processor& p, Session& s, int slot)
+        : processor (p), session (s), index (slot)
     {
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
     }
@@ -1568,13 +1554,13 @@ public:
 
         // The number, with a play mark while it plays
         auto label = bounds.reduced (5.0f, 2.0f);
-        g.setFont (font (small ? 10.0f : 11.0f));
+        g.setFont (font (11.0f));
         g.setColour (wasPicked ? colours::text : colours::label);
 
         if (wasPlaying)
         {
             juce::Path play;
-            const auto y = label.getY() + (small ? 5.0f : 6.0f);
+            const auto y = label.getY() + 6.0f;
             play.addTriangle (label.getX(), y - 3.5f, label.getX(), y + 3.5f, label.getX() + 6.0f, y);
             g.setColour (colours::orange);
             g.fillPath (play);
@@ -1584,7 +1570,7 @@ public:
 
         const auto number = juce::String (index + 1);
         const auto numberEnd = label.getX() + juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), number);
-        g.drawText (number, label.removeFromTop (small ? 11.0f : 13.0f), juce::Justification::topLeft);
+        g.drawText (number, label.removeFromTop (13.0f), juce::Justification::topLeft);
 
         // The picture, on the right, clear of the number (two digits take more room)
         const auto side = juce::jmin (bounds.getHeight() - 6.0f, bounds.getRight() - 4.0f - (numberEnd + 4.0f));
@@ -1630,7 +1616,6 @@ private:
     Processor& processor;
     Session& session;
     const int index;
-    const bool small;
 
 public:
     juce::AudioProcessorParameter& controlledParameter() override { return parameterOf (processor, "pattern"); }
@@ -1663,7 +1648,7 @@ public:
     int getControlParameterIndex (juce::Component& component) override { return controlParameterIndex (component); }
 
     WindowEditor (Processor& p, Session& s)
-        : AudioProcessorEditor (p), processor (p), session (s), view (p, s, true),
+        : AudioProcessorEditor (p), processor (p), session (s), view (p, s),
           selectTool ("Select", icons::select(), true, colours::violet),
           lineTool ("Line", icons::line(), false, colours::violet),
           arcTool ("Arc", icons::arc(), false, colours::violet),
@@ -1682,7 +1667,7 @@ public:
           volumeDial (p.state, "volume", "Volume", colours::teal, decibels(), false, 42),
           keys (*dynamic_cast<juce::AudioParameterChoice*> (p.state.getParameter ("keys"))),
           play (*dynamic_cast<juce::AudioParameterChoice*> (p.state.getParameter ("play"))),
-          snapPill ("Snap"), loadPill ("Load..."), undoPill ("Undo"), redoPill ("Redo"),
+          snapPill ("Snap"), loadPill (juce::String::fromUTF8 ("Load\xe2\x80\xa6")), undoPill ("Undo"), redoPill ("Redo"),
           copyPill ("Copy"), pastePill ("Paste"), clearPill ("Clear"),
           angles ("Angles", { 4, 6, 8, 12, 16, 24, 32, 48, 64, 96 }, 32),
           rings ("Rings", { 1, 2, 3, 4, 6, 8, 12, 16, 24 }, 8)
@@ -1740,7 +1725,7 @@ public:
             addAndMakeVisible (component);
 
         for (int i = 0; i < numPatterns; ++i)
-            addAndMakeVisible (cells.emplace_back (std::make_unique<PatternCell> (p, s, i, false)).get());
+            addAndMakeVisible (cells.emplace_back (std::make_unique<PatternCell> (p, s, i)).get());
 
         chooseTool (RadarView::Tool::select);
         updateActions();
@@ -2055,130 +2040,10 @@ private:
     int shownPattern = -1, shownWaveform = -1, shownPlayback = -1, shownPatterns = -1;
     bool shownLoading = false;
 };
-
-//==============================================================================
-/** The device panel: the playing pattern's circle, the patterns to pick, the main dials. */
-class PanelEditor final : public juce::AudioProcessorEditor, private juce::Timer
-{
-public:
-    int getControlParameterIndex (juce::Component& component) override { return controlParameterIndex (component); }
-
-    PanelEditor (Processor& p, Session& s)
-        : AudioProcessorEditor (p), processor (p), session (s), view (p, s, false),
-          barsDial (p.state, "bars", "Bars", colours::teal, bars(), false, 30),
-          grainDial (p.state, "grain", "Grain", colours::orange, milliseconds(), false, 30),
-          pitchDial (p.state, "pitch", "Pitch", colours::violet, semitones(), true, 30),
-          volumeDial (p.state, "volume", "Volume", colours::teal, decibels(), false, 30),
-          play (*dynamic_cast<juce::AudioParameterChoice*> (p.state.getParameter ("play")))
-    {
-        addAndMakeVisible (play);
-        edit.onClick = [this] { if (session.openWindow) session.openWindow(); };
-        addAndMakeVisible (edit);
-        // The pattern that plays (a note may pick it), else the picked one
-        view.shownPattern = [this]
-        {
-            return session.playback.playing != 0 ? juce::jlimit (0, numPatterns - 1, (int) session.playback.pattern)
-                                                 : patternIndexOf (processor);
-        };
-        addAndMakeVisible (view);
-
-        for (auto* dial : { &barsDial, &grainDial, &pitchDial, &volumeDial })
-            addAndMakeVisible (*dial);
-
-        for (int i = 0; i < numPatterns; ++i)
-            addAndMakeVisible (cells.emplace_back (std::make_unique<PatternCell> (p, s, i, true)).get());
-
-        setSize (width, height);
-        startTimerHz (30);
-    }
-
-    static constexpr int width = RADAR_PANEL_WIDTH, height = RADAR_PANEL_HEIGHT;
-
-    void paint (juce::Graphics& g) override
-    {
-        g.fillAll (colours::background);
-        g.setColour (colours::panel);
-        g.fillRect (sideArea);
-        g.setFont (font (11.0f, Face::italic));
-        g.setColour (session.waveform.frames > 0 ? colours::label : colours::caption);
-        g.drawText (sampleText (session.waveform), nameArea, juce::Justification::centredLeft, true);
-    }
-
-    void resized() override
-    {
-        auto bounds = getLocalBounds();
-        view.setBounds (bounds.removeFromLeft (height).reduced (2));
-        bounds.removeFromLeft (2);
-        sideArea = bounds;
-
-        auto side = bounds.reduced (8, 6);
-        side.removeFromTop (2);
-        nameArea = side.removeFromTop (16);
-        edit.setBounds (nameArea.removeFromRight (40).withSizeKeepingCentre (40, 16));
-        nameArea.removeFromRight (4);
-        play.setBounds (nameArea.removeFromRight (84));
-        side.removeFromTop (4);
-        auto grid = side.removeFromTop (60);
-        const auto cellWidth = grid.getWidth() / 6;
-
-        for (int row = 0; row < 2; ++row)
-        {
-            auto line = grid.removeFromTop (30);
-
-            for (int column = 0; column < 6; ++column)
-                cells[(size_t) (row * 6 + column)]->setBounds (line.removeFromLeft (cellWidth).withTrimmedRight (2).withTrimmedBottom (2));
-        }
-
-        side.removeFromTop (6);
-        auto dials = side;
-        const auto dialWidth = dials.getWidth() / 4;
-
-        for (auto* dial : { &barsDial, &grainDial, &pitchDial, &volumeDial })
-            dial->setBounds (dials.removeFromLeft (dialWidth));
-    }
-
-private:
-    void timerCallback() override
-    {
-        if (std::exchange (shownWaveform, session.waveformRevision) != session.waveformRevision)
-        {
-            view.waveformChanged();
-            repaint (nameArea);
-        }
-
-        const auto picked = patternIndexOf (processor);
-        const auto changed = std::exchange (shownPlayback, session.playbackRevision) != session.playbackRevision
-                             || std::exchange (shownPatterns, session.patternsRevision) != session.patternsRevision
-                             || std::exchange (shownPattern, picked) != picked
-                             || std::exchange (shownLoading, session.loading || session.dragging) != (session.loading || session.dragging);
-
-        if (changed)
-            view.repaint();
-
-        for (auto& cell : cells)
-            cell->refresh();
-    }
-
-    Processor& processor;
-    Session& session;
-    RadarView view;
-    Dial barsDial, grainDial, pitchDial, volumeDial;
-    Choice play;
-    Pill edit { "Edit" };
-    std::vector<std::unique_ptr<PatternCell>> cells;
-    juce::Rectangle<int> sideArea, nameArea;
-    int shownWaveform = -1, shownPlayback = -1, shownPatterns = -1, shownPattern = -1;
-    bool shownLoading = false;
-};
 } // namespace
 
 juce::AudioProcessorEditor* createWindowEditor (Processor& processor, Session& session)
 {
     return new WindowEditor (processor, session);
-}
-
-juce::AudioProcessorEditor* createPanelEditor (Processor& processor, Session& session)
-{
-    return new PanelEditor (processor, session);
 }
 } // namespace radar

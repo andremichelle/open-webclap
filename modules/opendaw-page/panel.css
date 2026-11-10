@@ -120,5 +120,34 @@ body {
 /* as wide as the widest value it can show (set by panel.js), so a change never moves anything */
 .parameter .value {color: var(--value); font-variant-numeric: tabular-nums; text-align: right}
 .parameter.active .value {color: var(--blue)}
+/* a choice as a row: every step on the line, as in a choice's column */
+/* choices as rows together, centred: names in one column and steps in the next (every row's steps start on one
+   line, as in the window) */
+.column.choices {display: grid; grid-template-rows: none; grid-template-columns: auto auto; column-gap: 8px; row-gap: 6px; align-content: center; align-items: center; margin-left: 0}
+/* the choices on the knobs' first row, a square of four knobs on the other two */
+.column.choices-over {grid-template-columns: auto auto; column-gap: 10px}
+.column.choices-over > .choices {grid-column: 1 / -1; align-self: center}
+.parameter.steps {display: contents; cursor: default}
+.parameter.steps .name, .column.choices .pills {height: 13px; line-height: 13px}
+.parameter.steps .name {font-size: 9px}
+.parameter.steps .pills {flex-direction: row; gap: 1px}
+/* the button in the display's corner that opens the plugin's window */
+.screen .edit {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    height: 13px;
+    line-height: 13px;
+    padding: 0 6px;
+    border-radius: 2px;
+    font-size: 9px;
+    color: var(--step);
+    background: rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.screen .edit:hover {color: var(--value)}
+/* a control the plugin's own editor disables (Radar's Attack and Release while it plays free) */
+.control.inactive {opacity: 0.35; pointer-events: none}
 /* a lone parameter in the display's corner */
 .parameter.corner {position: absolute; top: 2px; right: 2px; gap: 5px}

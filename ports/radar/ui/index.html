@@ -15,19 +15,17 @@
 <div id="status">Loading Radar…</div>
 <script src="webclap-ui.js"></script>
 <script>
-    // The plugin's webview page: the generic kit, the editor's mode (?panel: the device panel's) and the sample. A
+    // The plugin's webview page (the window's; the device panel is panel.html): the generic kit and the sample. A
     // dropped or picked file goes to openDAW where it keeps samples, else it is decoded here (the editor runs in a
     // worker) and goes to the editor as a sample frame (radar_frames.h), at most 30 seconds, 16 bit.
     const MAX_SECONDS = 30
     const RATE = 48000
     const status = document.getElementById("status")
-    const panel = new URLSearchParams(location.search).has("panel")
 
     const ui = startWebclapUI({
         canvas: document.getElementById("editor"),
         moduleUrl: "ui.js",
         factory: "createWebclapUI",
-        config: panel ? "panel" : "window",
         onPageMessage: text => {
             if (text === "open-sample") picker.click()
             if (text === "samples:host") hostKeepsSamples = true

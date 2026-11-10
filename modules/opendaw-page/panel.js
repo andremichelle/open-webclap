@@ -135,6 +135,7 @@ var OpenDAWPanel = (() => {
             views.push(() => {
                 view.update(unitOf(p, get(key)))
                 readout.textContent = text(key, get(key))
+                element.classList.toggle("inactive", p.isActive?.() === false)
             })
             draggable(element, key)
             return element
@@ -181,12 +182,37 @@ var OpenDAWPanel = (() => {
             return element
         }
 
+        // a choice as a row: the name, then its steps on the line, the current one lit; a click selects a step (as the
+        // plugin's own editor shows a choice: "Play  Note Free")
+        const choiceRow = key => {
+            const p = param(key)
+            const element = document.createElement("div")
+            element.className = "parameter steps"
+            element.innerHTML = `<span class="name"></span><span class="pills"></span>`
+            element.querySelector(".name").textContent = p.label
+            const pills = p.labels.map((label, index) => {
+                const pill = Object.assign(document.createElement("span"), {textContent: label})
+                pill.addEventListener("pointerdown", event => {
+                    if (event.button === 0 && !event.ctrlKey) {step(key, p.low + index)}
+                })
+                element.querySelector(".pills").append(pill)
+                return pill
+            })
+            element.addEventListener("pointerdown", () => host.hover(p.id), {capture: true})
+            element.addEventListener("pointermove", () => host.hover(p.id))
+            element.addEventListener("pointerleave", () => host.hover(null))
+            views.push(() => pills.forEach((pill, index) => pill.classList.toggle("on", index === Math.round(get(key) - p.low))))
+            return element
+        }
+
         // a stepped parameter is a choice, any other a knob
         const control = (key, size) => param(key).kind === "steps" ? choice(key) : knob(key, size)
 
         // The columns of a card's controls, left to right: {large: key} the main knob alone, centred by its circle;
         // {knobs: [[key, size] | null, ...], rows} up to three per column (rows 2: a square of four); {stack: [[key,
-        // size], ...]} top to bottom; {labels: [key | null, ...]} parameter rows, null a gap between groups.
+        // size], ...]} top to bottom; {labels: [key | null, ...]} parameter rows, null a gap between groups; {choices:
+        // [key, ...], square} choices as rows together, every step on the line; with square ([[key, size] x 4], row
+        // by row) the choices on the first row and the knobs as a square on the other two.
         const layout = (columns, group) => {
             for (const column of columns) {
                 const cells = document.createElement("div")
@@ -203,6 +229,20 @@ var OpenDAWPanel = (() => {
                 } else if (column.stack !== undefined) {
                     cells.className = "column stack"
                     for (const [key, size] of column.stack) {cells.append(control(key, SIZES[size]))}
+                } else if (column.choices !== undefined && column.square !== undefined) {
+                    // the choices together on the first row, a square of four knobs on the other two
+                    cells.className = "column choices-over"
+                    const rows = Object.assign(document.createElement("div"), {className: "column choices"})
+                    for (const key of column.choices) {rows.append(choiceRow(key))}
+                    cells.append(rows)
+                    for (const [key, size] of column.square) {
+                        const slot = Object.assign(document.createElement("div"), {className: "cell"})
+                        slot.append(control(key, SIZES[size]))
+                        cells.append(slot)
+                    }
+                } else if (column.choices !== undefined) {
+                    cells.className = "column labels choices"
+                    for (const key of column.choices) {cells.append(choiceRow(key))}
                 } else {
                     cells.className = "column labels"
                     for (const key of column.labels) {
@@ -221,7 +261,7 @@ var OpenDAWPanel = (() => {
             return element
         }
 
-        return {knob, choice, row, control, layout, corner, update, dragging}
+        return {knob, choice, choiceRow, row, control, layout, corner, update, dragging}
     }
 
     // --- displays -----------------------------------------------------------------------------------------------
@@ -453,11 +493,16 @@ var OpenDAWPanel = (() => {
     //   width        the panel's width at 176 px, as the plugin declares it
     //   screen       the display's width
     //   params       {key: {param: the JUCE parameter ID, label, kind "range" | "steps", labels (steps), bipolar,
-    //                unit}}; a choice or a switch is "steps", its JUCE value index / (count - 1); unit follows the
-    //                plugin's text where the plugin writes none (" dB", "%")
+    //                unit, format}}; a choice or a switch is "steps", its JUCE value index / (count - 1); unit
+    //                follows the plugin's text where the plugin writes none (" dB", "%"), format(text) rewrites it
+    //                ("1 bar", "2 bars"), active(panel) false while the plugin's editor disables the control
     //   layout       the columns (controls.layout), corner a lone parameter in the display's corner
+    //   edit         a button's text in the display's top left corner that opens the plugin's window ("Edit")
     //   draw(context, width, height, panel)   the display, every frame
     //   onFrame(type, view, panel)            the port's own frames (the kit's streams and the port's types)
+    //   hit(x, y, panel)      a step on the display under the pointer, {key, value} (a "steps" parameter, its value
+    //                         index), or null: a click selects it as one gesture, hovering reports its parameter;
+    //                         a click elsewhere opens the window
     //   opened(panel)                         after the snapshot: the port's own requests (an analyzer switched on)
     // panel: value(key) the JUCE value 0..1, plain(key) the plugin's text as a number (NaN until it came),
     // text(key), valueOf(id) and plainOf(id) the same for any parameter by its JUCE ID (one without a control: an
@@ -488,6 +533,7 @@ var OpenDAWPanel = (() => {
             },
             send: bytes => window.parent.postMessage(bytes, "*")
         }
+        for (const p of params.values()) {if (p.active !== undefined) {p.isActive = () => p.active(panel)}}
         const card = document.createElement("div")
         card.className = "card"
         card.style.width = `${spec.width}px`
@@ -495,7 +541,29 @@ var OpenDAWPanel = (() => {
         const screen = card.querySelector(".screen"), canvas = card.querySelector("canvas")
         screen.style.width = `${spec.screen}px`
         screen.style.cursor = "pointer"
-        screen.addEventListener("click", event => {if (event.target === canvas) {kit.show()}})
+        const hitAt = event => {
+            if (spec.hit === undefined || event.target !== canvas) {return null}
+            const bounds = canvas.getBoundingClientRect()
+            return spec.hit((event.clientX - bounds.left) / zoom, (event.clientY - bounds.top) / zoom, panel)
+        }
+        screen.addEventListener("click", event => {
+            if (event.target !== canvas) {return}
+            const hit = hitAt(event)
+            if (hit === null) {
+                kit.show()
+                return
+            }
+            const p = params.get(hit.key)
+            kit.begin(p.id)
+            kit.set(p.id, hit.value / Math.max(1, p.high))
+            kit.end(p.id)
+            controls.update()
+        })
+        screen.addEventListener("pointermove", event => {
+            const hit = hitAt(event)
+            kit.hover(hit === null ? null : params.get(hit.key).id)
+        })
+        screen.addEventListener("pointerleave", () => kit.hover(null))
         controls = OpenDAWPanel.controls({
             param: key => params.get(key),
             get: key => {
@@ -511,12 +579,21 @@ var OpenDAWPanel = (() => {
                 const p = params.get(key)
                 if (p.kind === "steps") {return p.labels[value]}
                 const text = kit.text(p.id, value)
-                return text === "" || p.unit === undefined ? text : `${text}${p.unit}`
+                if (text === "") {return text}
+                return p.format !== undefined ? p.format(text) : p.unit === undefined ? text : `${text}${p.unit}`
             },
             host: kit
         })
         controls.layout(spec.layout, card.querySelector(".group"))
         if (spec.corner !== undefined) {controls.corner(spec.corner, screen)}
+        if (spec.edit !== undefined) {
+            const edit = Object.assign(document.createElement("span"), {className: "edit", textContent: spec.edit})
+            edit.addEventListener("click", event => {
+                event.stopPropagation()
+                kit.show()
+            })
+            screen.append(edit)
+        }
         const stage = document.getElementById("stage")
         stage.append(card)
         let zoom = 1
