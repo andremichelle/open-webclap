@@ -15,8 +15,10 @@
     the active bands, computed as the plugin computes it (dsp/filter: the ideal filters' second-order sections, the
     filter design's orders), scaled by Gain Scale, with the dynamic part the plugin sends while it sends it; Output
     and Scale (the editor's output pair) and the spectrum settings as rows. A band's dot on the curve drags its
-    frequency and, where the band has one, its gain; everything else about the 24 bands is edited in the window
-    (Edit, or a click on the display). The panel sends no controls frame: it carries the window's solo and matcher.
+    frequency and, where the band has one, its gain; a double click on an empty spot creates a band there, as the
+    window's double click does (the first band that is off, its type by where it lands); everything else about the
+    24 bands is edited in the window (Edit). The panel sends no controls frame: it carries the window's solo and
+    matcher.
 -->
 <div id="stage"></div>
 <script src="opendaw-page/panel.js"></script>
@@ -162,6 +164,25 @@
                     return values
                 }
             }
+        },
+        // a new band where the double click lands (mouse_event_panel.cpp mouseDoubleClick, band_helper.hpp
+        // getInitialFilterType): the first band that is off, on, Stereo, 12 dB/oct, Q 0.707, no dynamics
+        doubleClick: (px, py, panel) => {
+            const g = state.geometry
+            if (g === null) {return null}
+            let band = 0
+            while (band < BANDS && Math.round(panel.valueOf(`filter_status${band}`) * 2) !== 0) {band++}
+            if (band === BANDS) {return null}
+            const hz = Math.exp(LOW + clamp((px - g.left) / (g.right - g.left), 0, 1) * (HIGH - LOW))
+            const portion = clamp((g.mid - py) / (g.mid - g.top), -1, 1)
+            const type = hz < 20 && Math.abs(portion) < .2 ? "High Pass" : hz > 10000 && Math.abs(portion) < .2 ? "Low Pass"
+                : hz < 40 ? "Low Shelf" : hz > 6250 ? "High Shelf" : "Peak"
+            const scale = Math.max(0.05, Math.abs(g.scale))
+            const db = type === "Peak" ? portion * RANGE / scale
+                : type === "Low Shelf" || type === "High Shelf" ? clamp(portion * 2, -1, 1) * RANGE / scale : 0
+            return [[`filter_type${band}`, TYPES.indexOf(type) / (TYPES.length - 1)], [`lr_mode${band}`, 0],
+                [`order${band}`, 1 / (ORDERS.length - 1)], [`freq${band}`, freqToValue(hz)], [`gain${band}`, gainToValue(db)],
+                [`q${band}`, 0.5], [`dynamic_on${band}`, 0], [`filter_status${band}`, 1]]
         },
         draw: (context, width, height, panel) => {
             const left = 2, right = width - 2, top = 10, bottom = height - 12, mid = (top + bottom) / 2

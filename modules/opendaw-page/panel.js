@@ -508,6 +508,10 @@ var OpenDAWPanel = (() => {
     //   grab(x, y, panel)     something on the display a drag moves (an equalizer's band): null, or {ids: [JUCE IDs],
     //                         move(x, y) → [[JUCE ID, value 0..1], ...]}: the values follow the pointer as one gesture,
     //                         hovering reports the first id
+    //   doubleClick(x, y, panel)  a double click on an empty spot of the display (no parameter hovered, so openDAW's
+    //                         value entry is not asked): [[JUCE ID, value 0..1], ...] set as gestures (an equalizer's
+    //                         new band), or null; with it a single click on the display opens nothing (spec.edit
+    //                         opens the window)
     //   opened(panel)                         after the snapshot: the port's own requests (an analyzer switched on)
     // panel: value(key) the JUCE value 0..1, plain(key) the plugin's text as a number (NaN until it came),
     // text(key), valueOf(id) and plainOf(id) the same for any parameter by its JUCE ID (one without a control: an
@@ -577,6 +581,16 @@ var OpenDAWPanel = (() => {
             grabbed = null
         }
         canvas.addEventListener("pointerup", release)
+        canvas.addEventListener("dblclick", event => {
+            if (spec.doubleClick === undefined || event.ctrlKey || grabAt(event) !== null || hitAt(event) !== null) {return}
+            const values = spec.doubleClick(...local(event), panel)
+            if (values === null) {return}
+            for (const [id, value] of values) {
+                kit.begin(juceId(id))
+                kit.set(juceId(id), clamp(value, 0, 1))
+                kit.end(juceId(id))
+            }
+        })
         canvas.addEventListener("lostpointercapture", release)
         screen.addEventListener("click", event => {
             if (event.target !== canvas) {return}
@@ -587,7 +601,7 @@ var OpenDAWPanel = (() => {
             if (spec.grab !== undefined && grabAt(event) !== null) {return}
             const hit = hitAt(event)
             if (hit === null) {
-                if (spec.window !== false) {kit.show()}
+                if (spec.window !== false && spec.doubleClick === undefined) {kit.show()}
                 return
             }
             const p = params.get(hit.key)
