@@ -1,0 +1,49 @@
+ZLSpectrumEqualizer for WebCLAP (ports/zl-spectrum-equalizer): its window in the colours of openDAW's device
+panels (docs/device-panel-design.md): state_definitions.hpp, the editor's default colours; ui_state.hpp, the
+default band and curve colours.
+
+diff --color -ru a/source/state/state_definitions.hpp b/source/state/state_definitions.hpp
+--- a/source/state/state_definitions.hpp	2026-11-10 16:04:29
++++ b/source/state/state_definitions.hpp	2026-11-10 16:08:26
+@@ -733,10 +733,12 @@
+     };
+ 
+     inline constexpr std::array<ColourDefaultSetting, 9> kColourDefaults{
+-        ColourDefaultSetting{247, 246, 244, true, 1.f},
+-        ColourDefaultSetting{20, 16, 9, true, 1.f},
+-        ColourDefaultSetting{0, 0, 0, true, 1.f},
+-        ColourDefaultSetting{70, 66, 62, true, 1.f},
++        // openDAW's device panel colours (docs/device-panel-design.md): text, the panel's background, flat shadow
++        // and glow
++        ColourDefaultSetting{225, 235, 239, true, 1.f},
++        ColourDefaultSetting{26, 32, 35, true, 1.f},
++        ColourDefaultSetting{14, 18, 20, true, 1.f},
++        ColourDefaultSetting{44, 52, 56, true, 1.f},
+         ColourDefaultSetting{112, 112, 112, true, .25f},
+         ColourDefaultSetting{112, 112, 112, true, .2f},
+         ColourDefaultSetting{112, 112, 112, true, .2f},
+diff --color -ru a/source/state/ui_state.hpp b/source/state/ui_state.hpp
+--- a/source/state/ui_state.hpp	2026-11-10 16:04:29
++++ b/source/state/ui_state.hpp	2026-11-10 16:08:26
+@@ -85,8 +85,9 @@
+             juce::Colour(23, 189, 206)
+         },
+         std::vector<juce::Colour>{
+-            juce::Colour(214, 126, 65),
+-            juce::Colour(6, 134, 247),
++            // the default band colours (colour map 1): openDAW's blue first, then its cream and orange
++            juce::Colour(77, 228, 255),
++            juce::Colour(225, 228, 196),
+             juce::Colour(211, 95, 211),
+             juce::Colour(23, 198, 197),
+             juce::Colour(107, 152, 66),
+@@ -121,7 +122,8 @@
+             juce::Colour(0, 215, 255),
+         },
+         std::vector<juce::Colour>{
+-            juce::Colour(225, 162, 0),
++            // the default curve colours (colour map 2): openDAW's blue first, as the panel draws the response
++            juce::Colour(77, 228, 255),
+             juce::Colour(253, 19, 198),
+             juce::Colour(0, 231, 220),
+             juce::Colour(114, 209, 26),

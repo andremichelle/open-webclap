@@ -1,0 +1,36 @@
+ZLCompressor for WebCLAP (ports/zl-compressor): its window in the colours of openDAW's device panels
+(docs/device-panel-design.md): state_definitions.hpp, the editor's default colours.
+
+diff --color -ru a/source/state/state_definitions.hpp b/source/state/state_definitions.hpp
+--- a/source/state/state_definitions.hpp	2026-11-10 16:04:29
++++ b/source/state/state_definitions.hpp	2026-11-10 16:08:26
+@@ -628,16 +628,19 @@
+     };
+ 
+     static constexpr std::array<ColourDefaultSetting, 10> kColourDefaults{
+-        ColourDefaultSetting{255 - 8, 255 - 9, 255 - 11, true, 1.f},
+-        ColourDefaultSetting{(255 - 214) / 2, (255 - 223) / 2, (255 - 236) / 2, true, 1.f},
+-        ColourDefaultSetting{0, 0, 0, true, 1.f},
+-        ColourDefaultSetting{70, 66, 62, true, 1.f},
+-        ColourDefaultSetting{255 - 8, 255 - 9, 255 - 11, true, .25f},
+-        ColourDefaultSetting{205, 205, 205, true, 1.f},
+-        ColourDefaultSetting{252, 18, 197, true, 1.f},
+-        ColourDefaultSetting{23, 255, 244, true, 1.f},
+-        ColourDefaultSetting{255, 165, 0, true, 1.f},
+-        ColourDefaultSetting{255 - 8, 255 - 9, 255 - 11, true, .1f}
++        // openDAW's device panel colours (docs/device-panel-design.md): text, the panel's background, flat shadow
++        // and glow, the levels in grey, the transfer curve in openDAW's blue (as the panel draws it), gain reduction
++        // in its cream, the side chain in its orange
++        ColourDefaultSetting{225, 235, 239, true, 1.f},
++        ColourDefaultSetting{26, 32, 35, true, 1.f},
++        ColourDefaultSetting{14, 18, 20, true, 1.f},
++        ColourDefaultSetting{44, 52, 56, true, 1.f},
++        ColourDefaultSetting{225, 235, 239, true, .25f},
++        ColourDefaultSetting{176, 190, 196, true, 1.f},
++        ColourDefaultSetting{225, 228, 196, true, 1.f},
++        ColourDefaultSetting{255, 153, 51, true, 1.f},
++        ColourDefaultSetting{77, 228, 255, true, 1.f},
++        ColourDefaultSetting{225, 235, 239, true, .1f}
+     };
+ 
+     inline juce::AudioProcessorValueTreeState::ParameterLayout getStateParameterLayout() {
