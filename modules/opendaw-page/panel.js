@@ -505,6 +505,9 @@ var OpenDAWPanel = (() => {
     //   hit(x, y, panel)      a step on the display under the pointer, {key, value} (a "steps" parameter, its value
     //                         index), or null: a click selects it as one gesture, hovering reports its parameter;
     //                         a click elsewhere opens the window
+    //   grab(x, y, panel)     something on the display a drag moves (an equalizer's band): null, or {ids: [JUCE IDs],
+    //                         move(x, y) → [[JUCE ID, value 0..1], ...]}: the values follow the pointer as one gesture,
+    //                         hovering reports the first id
     //   opened(panel)                         after the snapshot: the port's own requests (an analyzer switched on)
     // panel: value(key) the JUCE value 0..1, plain(key) the plugin's text as a number (NaN until it came),
     // text(key), valueOf(id) and plainOf(id) the same for any parameter by its JUCE ID (one without a control: an
@@ -548,8 +551,40 @@ var OpenDAWPanel = (() => {
             const bounds = canvas.getBoundingClientRect()
             return spec.hit((event.clientX - bounds.left) / zoom, (event.clientY - bounds.top) / zoom, panel)
         }
+        // a drag of something on the display (spec.grab): its parameters as one gesture
+        const local = event => {
+            const bounds = canvas.getBoundingClientRect()
+            return [(event.clientX - bounds.left) / zoom, (event.clientY - bounds.top) / zoom]
+        }
+        const grabAt = event => spec.grab === undefined || event.target !== canvas ? null : spec.grab(...local(event), panel)
+        let grabbed = null, dragged = false
+        canvas.addEventListener("pointerdown", event => {
+            if (event.button !== 0 || event.ctrlKey) {return}
+            grabbed = grabAt(event)
+            if (grabbed === null) {return}
+            dragged = false
+            canvas.setPointerCapture(event.pointerId)
+            grabbed.ids.forEach(id => kit.begin(juceId(id)))
+        })
+        canvas.addEventListener("pointermove", event => {
+            if (grabbed === null) {return}
+            dragged = true
+            for (const [id, value] of grabbed.move(...local(event))) {kit.set(juceId(id), clamp(value, 0, 1))}
+        })
+        const release = () => {
+            if (grabbed === null) {return}
+            grabbed.ids.forEach(id => kit.end(juceId(id)))
+            grabbed = null
+        }
+        canvas.addEventListener("pointerup", release)
+        canvas.addEventListener("lostpointercapture", release)
         screen.addEventListener("click", event => {
             if (event.target !== canvas) {return}
+            if (dragged) {
+                dragged = false
+                return
+            }
+            if (spec.grab !== undefined && grabAt(event) !== null) {return}
             const hit = hitAt(event)
             if (hit === null) {
                 if (spec.window !== false) {kit.show()}
@@ -562,6 +597,14 @@ var OpenDAWPanel = (() => {
             controls.update()
         })
         screen.addEventListener("pointermove", event => {
+            if (grabbed !== null) {return}
+            const grab = grabAt(event)
+            if (grab !== null) {
+                canvas.style.cursor = "grab"
+                kit.hover(juceId(grab.ids[0]))
+                return
+            }
+            canvas.style.cursor = ""
             const hit = hitAt(event)
             kit.hover(hit === null ? null : params.get(hit.key).id)
         })

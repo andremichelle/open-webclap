@@ -14,8 +14,9 @@
     openDAW's device panel for ZL Spectrum Equalizer, in the design of docs/device-panel-design.md: the response of
     the active bands, computed as the plugin computes it (dsp/filter: the ideal filters' second-order sections, the
     filter design's orders), scaled by Gain Scale, with the dynamic part the plugin sends while it sends it; Output
-    and Scale (the editor's output pair) and the spectrum settings as rows. The 24 bands are edited in the window: a
-    click on the display opens it. The panel sends no controls frame: it carries the window's solo and matcher.
+    and Scale (the editor's output pair) and the spectrum settings as rows. A band's dot on the curve drags its
+    frequency and, where the band has one, its gain; everything else about the 24 bands is edited in the window
+    (Edit, or a click on the display). The panel sends no controls frame: it carries the window's solo and matcher.
 -->
 <div id="stage"></div>
 <script src="opendaw-page/panel.js"></script>
@@ -24,7 +25,14 @@
     const BANDS = 24, PPI = 2 * Math.PI, DB_TO_EXP2_SQRT = 0.16609640474436813 * 0.5
     const TYPES = ["Peak", "Low Shelf", "Low Pass", "High Shelf", "High Pass", "Notch", "Band Pass", "Tilt Shelf", "Flat Tilt", "Flat Gain"]
     const ORDERS = [1, 2, 4, 6, 8, 12, 16] // 6 to 96 dB/oct
-    const state = {sampleRate: 48000, dynamic: null}
+    const state = {sampleRate: 48000, dynamic: null, dots: [], geometry: null}
+    // the band parameters' ranges (zlp_definitions.hpp): frequency getLogMidRange(10, 160000, 1000), gain -30..30 dB
+    const FREQ_LOW = 10, FREQ_MID = 1000, FREQ_HIGH = 160000
+    const freqToValue = hz => hz < FREQ_MID ? Math.log(hz / FREQ_LOW) / (2 * Math.log(FREQ_MID / FREQ_LOW))
+        : 0.5 + Math.log(hz / FREQ_MID) / (2 * Math.log(FREQ_HIGH / FREQ_MID))
+    const gainToValue = db => (clamp(db, -30, 30) + 30) / 60
+    // the types whose gain a drag moves (not the passes, the notch and the band pass)
+    const HAS_GAIN = new Set(["Peak", "Low Shelf", "High Shelf", "Tilt Shelf", "Flat Tilt", "Flat Gain"])
 
     // --- the plugin's filters (ideal_coeff.cpp, filter_design.hpp): sections [a1, a0, b2, b1, b0] ----------------
     const A = g => Math.pow(2, g * DB_TO_EXP2_SQRT)
@@ -107,7 +115,7 @@
 
     const LOW = Math.log(20), HIGH = Math.log(20000), RANGE = 18
     OpenDAWPanel.kitPanel({
-        width: 420, screen: 260,
+        width: 420, screen: 260, edit: "Edit",
         params: {
             output: {param: "total_output_gain", label: "Output", bipolar: true, unit: " dB"},
             scale: {param: "total_gain_scale", label: "Scale", unit: "%"},
@@ -137,6 +145,24 @@
                 state.dynamic = end > start ? delta : null
             }
         },
+        // a band's dot under the pointer: its frequency follows x, its gain the vertical movement (by Gain Scale)
+        grab: (px, py, panel) => {
+            const g = state.geometry
+            if (g === null) {return null}
+            const near = state.dots.find(dot => Math.hypot(dot.x - px, dot.y - py) < 7)
+            if (near === undefined) {return null}
+            const band = near.band, gain0 = panel.plainOf(`gain${band}`), y0 = py, scale = Math.max(0.05, Math.abs(g.scale))
+            const ids = HAS_GAIN.has(TYPES[near.type]) ? [`freq${band}`, `gain${band}`] : [`freq${band}`]
+            return {
+                ids,
+                move: (x, y) => {
+                    const hz = Math.exp(LOW + clamp((x - g.left) / (g.right - g.left), 0, 1) * (HIGH - LOW))
+                    const values = [[`freq${band}`, freqToValue(hz)]]
+                    if (ids.length > 1) {values.push([`gain${band}`, gainToValue(gain0 + (y0 - y) / (g.mid - g.top) * RANGE / scale)])}
+                    return values
+                }
+            }
+        },
         draw: (context, width, height, panel) => {
             const left = 2, right = width - 2, top = 10, bottom = height - 12, mid = (top + bottom) / 2
             const x = hz => left + (right - left) * (Math.log(hz) - LOW) / (HIGH - LOW)
@@ -155,7 +181,7 @@
                 if (![f, g, q].every(Number.isFinite)) {continue}
                 const type = Math.round(panel.valueOf(`filter_type${band}`) * (TYPES.length - 1))
                 const n = ORDERS[Math.round(panel.valueOf(`order${band}`) * (ORDERS.length - 1))]
-                bands.push({f, g: g * scale, sections: sectionsOf(type, n, f, fs, g * scale, q)})
+                bands.push({band, type, f, g: g * scale, sections: sectionsOf(type, n, f, fs, g * scale, q)})
             }
             const respond = hz => {
                 const w = PPI * hz / fs
@@ -172,7 +198,14 @@
                 points.push([x(hz), y(db)])
             }
             trace(context, points, {fill: bottom})
-            bands.forEach(band => {if (band.f >= 20 && band.f <= 20000) {dot(context, x(band.f), y(respond(band.f)))}})
+            state.geometry = {left, right, top, mid, scale}
+            state.dots = []
+            bands.forEach(band => {
+                if (band.f < 20 || band.f > 20000) {return}
+                const dx = x(band.f), dy = y(respond(band.f))
+                dot(context, dx, dy)
+                state.dots.push({band: band.band, type: band.type, x: dx, y: dy})
+            })
         }
     })
 </script>

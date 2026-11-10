@@ -14,8 +14,8 @@
     openDAW's device panel for ZL Compressor, in the design of docs/device-panel-design.md: the transfer curve as the
     editor's computer panel draws it (the plugin's own computers, dsp/compressor/computer: compress, inflate, expand,
     shape), the editor's pairs kept: Threshold and Ratio, Attack and Release, Makeup and Wet; the curve's shape and
-    the modes as rows. The side-chain EQ, the clipper and the RMS details stay in the window: a click on the curve
-    opens it. The panel asks for no analyzer: the editor's controls frame carries the window's solo and matcher too.
+    the modes as rows. The side-chain EQ, the clipper and the RMS details stay in the window: Edit (or a click
+    on the curve) opens it. The panel asks for no analyzer: the editor's controls frame carries the window's solo and matcher too.
 -->
 <div id="stage"></div>
 <script src="opendaw-page/panel.js"></script>
@@ -61,7 +61,7 @@
     }
 
     OpenDAWPanel.kitPanel({
-        width: 422, screen: 150,
+        width: 422, screen: 150, edit: "Edit",
         params: {
             threshold: {param: "threshold", label: "Threshold", unit: " dB"},
             ratio: {param: "ratio", label: "Ratio", unit: ":1"},
