@@ -24,8 +24,6 @@ source "$ROOT/scripts/bundle-license.sh"
 LIBM="$(ls -d "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/libm-0.2.16 | head -1)"
 RUST_DOC="$(rustc --print sysroot)/share/doc/rust"
 rm -rf "$BUILD/web" "$BUILD"/*.wclap.tar.gz
-mkdir -p "$ROOT/site/public/bundled"
-rm -f "$ROOT/site/public/bundled/openrb.wclap.tar.gz"
 
 for KIND in "${!IDS[@]}"; do
     ID="${IDS[$KIND]}"
@@ -59,9 +57,12 @@ open(path, "w").write(text)
 EOF
 
     python3 "$ROOT/scripts/pack-wclap.py" "$BUNDLE" "$BUILD/$ID.wclap.tar.gz"
-    # not in openDAW's catalogue yet: the site serves them itself
-    cp "$BUILD/$ID.wclap.tar.gz" "$ROOT/site/public/bundled/$ID.wclap.tar.gz"
 done
+
+# not in openDAW's catalogue yet: the site serves them itself (copied after every bundle has its notices, so the
+# working tree the notices' source link checks is still the commit's)
+mkdir -p "$ROOT/site/public/bundled"
+for ID in "${IDS[@]}"; do cp "$BUILD/$ID.wclap.tar.gz" "$ROOT/site/public/bundled/$ID.wclap.tar.gz"; done
 
 node "$ROOT/ports/openrb/check.mjs" "$BUILD/web"
 echo "Built ${#IDS[@]} bundles in $BUILD/web — try them on the site (cd site && npm run dev): http://localhost:8130/openrb-bass?local"
