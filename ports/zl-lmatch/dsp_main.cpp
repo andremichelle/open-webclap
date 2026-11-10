@@ -57,16 +57,17 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         "ZL Loudness Match",
         "ZL Audio",
         "https://github.com/ZL-Audio/ZLLMatch",
-        ZL_VERSION,
-        "Loudness matching, the editor runs in the page",
+        ZL_VERSION "-panel", // the device panel alone, no window (the editor's version string stays the state's)
+        "Loudness matching",
         features,
-        "/ui/index.html",
-        276, // the editor's default size
-        173,
+        "/ui/panel.html", // no window: the webview's page is the device panel's
+        340,
+        176,
         true,
         "/ui/panel.html", // openDAW's device panel, its width at 176 px
         340,
-        176
+        176,
+        false // no window (clap.gui): openDAW shows the device panel
     };
 
     return info;

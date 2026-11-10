@@ -94,16 +94,17 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         "ZL Warm",
         "ZL Audio",
         "https://github.com/ZL-Audio/ZLWarm",
-        ZL_VERSION,
-        "Distortion/saturation, the editor runs in the page",
+        ZL_VERSION "-panel", // the device panel alone, no window (the editor's version string stays the state's)
+        "Distortion/saturation",
         features,
-        "/ui/index.html",
-        280, // the editor's default size
-        190,
+        "/ui/panel.html", // no window: the webview's page is the device panel's
+        334,
+        176,
         true,
         "/ui/panel.html", // openDAW's device panel, its width at 176 px
         334,
-        176
+        176,
+        false // no window (clap.gui): openDAW shows the device panel
     };
 
     return info;

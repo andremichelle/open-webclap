@@ -16,7 +16,7 @@
     the editor's groups kept: Input and Ceiling, Lookahead and Recovery (Main), Attack and Release (Support), the
     rest as rows; then the editor's measurements of the output (true peak, momentary, short-term and integrated
     loudness, loudness range, correlation), measured here from the same audio as the editor does (ZL's K-weighting,
-    windows and gates), while the transport plays (the status frame). A click on the display opens the window.
+    windows and gates), while the transport plays (the status frame). The plugin has no window: this panel is all of it.
 -->
 <div id="stage"></div>
 <script src="opendaw-page/panel.js"></script>
@@ -205,11 +205,11 @@
             readoutValues[index].textContent = lastShown[index]
         })
     }
-    // the analyzer runs while a page asks for it (zl_limiter_frames.h Controls), asked again now and then: the
-    // editor's window switches it off when it closes
+    // the analyzer runs while a page asks for it (zl_limiter_frames.h Controls), asked again now and then
     const enable = panel => panel.send(new Uint8Array([CONTROLS, 0, 0, 0, 1]).buffer)
 
     const panel = OpenDAWPanel.kitPanel({
+        window: false,
         width: 498, screen: 150,
         params: {
             input: {param: "input_gain", label: "Input", unit: " dB"},

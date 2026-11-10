@@ -67,16 +67,17 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         "ZL Inflator",
         "ZL Audio",
         "https://github.com/ZL-Audio/ZLInflator",
-        ZL_VERSION,
-        "Distortion/saturation to increase loudness, the editor runs in the page",
+        ZL_VERSION "-panel", // the device panel alone, no window (the editor's version string stays the state's)
+        "Distortion/saturation to increase loudness",
         features,
-        "/ui/index.html",
-        511, // the editor's default size
-        213,
+        "/ui/panel.html", // no window: the webview's page is the device panel's
+        384,
+        176,
         true,
         "/ui/panel.html", // openDAW's device panel, its width at 176 px
         384,
-        176
+        176,
+        false // no window (clap.gui): openDAW shows the device panel
     };
 
     return info;

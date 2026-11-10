@@ -5,5 +5,6 @@ set -euo pipefail
 PORT=zl-lmatch
 source "$(dirname "$0")/zl-build.sh"
 zl_build "$@"
-zl_bundle "$ROOT/external/zl-lmatch/resources/font/LICENSE.txt" Apache-2.0-OpenSans.txt \
-    "$ROOT/external/zl-lmatch/source/DSP/LUFSMeter/README.rst" MIT-LUFSMeter.txt
+# the device panel alone, no window
+ZL_WINDOW=0
+zl_bundle "$ROOT/external/zl-lmatch/source/DSP/LUFSMeter/README.rst" MIT-LUFSMeter.txt

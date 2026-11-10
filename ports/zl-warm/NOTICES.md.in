@@ -4,20 +4,19 @@ ZLWarm by ZL Audio (zsliu98), a distortion/saturation plugin, ported to WebCLAP.
 release.
 
 - ZLWarm: https://github.com/ZL-Audio/ZLWarm (commit 48093f3, after version 0.2.1)
-- friz: https://github.com/ZL-Audio/animator (commit 9c3f6e0), ZL Audio's fork of Brett g Porter's animator
 - This port, and the complete source of this bundle: @SOURCE_URL@
   Build it with `scripts/build-zl-warm.sh`, which fetches every dependency below at the commit named here.
 
 Changes in this port (`patches/zl-warm-webclap.patch`): the processor builds without its editor. The meters run
-while the page is open and cross over to its meter panel. The editor always shows its default (dark) style; a double
-click on the logo no longer switches it. Its window size lives in the page's memory and is gone when it reloads.
+while the page is open and cross over to it. The plugin has no window: openDAW's device panel (`ui/panel.html`) is
+all of it.
 
 ## License
 
 The bundle as a whole is licensed under the **GNU Affero General Public License, version 3** (`LICENSE`).
 
-ZLWarm is GPL-3.0 (`licenses/GPL-3.0.txt`), Copyright (C) 2023 zsliu98. Both modules contain the JUCE framework,
-used under the AGPL-3.0, so `module.wasm` and `ui/ui.wasm` are AGPL-3.0. GPL-3.0 section 13 permits the
+ZLWarm is GPL-3.0 (`licenses/GPL-3.0.txt`), Copyright (C) 2023 zsliu98. `module.wasm` contains the JUCE framework,
+used under the AGPL-3.0, so it is AGPL-3.0. GPL-3.0 section 13 permits the
 combination.
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
@@ -27,13 +26,10 @@ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the license
 
 | Component | In | Copyright | License |
 |---|---|---|---|
-| [ZLWarm](https://github.com/ZL-Audio/ZLWarm), incl. its icons and logos | both | 2023-2024 zsliu98 | GPL-3.0 |
-| [friz](https://github.com/ZL-Audio/animator) | ui | 2019-2023 Brett g Porter | MIT (`licenses/MIT-friz.txt`) |
-| WebCLAP kit ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/juce_webclap`) | both | André Michelle | MIT |
-| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-warm`, `ports/zl-common`) | both | André Michelle | GPL-3.0 |
-| [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
+| [ZLWarm](https://github.com/ZL-Audio/ZLWarm) | module | 2023-2024 zsliu98 | GPL-3.0 |
+| WebCLAP kit ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/juce_webclap`) | module | André Michelle | MIT |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-warm`, `ports/zl-common`) | both (`ui/panel.html`) | André Michelle | GPL-3.0 |
+| [JUCE](https://juce.com) | module | Raw Material Software Limited | AGPL-3.0 |
 | [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
-| [MiSans](https://hyperos.mi.com/font) Latin Medium font, as ZLWarm ships it | ui | Xiaomi Inc. | MiSans Font License (free for commercial use; no license file upstream) |
-| [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |
 
 @JUCE_BUNDLED@

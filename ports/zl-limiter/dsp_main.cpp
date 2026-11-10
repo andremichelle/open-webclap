@@ -85,16 +85,17 @@ const juce::webclap::ClapPluginInfo& juce::webclap::getClapPluginInfo()
         "ZL Limiter",
         "ZL Audio",
         "https://github.com/ZL-Audio/ZLLimiter",
-        ZL_VERSION,
-        "Lookahead limiter with true peak and oversampling, the editor runs in the page",
+        ZL_VERSION "-panel", // the device panel alone, no window (the editor's version string stays the state's)
+        "Lookahead limiter with true peak and oversampling",
         features,
-        "/ui/index.html",
-        600, // the editor's default size
-        371,
+        "/ui/panel.html", // no window: the webview's page is the device panel's
+        498,
+        176,
         true,
         "/ui/panel.html", // openDAW's device panel (ui/panel.html, on modules/opendaw-page), its width at 176 px
         498,
-        176
+        176,
+        false // no window (clap.gui): openDAW shows the device panel
     };
 
     return info;

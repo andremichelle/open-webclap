@@ -57,6 +57,10 @@ namespace juce::webclap
         const char* devicePanelUri = nullptr;
         int devicePanelWidth = 0;
         int devicePanelHeight = 0;
+
+        /** Whether the plugin has a window (clap.gui). False for a port that is its device panel alone: no
+            clap.gui, and webviewUri names the panel's page. */
+        bool window = true;
     };
 
     /** Defined by the port. */

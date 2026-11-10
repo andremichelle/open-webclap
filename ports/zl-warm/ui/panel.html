@@ -13,7 +13,7 @@
 <!--
     openDAW's device panel for ZL Warm, in the design of docs/device-panel-design.md: the input and output meters
     (the plugin's meters frame: decaying peak and held maximum per channel), the editor's pairs kept: Input and
-    Output, Warm and Curve; the rest as rows. A click on the meters opens the editor's window.
+    Output, Warm and Curve; the rest as rows. The plugin has no window: this panel is all of it.
 -->
 <div id="stage"></div>
 <script src="opendaw-page/panel.js"></script>
@@ -24,6 +24,7 @@
     const LOW = -36
 
     OpenDAWPanel.kitPanel({
+        window: false,
         width: 334, screen: 120,
         params: {
             warm: {param: "warm", label: "Warm", unit: "%"},

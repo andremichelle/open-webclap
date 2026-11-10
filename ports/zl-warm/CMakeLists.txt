@@ -1,4 +1,4 @@
-# ZLWarm as a WebCLAP bundle: module.wasm (DSP, CLAP entry) and ui/ui.wasm (the editor). Configure with
+# ZLWarm as a WebCLAP bundle: module.wasm (DSP, CLAP entry) and its device panel's page, no editor. Configure with
 # emcmake, see scripts/build-zl-warm.sh. The bundle lands in web/zl-warm.wclap, next to the test host page.
 
 cmake_minimum_required(VERSION 3.20)
@@ -37,12 +37,11 @@ include("${KIT_ROOT}/modules/juce_webclap/juce_webclap.cmake")
 include("${KIT_ROOT}/ports/zl-common/zl_common.cmake")
 
 # ---------------------------------------------------------------------------------------------------------------
-# Resources: what juce_add_binary_data embeds upstream (assets/: the MiSans Latin font, icons, logos), DejaVu for
-# the kit
+# BinaryData.h: the processor's state definitions include it (upstream's juce_add_binary_data), the editor
+# alone uses the data. The header is generated, the data is linked only where something reads it.
 
 file(GLOB_RECURSE ZL_ASSET_FILES "${ZL}/assets/*")
 list(SORT ZL_ASSET_FILES)
-set(WEB_FONT_FILES "${EXT}/fonts/DejaVuSans.ttf" "${EXT}/fonts/DejaVuSans-Bold.ttf")
 set(GENERATED "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 add_custom_command(
@@ -51,16 +50,10 @@ add_custom_command(
     DEPENDS ${ZL_ASSET_FILES} "${KIT_ROOT}/scripts/binary_data.py"
     VERBATIM)
 
-add_custom_command(
-    OUTPUT "${GENERATED}/WebFonts.h" "${GENERATED}/WebFonts.cpp"
-    COMMAND python3 "${KIT_ROOT}/scripts/binary_data.py" "${GENERATED}" WebFonts ${WEB_FONT_FILES}
-    DEPENDS ${WEB_FONT_FILES} "${KIT_ROOT}/scripts/binary_data.py"
-    VERBATIM)
-
 # ---------------------------------------------------------------------------------------------------------------
 # ZLWarm, its sources as upstream globs them (one patch, see patches/zl-warm-webclap.patch): the processor
-# in both modules (in ui.wasm as the editor's stand-in), the editor only in ui.wasm, with friz (its animations, a
-# JUCE module upstream adds with juce_add_module). state/property.cpp, the editor's settings file, is the editor's.
+# in module.wasm alone: the editor (with state/property.cpp, its settings file) is not built, the plugin
+# is its device panel (ui/panel.html).
 
 zl_sources("${ZL}" ZL_PROCESSOR_SOURCES ZL_EDITOR_SOURCES "^state/property\\.cpp$")
 
@@ -79,34 +72,14 @@ set(ZL_DEFINITIONS
 set(ZL_LIBRARIES juce_wasm)
 
 # ---------------------------------------------------------------------------------------------------------------
-# ui.wasm: editor + stand-in processor
-
-add_executable(ui
-    ui_main.cpp
-    ${ZL_PROCESSOR_SOURCES}
-    ${ZL_EDITOR_SOURCES}
-    "${ZL}/source/state/property.cpp"
-    "${EXT}/zl-friz/Source/friz/friz.cpp"
-    "${GENERATED}/BinaryData.cpp"
-    "${GENERATED}/WebFonts.cpp")
-
-target_include_directories(ui PRIVATE ${ZL_INCLUDE_DIRECTORIES} "${EXT}/zl-friz/Source")
-target_compile_definitions(ui PRIVATE ${ZL_DEFINITIONS} ZL_WEBCLAP_HEADLESS=0)
-target_compile_options(ui PRIVATE -Wno-deprecated-declarations)
-target_link_libraries(ui PRIVATE ${ZL_LIBRARIES})
-target_link_options(ui PRIVATE ${JUCE_WEBCLAP_UI_LINK_OPTIONS})
-set_target_properties(ui PROPERTIES
-    SUFFIX ".js"
-    RUNTIME_OUTPUT_DIRECTORY "${BUNDLE}/ui")
-
-# ---------------------------------------------------------------------------------------------------------------
-# module.wasm: the processor as a CLAP plugin, without its editor
+# module.wasm: the processor as a CLAP plugin
 
 add_executable(module
     dsp_main.cpp
     "${KIT_ROOT}/modules/juce_webclap/juce_webclap_clap.cpp"
     "${KIT_ROOT}/modules/webclap/wasi_shim.cpp"
-    ${ZL_PROCESSOR_SOURCES})
+    ${ZL_PROCESSOR_SOURCES}
+    "${GENERATED}/BinaryData.h")
 
 target_include_directories(module PRIVATE ${ZL_INCLUDE_DIRECTORIES} "${EXT}/clap/include")
 target_compile_definitions(module PRIVATE ${ZL_DEFINITIONS} ZL_WEBCLAP_HEADLESS=1 ZL_VERSION="${ZL_VERSION}")

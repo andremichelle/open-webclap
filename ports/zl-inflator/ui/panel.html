@@ -13,8 +13,8 @@
 <!--
     openDAW's device panel for ZL Inflator, in the design of docs/device-panel-design.md: the shaper's transfer curve
     (as the editor plots it: -45 to 0 dB in and out, ShaperFunctions.h) with the input's peak on it, the editor's
-    pairs kept: Input and Output, Wet and Curve, Weight and Curve 2; the styles and the split as rows. A click on the
-    curve opens the editor's window.
+    pairs kept: Input and Output, Wet and Curve, Weight and Curve 2; the styles and the split as rows. The plugin
+    has no window: this panel is all of it.
 -->
 <div id="stage"></div>
 <script src="opendaw-page/panel.js"></script>
@@ -54,6 +54,7 @@
     const meters = {in: -100}
     const LOW = -45, HIGH = 0
     OpenDAWPanel.kitPanel({
+        window: false,
         width: 384, screen: 140,
         params: {
             curve1: {param: "curve1", label: "Curve", unit: "%"},

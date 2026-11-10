@@ -5,4 +5,6 @@ set -euo pipefail
 PORT=zl-limiter
 source "$(dirname "$0")/zl-build.sh"
 zl_build "$@"
+# the device panel alone, no window
+ZL_WINDOW=0
 zl_bundle "$ROOT/external/zl-highway/LICENSE" Apache-2.0-Highway.txt

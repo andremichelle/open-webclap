@@ -1058,7 +1058,7 @@ private:
         if (std::strcmp (id, CLAP_EXT_NOTE_PORTS) == 0)  return &notePorts;
         if (std::strcmp (id, CLAP_EXT_TAIL) == 0)        return &tail;
         if (std::strcmp (id, CLAP_EXT_LATENCY) == 0)     return &latency;
-        if (std::strcmp (id, CLAP_EXT_GUI) == 0)         return &gui;
+        if (std::strcmp (id, CLAP_EXT_GUI) == 0)         return getClapPluginInfo().window ? &gui : nullptr;
         if (std::strcmp (id, CLAP_EXT_WEBVIEW) == 0)     return &webview;
 
         // openDAW's device panel: the window's page, as wide as the editor at the panel's height

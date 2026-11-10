@@ -13,7 +13,7 @@
 <!--
     openDAW's device panel for ZL Loudness Match, in the design of docs/device-panel-design.md: the gain the matcher
     applies over the last seconds (the plugin's gain frame), Strength large, Bound, Target and Gate (the editor's
-    order), the modes as rows. A click on the display opens the editor's window.
+    order), the modes as rows. The plugin has no window: this panel is all of it.
 -->
 <div id="stage"></div>
 <script src="opendaw-page/panel.js"></script>
@@ -24,6 +24,7 @@
     const gain = {now: 0, at: 0}
 
     OpenDAWPanel.kitPanel({
+        window: false,
         width: 340, screen: 140,
         params: {
             strength: {param: "strength", label: "Strength", unit: "%"},

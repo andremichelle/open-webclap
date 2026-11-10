@@ -305,7 +305,7 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         clapId: "com.zlaudio.zllimiter",
         archive: "build/zl-limiter/zl-limiter.wclap.tar.gz", build: "scripts/build-zl-limiter.sh",
         credit: "https://github.com/ZL-Audio/ZLLimiter", source: port("zl-limiter"), license: "AGPL-3.0",
-        panel: true
+        panel: true, window: false
     },
     {
         id: "zl-spectrum-equalizer", name: "ZL Spectrum Equalizer", kind: "audio-fx",
@@ -321,7 +321,7 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         clapId: "com.zlaudio.zlinflator",
         archive: "build/zl-inflator/zl-inflator.wclap.tar.gz", build: "scripts/build-zl-inflator.sh",
         credit: "https://github.com/ZL-Audio/ZLInflator", source: port("zl-inflator"), license: "GPL-3.0",
-        panel: true
+        panel: true, window: false
     },
     {
         id: "zl-warm", name: "ZL Warm", kind: "audio-fx",
@@ -329,7 +329,7 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         clapId: "com.zlaudio.zlwarm",
         archive: "build/zl-warm/zl-warm.wclap.tar.gz", build: "scripts/build-zl-warm.sh",
         credit: "https://github.com/ZL-Audio/ZLWarm", source: port("zl-warm"), license: "GPL-3.0",
-        panel: true
+        panel: true, window: false
     },
     {
         id: "zl-lmatch", name: "ZL Loudness Match", kind: "audio-fx",
@@ -337,6 +337,6 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         clapId: "com.zlaudio.zllmatch",
         archive: "build/zl-lmatch/zl-lmatch.wclap.tar.gz", build: "scripts/build-zl-lmatch.sh",
         credit: "https://github.com/ZL-Audio/ZLLMatch", source: port("zl-lmatch"), license: "GPL-3.0",
-        panel: true
+        panel: true, window: false
     }
 ]

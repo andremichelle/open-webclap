@@ -498,6 +498,8 @@ var OpenDAWPanel = (() => {
     //                ("1 bar", "2 bars"), active(panel) false while the plugin's editor disables the control
     //   layout       the columns (controls.layout), corner a lone parameter in the display's corner
     //   edit         a button's text in the display's top left corner that opens the plugin's window ("Edit")
+    //   window       false for a plugin without a window (its device panel alone): a click on the display opens
+    //                nothing
     //   draw(context, width, height, panel)   the display, every frame
     //   onFrame(type, view, panel)            the port's own frames (the kit's streams and the port's types)
     //   hit(x, y, panel)      a step on the display under the pointer, {key, value} (a "steps" parameter, its value
@@ -540,7 +542,7 @@ var OpenDAWPanel = (() => {
         card.innerHTML = `<div class="screen"><canvas></canvas></div><div class="group"></div>`
         const screen = card.querySelector(".screen"), canvas = card.querySelector("canvas")
         screen.style.width = `${spec.screen}px`
-        screen.style.cursor = "pointer"
+        if (spec.window !== false) {screen.style.cursor = "pointer"}
         const hitAt = event => {
             if (spec.hit === undefined || event.target !== canvas) {return null}
             const bounds = canvas.getBoundingClientRect()
@@ -550,7 +552,7 @@ var OpenDAWPanel = (() => {
             if (event.target !== canvas) {return}
             const hit = hitAt(event)
             if (hit === null) {
-                kit.show()
+                if (spec.window !== false) {kit.show()}
                 return
             }
             const p = params.get(hit.key)

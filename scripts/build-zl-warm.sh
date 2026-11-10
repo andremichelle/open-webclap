@@ -5,4 +5,6 @@ set -euo pipefail
 PORT=zl-warm
 source "$(dirname "$0")/zl-build.sh"
 zl_build "$@"
-zl_bundle "$ROOT/external/zl-friz/LICENSE" MIT-friz.txt
+# the device panel alone, no window
+ZL_WINDOW=0
+zl_bundle

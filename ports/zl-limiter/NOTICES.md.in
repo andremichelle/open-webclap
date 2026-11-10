@@ -7,17 +7,15 @@ This is not an official ZL Audio release.
 - This port, and the complete source of this bundle: @SOURCE_URL@
   Build it with `scripts/build-zl-limiter.sh`, which fetches every dependency below at the commit named here.
 
-Changes in this port (`patches/zl-limiter-webclap.patch`): the editor's analyzer loop, which runs on a thread
-upstream, runs one pass per repaint on the editor's thread, and the processor builds without its editor. The
-editor has no preset browser, no colour settings, no tooltip language setting (tooltips are in English) and no
-Credit tab: the UI settings panel shows a one-line legal notice instead, and the credits are below. UI settings
-the editor saves live in the page's memory and are gone when it reloads.
+Changes in this port (`patches/zl-limiter-webclap.patch`): the processor builds without its editor. The plugin
+has no window: openDAW's device panel (`ui/panel.html`) is all of it, with the output's measurements computed in the
+page from the audio the plugin sends.
 
 ## License
 
 The bundle as a whole is licensed under the **GNU Affero General Public License, version 3** (`LICENSE`).
 
-ZLLimiter is AGPL-3.0 (`licenses/AGPL-3.0.txt`), Copyright (C) 2026 zsliu98. Both modules contain the JUCE
+ZLLimiter is AGPL-3.0 (`licenses/AGPL-3.0.txt`), Copyright (C) 2026 zsliu98. `module.wasm` contains the JUCE
 framework, used under the AGPL-3.0.
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
@@ -27,17 +25,12 @@ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the license
 
 | Component | In | Copyright | License |
 |---|---|---|---|
-| [ZLLimiter](https://github.com/ZL-Audio/ZLLimiter) | both | 2026 zsliu98 | AGPL-3.0 |
-| [Highway](https://github.com/google/highway) | both | Google LLC | Apache-2.0 (`licenses/Apache-2.0-Highway.txt`) |
-| WebCLAP kit ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/juce_webclap`) | both | André Michelle | MIT |
-| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-limiter`, `ports/zl-common`) | both | André Michelle | AGPL-3.0 |
-| [JUCE](https://juce.com) | both | Raw Material Software Limited | AGPL-3.0 |
+| [ZLLimiter](https://github.com/ZL-Audio/ZLLimiter) | module | 2026 zsliu98 | AGPL-3.0 |
+| [Highway](https://github.com/google/highway) | module | Google LLC | Apache-2.0 (`licenses/Apache-2.0-Highway.txt`) |
+| WebCLAP kit ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/juce_webclap`) | module | André Michelle | MIT |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/zl-limiter`, `ports/zl-common`) | both (`ui/panel.html`) | André Michelle | AGPL-3.0 |
+| [JUCE](https://juce.com) | module | Raw Material Software Limited | AGPL-3.0 |
 | [CLAP](https://github.com/free-audio/clap) | module | 2021 Alexandre Bique | MIT |
-| [Material Symbols](https://github.com/google/material-design-icons) icons | ui | Google LLC | Apache-2.0 (`licenses/Apache-2.0.txt`) |
-| [Inter](https://github.com/rsms/inter) font (subset) | ui | 2016 The Inter Project Authors | OFL-1.1 (`licenses/OFL-1.1.txt`) |
-| [DejaVu Sans](https://dejavu-fonts.github.io) font | ui | Bitstream, Tavmjong Bah; DejaVu changes public domain | Bitstream Vera (`licenses/DejaVu.txt`) |
-
-ZLLimiter's own logo and the ZL Audio logo are not under the AGPL-3.0 (upstream's credits).
 
 ZLLimiter starts from the [pamplejuce](https://github.com/sudara/pamplejuce) JUCE template (not part of the
 bundle).
