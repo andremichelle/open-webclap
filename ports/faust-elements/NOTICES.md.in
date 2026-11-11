@@ -1,0 +1,48 @@
+# Elements for WebCLAP
+
+Elements, the modal synthesis Eurorack module by Mutable Instruments (Emilie Gillet), modelled in Faust by
+sletz (faust-elements), ported to WebCLAP. This is not an official faust-elements or Mutable Instruments release.
+
+- faust-elements: https://github.com/sletz/faust-elements (commit 651cf94a4edf3cfc77abf75d114bac48821c84bd)
+- This port, and the complete source of this bundle: @SOURCE_URL@
+  Build it with `scripts/build-faust-elements.sh`, which fetches every dependency below at the commit named here,
+  builds the pinned faust-rs compiler (grame-cncm/faust-rs 22999fe53aaaa5f08542a34a304fb87a276336a2 — elements.lib
+  needs its `ondemand` domains), and runs it on this port's `src/voice.dsp` / `src/body.dsp`
+  (`ports/faust-elements/gen.py`).
+
+## License
+
+The bundle is licensed under the **MIT License** (`LICENSE`, shared by the Elements firmware and faust-elements).
+The bundle contains no JUCE.
+
+## Components
+
+| Component | Copyright | License |
+|---|---|---|
+| [Elements firmware](https://github.com/pichenettes/eurorack/tree/master/elements) (`elements/dsp`), whose tables and samples `dsp/elements_tables.lib` carries | 2014 Emilie Gillet | MIT |
+| [faust-elements](https://github.com/sletz/faust-elements) (`dsp/elements.lib`, and the presets and sound atlas the page ships as `ui/patches.json` / `ui/atlas.json`) | 2026 Stéphane Letz | MIT |
+| The C++ faust-rs generates from those sources, embedding the Faust standard libraries | 2002-2026 GRAME | LGPL-2.1-or-later with the Faust exception (see below) |
+| [faust-rs](https://github.com/grame-cncm/faust-rs) compiler and the [Faust](https://github.com/grame-cncm/faust) standard libraries, used at build time only | 2002-2026 GRAME | LGPL-2.1-or-later with the Faust exception |
+| WebCLAP port ([open-webclap](https://github.com/andremichelle/open-webclap) `ports/faust-elements`) | 2026 André Michelle | MIT |
+| WASI shim ([open-webclap](https://github.com/andremichelle/open-webclap) `modules/webclap/wasi_shim.cpp`) | 2026 André Michelle | MIT |
+| [CLAP](https://github.com/free-audio/clap) headers | 2014-2022 Alexandre Bique | MIT |
+
+The Faust exception (https://github.com/grame-cncm/faust/blob/master-dev/COPYING) permits linking the generated
+code and the standard libraries in proprietary and in MIT-licensed works; it is the license Faust itself ships the
+libraries under.
+
+## License text
+
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+> documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+> and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+> the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+> THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+> TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
