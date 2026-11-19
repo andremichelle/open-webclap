@@ -1,0 +1,30 @@
+# Prism for WebCLAP
+
+Prism by Astra (Boof2015), a real-time audio analyzer and meter rack, ported to WebCLAP as eight audio effects in one
+bundle: Spectrum, Oscilloscope, Vectorscope, Spectrogram, VU Meter, Loudness Meter, Waveform and Waterfall. This is
+not an official Prism release.
+
+- Prism: https://github.com/Boof2015/prism (commit 4972180)
+- This port, and the complete source of this bundle: @SOURCE_URL@
+  Build it with `scripts/build-prism.sh`, which fetches Prism at the commit named here and applies
+  `patches/prism-webclap.patch`.
+
+## License
+
+The bundle is licensed under the **GNU General Public License, version 3** (`LICENSE`), Prism's license.
+`module.wasm` is Prism's native DSP (`native/src`, unmodified) behind the port's CLAP wrapper; the page is Prism's
+plugin UI (`src/plugin-ui` and the renderer code it uses, with the patch above) on the port's WebCLAP backend. It
+contains no JUCE.
+
+It also contains:
+
+- dr_libs (David Reid), public domain or MIT-0 (`licenses/dr_libs-LICENSE.txt`), and r8brain-free-src (Aleksey
+  Vaneev), MIT (`licenses/r8brain-LICENSE.txt`), in Prism's reference analysis. Sample rate converter designed by
+  Aleksey Vaneev of Voxengo.
+- React (Meta), MIT (`licenses/React-LICENSE.txt`), and zustand, MIT (`licenses/zustand-LICENSE.txt`).
+- The JetBrains Mono font (JetBrains), SIL Open Font License 1.1 (`licenses/JetBrainsMono-OFL.txt`).
+
+Prism's own third-party notices are in `licenses/Prism-THIRD_PARTY_NOTICES.md`.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licenses for details.

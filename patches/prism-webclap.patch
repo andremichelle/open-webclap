@@ -1,0 +1,269 @@
+--- a/src/plugin-ui/ScopeApp.tsx
++++ b/src/plugin-ui/ScopeApp.tsx
+@@ -14,6 +14,9 @@
+ // unchanged — like the desktop app. Must match `.spectrum-app__panel` in styles.css.
+ const PANEL_HEIGHT = 280
+ 
++// The WebCLAP build's device panel (openDAW, 176 px high, ?panel), its only view: the scope, its settings beside it.
++const DEVICE_PANEL = new URLSearchParams(window.location.search).has('panel')
++
+ interface ScopeAppProps<K extends ScopeKind> {
+   kind: K
+   /** Render the scope's canvas given the current settings + resolved theme. */
+@@ -47,6 +50,26 @@
+     setSettingsOpen(true)
+   }
+ 
++  if (DEVICE_PANEL) {
++    const panelContent = (
++      <div className="spectrum-app is-device-panel">
++        <div className="spectrum-app__viewport">
++          {renderScope(settings, resolvedTheme)}
++        </div>
++        <div className="spectrum-app__side">
++          <ScopeSettingsSection
++            kind={kind}
++            settings={settings}
++            onUpdate={(_k, partial) => handleUpdate(partial as unknown as Partial<ScopeSettings[K]>)}
++          />
++        </div>
++      </div>
++    )
++    return kind === 'spectrum' ? <SpectrumReferenceProvider reference={(settings as ScopeSettings['spectrum']).reference}
++      transport={pluginReferenceTransport} commitResults={false}
++      onChange={reference => handleUpdate({ reference } as unknown as Partial<ScopeSettings[K]>)}>{panelContent}</SpectrumReferenceProvider> : panelContent
++  }
++
+   const appStyle = lockedViewportHeight === null
+     ? undefined
+     : ({ '--spectrum-viewport-height': `${lockedViewportHeight}px` } as CSSProperties)
+--- a/src/plugin-ui/juceBridge.ts
++++ b/src/plugin-ui/juceBridge.ts
+@@ -33,9 +33,9 @@
+   referenceMeanSquare?: number
+   referenceSeconds?: number
+   sampleRate?: number
+-  magnitudes?: string
+-  side?: string
+-  channelMax?: string
++  magnitudes?: FrameData
++  side?: FrameData
++  channelMax?: FrameData
+ }
+ 
+ type JuceBackend = {
+@@ -103,7 +103,12 @@
+   }
+ }
+ 
+-export function base64ToFloat32Array(b64: string): Float32Array {
++/** The WebCLAP build's frames carry the arrays as they are, JUCE's as base64. */
++type FrameData = string | Float32Array
++const isData = (value: unknown): value is FrameData => typeof value === 'string' || value instanceof Float32Array
++
++export function base64ToFloat32Array(b64: FrameData): Float32Array {
++  if (b64 instanceof Float32Array) return b64
+   if (!b64) return new Float32Array(0)
+   const binary = atob(b64)
+   const byteLength = binary.length
+@@ -128,6 +133,7 @@
+     || typeof sampleRate !== 'number' || !Number.isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 384000
+     || typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) return null
+   const decode = (value: unknown, limit: number): Float32Array | null => {
++    if (value instanceof Float32Array) return value.length <= limit && value.every(Number.isFinite) ? value : null
+     if (typeof value !== 'string' || value.length > Math.ceil(limit * 4 / 3) * 4) return null
+     try {
+       const binary = atob(value)
+@@ -200,9 +206,9 @@
+ export function decodeSpectrumFrame(payload: unknown): SpectrumFrame | null {
+   if (typeof payload !== 'object' || payload === null) return null
+   const { sampleRate, magnitudes, side, channelMax, referenceMeanSquare, referenceSeconds, hasSpectrumData } = payload as SpectrumFramePayload
+-  if (typeof magnitudes !== 'string' || magnitudes.length === 0) return null
++  if (!isData(magnitudes) || magnitudes.length === 0) return null
+   const decodedMagnitudes = base64ToFloat32Array(magnitudes)
+-  const decodedChannelMax = typeof channelMax === 'string'
++  const decodedChannelMax = isData(channelMax)
+     ? base64ToFloat32Array(channelMax)
+     : new Float32Array(0)
+   return {
+@@ -211,7 +217,7 @@
+     referenceSeconds: referenceSeconds ?? 0,
+     sampleRate: typeof sampleRate === 'number' && sampleRate > 0 ? sampleRate : 48000,
+     magnitudes: decodedMagnitudes,
+-    side: typeof side === 'string' ? base64ToFloat32Array(side) : new Float32Array(0),
++    side: isData(side) ? base64ToFloat32Array(side) : new Float32Array(0),
+     channelMax: decodedChannelMax.length > 0 ? decodedChannelMax : decodedMagnitudes,
+   }
+ }
+@@ -500,9 +506,9 @@
+   sampleRate?: number
+   multiband?: boolean
+   count?: number
+-  x?: string
+-  y?: string
+-  data?: string
++  x?: FrameData
++  y?: FrameData
++  data?: FrameData
+ }
+ 
+ function decodeVectorscopeFrame(payload: unknown): VectorscopeFrame | null {
+@@ -514,10 +520,10 @@
+     count: typeof count === 'number' ? count : 0,
+   }
+   if (frame.multiband) {
+-    if (typeof data !== 'string') return null
++    if (!isData(data)) return null
+     frame.data = base64ToFloat32Array(data)
+   } else {
+-    if (typeof x !== 'string' || typeof y !== 'string') return null
++    if (!isData(x) || !isData(y)) return null
+     frame.x = base64ToFloat32Array(x)
+     frame.y = base64ToFloat32Array(y)
+   }
+@@ -590,8 +596,8 @@
+ 
+ interface SpectrogramFramePayload {
+   sampleRate?: number
+-  display?: string
+-  heat?: string
++  display?: FrameData
++  heat?: FrameData
+   columnCount?: number
+   rowCount?: number
+ }
+@@ -601,8 +607,8 @@
+   const { sampleRate, display, heat, columnCount, rowCount } = payload as SpectrogramFramePayload
+   return {
+     sampleRate: typeof sampleRate === 'number' && sampleRate > 0 ? sampleRate : 48000,
+-    display: typeof display === 'string' ? base64ToFloat32Array(display) : new Float32Array(0),
+-    heat: typeof heat === 'string' ? base64ToFloat32Array(heat) : new Float32Array(0),
++    display: isData(display) ? base64ToFloat32Array(display) : new Float32Array(0),
++    heat: isData(heat) ? base64ToFloat32Array(heat) : new Float32Array(0),
+     columnCount: typeof columnCount === 'number' ? columnCount : 0,
+     rowCount: typeof rowCount === 'number' ? rowCount : 0,
+   }
+@@ -684,7 +690,7 @@
+   sampleRate?: number
+   stereo?: boolean
+   columnCount?: number
+-  summaries?: string
++  summaries?: FrameData
+ }
+ 
+ function decodeWaveformFrame(payload: unknown): WaveformFrame | null {
+@@ -694,7 +700,7 @@
+     sampleRate: typeof sampleRate === 'number' && sampleRate > 0 ? sampleRate : 48000,
+     stereo: Boolean(stereo),
+     columnCount: typeof columnCount === 'number' ? columnCount : 0,
+-    summaries: typeof summaries === 'string' ? base64ToFloat32Array(summaries) : new Float32Array(0),
++    summaries: isData(summaries) ? base64ToFloat32Array(summaries) : new Float32Array(0),
+   }
+ }
+ 
+@@ -769,14 +775,14 @@
+ 
+ interface OscilloscopeFramePayload {
+   sampleRate?: number
+-  samples?: string
++  samples?: FrameData
+   pitch?: number
+ }
+ 
+ function decodeOscilloscopeFrame(payload: unknown): OscilloscopeFrame | null {
+   if (typeof payload !== 'object' || payload === null) return null
+   const { sampleRate, samples, pitch } = payload as OscilloscopeFramePayload
+-  if (typeof samples !== 'string' || samples.length === 0) return null
++  if (!isData(samples) || samples.length === 0) return null
+   return {
+     sampleRate: typeof sampleRate === 'number' && sampleRate > 0 ? sampleRate : 48000,
+     samples: base64ToFloat32Array(samples),
+--- a/src/plugin-ui/spectrumOptions.ts
++++ b/src/plugin-ui/spectrumOptions.ts
+@@ -23,6 +23,7 @@
+     heatBaseColor: theme.heatBase,
+     backgroundColor: theme.background,
+     gridColor: theme.guides,
++    labelColor: theme.labels,
+     scaleType: settings.scaleMode,
+     minFrequency: range.minFrequency,
+     maxFrequency: range.maxFrequency,
+--- a/src/renderer/visualizers/SpectrumAnalyzer.ts
++++ b/src/renderer/visualizers/SpectrumAnalyzer.ts
+@@ -63,6 +63,8 @@
+   backgroundColor?: string
+   showGrid?: boolean
+   gridColor?: string
++  /** The frequency labels; the grid's color when absent. */
++  labelColor?: string
+   scaleType?: FrequencyScaleMode
+   smoothing?: number
+   minDecibels?: number
+@@ -1403,7 +1405,7 @@
+     ctx.strokeStyle = options.gridColor
+     ctx.lineWidth = dpr
+ 
+-    ctx.fillStyle = options.gridColor
++    ctx.fillStyle = options.labelColor ?? options.gridColor
+     ctx.font = `${10 * dpr}px monospace`
+     const guides = buildFrequencyGuides(
+       minFrequency,
+--- a/src/shared/themeState.ts
++++ b/src/shared/themeState.ts
+@@ -395,6 +395,11 @@
+   return toCssColor({ ...parsed, a: clampAlpha(alpha) })
+ }
+ 
++/** Scope labels a theme leaves out: its guides, readable (the guides are faint lines, 10 % white by default). */
++function readableLabels(guides: string): string {
++  return multiplyAlpha(guides, 5)
++}
++
+ function multiplyAlpha(color: string, factor: number): string {
+   const parsed = parseCssColor(color)
+   if (!parsed) return color
+@@ -1731,7 +1736,7 @@
+     background: tokens.background ?? app.background,
+     guides,
+     guidesSecondary: multiplyAlpha(guides, 0.5),
+-    labels: guides,
++    labels: readableLabels(guides),
+     overlaySurface: tokens.overlaySurface ?? DEFAULT_SCOPE_OVERLAY_BG,
+     overlayText: tokens.overlayText ?? DEFAULT_SCOPE_OVERLAY_TEXT,
+     overlayBorder: tokens.overlayBorder ?? DEFAULT_SCOPE_OVERLAY_BORDER,
+@@ -1827,7 +1832,7 @@
+     referenceLine: section.referenceLine ?? app.text,
+     guides,
+     guidesSecondary: multiplyAlpha(guides, 0.5),
+-    labels: section.labels ?? guides,
++    labels: section.labels ?? readableLabels(guides),
+     background,
+     fill,
+     fillGradient: [
+@@ -1870,7 +1875,7 @@
+     phaseRisk: theme.vectorscope.phaseRisk ?? app.warning,
+     guides,
+     guidesSecondary: multiplyAlpha(guides, 0.5),
+-    labels: theme.vectorscope.labels ?? guides,
++    labels: theme.vectorscope.labels ?? readableLabels(guides),
+     background: theme.vectorscope.background ?? scopes.background,
+     bandLow: theme.vectorscope.bandLow ?? DEFAULT_BAND_LOW,
+     bandMid: theme.vectorscope.bandMid ?? DEFAULT_BAND_MID,
+@@ -1887,7 +1892,7 @@
+     mono: theme.spectrogram.mono ?? app.accent,
+     background: theme.spectrogram.background ?? scopes.background,
+     guides: theme.spectrogram.guides ?? scopes.guides,
+-    labels: theme.spectrogram.labels ?? theme.spectrogram.guides ?? scopes.guides,
++    labels: theme.spectrogram.labels ?? readableLabels(theme.spectrogram.guides ?? scopes.guides),
+     heatColors: [
+       theme.spectrogram.heatLow ?? DEFAULT_HEAT_LOW,
+       theme.spectrogram.heatMid ?? DEFAULT_HEAT_MID,
+@@ -1993,7 +1998,7 @@
+       const fallback = resolveSpectrumTheme(normalized, app, scopes)
+       const w = normalized.waterfall
+       return { line: w.line ?? fallback.line, background: w.background ?? fallback.background,
+-        guides: w.guides ?? fallback.guides, labels: w.labels ?? w.guides ?? normalized.spectrum.labels ?? app.textMuted,
++        guides: w.guides ?? fallback.guides, labels: w.labels ?? (w.guides ? readableLabels(w.guides) : undefined) ?? normalized.spectrum.labels ?? app.textMuted,
+         heatColors: [w.heatLow ?? fallback.heatColors[0], w.heatMid ?? fallback.heatColors[1], w.heatHigh ?? fallback.heatColors[2]] as [string, string, string] }
+     })(),
+     spectrum: resolveSpectrumTheme(normalized, app, scopes),

@@ -1,0 +1,17 @@
+{
+  "name": "prism-webclap-page",
+  "private": true,
+  "description": "The build of Prism's plugin UI for the WebCLAP bundle: upstream's versions (its package-lock.json) of what src/plugin-ui needs",
+  "type": "module",
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "5.2.8",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwindcss": "4.2.2",
+    "zustand": "5.0.12"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "5.2.0",
+    "vite": "7.3.1"
+  }
+}

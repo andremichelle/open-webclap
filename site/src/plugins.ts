@@ -338,5 +338,69 @@ export const Plugins: ReadonlyArray<PluginEntry> = [
         archive: "build/zl-lmatch/zl-lmatch.wclap.tar.gz", build: "scripts/build-zl-lmatch.sh",
         credit: "https://github.com/ZL-Audio/ZLLMatch", source: port("zl-lmatch"), license: "GPL-3.0",
         panel: true, window: false
+    },
+    {
+        id: "prism-spectrum", name: "Prism Spectrum", kind: "audio-fx",
+        description: "FFT spectrum analyzer: calibrated dBFS levels, log, mel or linear scale, heatmap and fill modes, peak and pitch readouts",
+        clapId: "studio.opendaw.prism.spectrum",
+        archive: "build/prism/prism.wclap.tar.gz", build: "scripts/build-prism.sh",
+        credit: "https://github.com/Boof2015/prism", source: port("prism"), license: "GPL-3.0",
+        panel: true, window: false
+    },
+    {
+        id: "prism-oscilloscope", name: "Prism Oscilloscope", kind: "audio-fx",
+        description: "Waveform display that locks to the fundamental's pitch with sub-sample triggering",
+        clapId: "studio.opendaw.prism.oscilloscope",
+        archive: "build/prism/prism.wclap.tar.gz", build: "scripts/build-prism.sh",
+        credit: "https://github.com/Boof2015/prism", source: port("prism"), license: "GPL-3.0",
+        panel: true, window: false
+    },
+    {
+        id: "prism-vectorscope", name: "Prism Vectorscope", kind: "audio-fx",
+        description: "Stereo phase scope: XY, polar and M/S views, optionally in three colored bands",
+        clapId: "studio.opendaw.prism.vectorscope",
+        archive: "build/prism/prism.wclap.tar.gz", build: "scripts/build-prism.sh",
+        credit: "https://github.com/Boof2015/prism", source: port("prism"), license: "GPL-3.0",
+        panel: true, window: false
+    },
+    {
+        id: "prism-spectrogram", name: "Prism Spectrogram", kind: "audio-fx",
+        description: "Scrolling frequency over time display with stereo energy and frequency reassignment",
+        clapId: "studio.opendaw.prism.spectrogram",
+        archive: "build/prism/prism.wclap.tar.gz", build: "scripts/build-prism.sh",
+        credit: "https://github.com/Boof2015/prism", source: port("prism"), license: "GPL-3.0",
+        panel: true, window: false
+    },
+    {
+        id: "prism-vumeter", name: "Prism VU Meter", kind: "audio-fx",
+        description: "300 ms VU meter with an adjustable 0 VU reference and correlation, needles or bars",
+        clapId: "studio.opendaw.prism.vumeter",
+        archive: "build/prism/prism.wclap.tar.gz", build: "scripts/build-prism.sh",
+        credit: "https://github.com/Boof2015/prism", source: port("prism"), license: "GPL-3.0",
+        panel: true, window: false
+    },
+    {
+        id: "prism-lufsmeter", name: "Prism Loudness Meter", kind: "audio-fx",
+        description: "ITU-R BS.1770 momentary, short-term and integrated loudness with true peak",
+        clapId: "studio.opendaw.prism.lufsmeter",
+        archive: "build/prism/prism.wclap.tar.gz", build: "scripts/build-prism.sh",
+        credit: "https://github.com/Boof2015/prism", source: port("prism"), license: "GPL-3.0",
+        panel: true, window: false
+    },
+    {
+        id: "prism-waveform", name: "Prism Waveform", kind: "audio-fx",
+        description: "Scrolling waveform, mono or stereo, optionally colored by band energy",
+        clapId: "studio.opendaw.prism.waveform",
+        archive: "build/prism/prism.wclap.tar.gz", build: "scripts/build-prism.sh",
+        credit: "https://github.com/Boof2015/prism", source: port("prism"), license: "GPL-3.0",
+        panel: true, window: false
+    },
+    {
+        id: "prism-waterfall", name: "Prism Waterfall", kind: "audio-fx",
+        description: "Spectrum history as layered ridges over up to 30 seconds",
+        clapId: "studio.opendaw.prism.waterfall",
+        archive: "build/prism/prism.wclap.tar.gz", build: "scripts/build-prism.sh",
+        credit: "https://github.com/Boof2015/prism", source: port("prism"), license: "GPL-3.0",
+        panel: true, window: false
     }
 ]

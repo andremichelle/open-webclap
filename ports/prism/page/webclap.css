@@ -1,0 +1,108 @@
+/* openDAW's device panel (?panel, 176 px high), the plugin's only view (there is no window): the scope at a fixed
+   width, its settings beside it in columns that fit the height (no scrolling: the wheel is openDAW's). The scope's
+   width is --prism-scope-width; the settings fill --prism-rows rows per column, chosen per scope so that no control
+   stands alone in a column. A column is 116 px, 14 px apart, so n columns take 130 n + 10 px with the padding. The
+   panel's width (plugin/prism.cpp) is the two together. */
+html.prism-panel {--prism-scope-width: 300px; --prism-rows: 3}
+html.prism-panel[data-scope="vectorscope"] {--prism-scope-width: 176px}
+html.prism-panel[data-scope="vumeter"] {--prism-scope-width: 320px}
+html.prism-panel[data-scope="lufsmeter"] {--prism-scope-width: 176px}
+html.prism-panel[data-scope="oscilloscope"] {--prism-rows: 2}
+/* the spectrum's Display chips take two lines: a little less air to fit */
+html.prism-panel[data-scope="spectrum"] {--prism-row-gap: 8px; --prism-padding: 8px}
+
+.spectrum-app.is-device-panel {
+  flex-direction: row;
+}
+
+.spectrum-app.is-device-panel .spectrum-app__viewport {
+  flex: 0 0 var(--prism-scope-width);
+  height: 100%;
+}
+
+.spectrum-app__side {
+  flex: 0 0 auto;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* the settings: no header, no line or surface of their own between them and the scope, the controls in columns */
+.is-device-panel .settings-scope-section {
+  height: 100%;
+  gap: 0;
+  padding: var(--prism-padding, 12px) 12px;
+  border-left: 0;
+}
+
+.is-device-panel .settings-scope-section__header {
+  display: none;
+}
+
+/* the spectrum's General and Reference tabs: reference tracks are not in this build */
+.is-device-panel .settings-scope-tabs {
+  display: none;
+}
+
+.is-device-panel .settings-scope-section__controls {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  grid-template-rows: repeat(var(--prism-rows), max-content);
+  grid-auto-columns: 116px;
+  gap: var(--prism-row-gap, 12px) 14px;
+}
+
+.is-device-panel .settings-control--full,
+.is-device-panel .settings-control--stack {
+  grid-column: auto;
+}
+
+.is-device-panel .settings-control {
+  gap: 5px;
+}
+
+.is-device-panel .settings-control__label {
+  gap: 4px;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+
+.is-device-panel .settings-control__select {
+  min-height: 22px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.is-device-panel .themed-select__control {
+  min-height: 20px;
+  padding: 0 18px 0 6px;
+  font-size: 10px;
+}
+
+.is-device-panel .themed-select__chevron {
+  right: 4px;
+  width: 10px;
+  height: 10px;
+}
+
+.is-device-panel .themed-select__chevron svg {
+  width: 10px;
+  height: 10px;
+}
+
+.is-device-panel .settings-control__range {
+  height: 14px;
+}
+
+.is-device-panel .settings-chip-row {
+  gap: 4px;
+}
+
+.is-device-panel .settings-chip {
+  min-height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}

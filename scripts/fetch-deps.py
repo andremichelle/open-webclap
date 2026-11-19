@@ -287,6 +287,20 @@ DEPS += [
      or p in ("Cargo.toml", "crates/orb-engine/Cargo.toml", "crates/rbs/Cargo.toml", "LICENSE", "README.md")),
 ]
 
+# Prism (Boof2015) at main at the time of writing: the analyzers' native DSP (native/src, no N-API), the plugin's
+# scope engines the port's follow (plugin/Source/*Engine.h), and the plugin webview's React UI with the renderer code
+# it imports, and the reference analysis' vendored decoders and resampler (dr_libs, r8brain). GPL-3.0.
+PRISM_DSP = ("dsp_utils", "spectrum", "oscilloscope", "vumeter", "lufsmeter", "vectorscope", "spectrogram", "waveform",
+             "waterfall", "multiband", "reference_analysis")
+DEPS += [
+    ("prism", "Boof2015/prism", "49721802252b115d169e353c98b27408daa5e2b7",
+     lambda p: p.startswith(("src/plugin-ui/", "src/renderer/", "src/shared/", "src/types/"))
+     or any(p in ("native/src/%s.h" % n, "native/src/%s.cpp" % n) for n in PRISM_DSP)
+     or p.startswith("native/vendor/") or (p.startswith("plugin/Source/") and p.endswith("Engine.h"))
+     or p in ("LICENSE", "README.md", "THIRD_PARTY_NOTICES.md", "package.json", "package-lock.json",
+              "vite.plugin-ui.config.ts", "tsconfig.json")),
+]
+
 # (package, {file in the package: name in external/fonts})
 FONT_PACKAGES = [
     ("https://registry.npmjs.org/dejavu-fonts-ttf/-/dejavu-fonts-ttf-2.37.3.tgz",
@@ -366,7 +380,7 @@ PATCH_TARGETS = [("juce-", "JUCE"), ("six-sines-", "six-sines"), ("ripplerx-", "
                  ("libmysofa-", "libmysofa"), ("droplets-", "droplets"), ("tapelectric-", "tapelectric"), ("oxygen-", "oxygen"),
                  ("obxf-", "OB-Xf"), ("helm-", "helm"), ("signalsmith-basics-", "signalsmith-basics"),
                  ("stmlib-", "eurorack/stmlib"), ("oxo-synth2-", "oxo-synth2"),
-                 ("openrb-338-", "openrb-338")] + [(d + "-", d) for d, _, _ in ZL]
+                 ("openrb-338-", "openrb-338"), ("prism-", "prism")] + [(d + "-", d) for d, _, _ in ZL]
 
 
 def apply_patches():
