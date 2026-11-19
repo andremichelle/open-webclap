@@ -1,6 +1,6 @@
 # Prism WebCLAP
 
-[Prism](https://github.com/Boof2015/prism) by Astra (Boof2015), GPL-3.0: the eight analyzers of its DAW plugins as
+[Prism](https://github.com/Boof2015/prism) by Boof2015, GPL-3.0: the eight analyzers of its DAW plugins as
 WebCLAP audio effects in one bundle (Spectrum, Oscilloscope, Vectorscope, Spectrogram, VU Meter, Loudness Meter,
 Waveform, Waterfall). The audio passes through unchanged. Each is its device panel in openDAW, the scope with its
 settings beside it; there is no window. Prism Bridge (a socket to the desktop app) is left out.

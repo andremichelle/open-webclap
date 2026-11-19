@@ -430,7 +430,7 @@ static bool entry_init(const char *) {
         features[index][4] = info.panelWidthFeature;
         features[index][5] = nullptr;
         descriptors[index] = clap_plugin_descriptor_t{
-            CLAP_VERSION_INIT, descriptorIds[index], info.name, "Astra / open-webclap",
+            CLAP_VERSION_INIT, descriptorIds[index], info.name, "Prism / open-webclap",
             "https://github.com/andremichelle/open-webclap/tree/main/ports/prism", "https://github.com/Boof2015/prism", "",
             VERSION, info.description, features[index]
         };

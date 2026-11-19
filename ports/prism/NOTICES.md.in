@@ -1,6 +1,6 @@
 # Prism for WebCLAP
 
-Prism by Astra (Boof2015), a real-time audio analyzer and meter rack, ported to WebCLAP as eight audio effects in one
+Prism by Boof2015, a real-time audio analyzer and meter rack, ported to WebCLAP as eight audio effects in one
 bundle: Spectrum, Oscilloscope, Vectorscope, Spectrogram, VU Meter, Loudness Meter, Waveform and Waterfall. This is
 not an official Prism release.
 
