@@ -1169,7 +1169,7 @@ static const void *hive_get_extension(const clap_plugin_t *plugin, const char *i
 static void hive_on_main_thread(const clap_plugin_t *plugin) {(void) plugin;}
 
 static const char *features[] = {
-    CLAP_PLUGIN_FEATURE_NOTE_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH(PANEL_WIDTH), nullptr
+    CLAP_PLUGIN_FEATURE_NOTE_EFFECT, "sequencer", OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL, OPENDAW_PLUGIN_FEATURE_DEVICE_PANEL_WIDTH(PANEL_WIDTH), nullptr
 };
 
 static const clap_plugin_descriptor_t descriptor = {
@@ -1180,7 +1180,7 @@ static const clap_plugin_descriptor_t descriptor = {
     "https://github.com/andremichelle/open-webclap/tree/main/ports/hive",
     "https://github.com/andremichelle/open-webclap/tree/main/ports/hive",
     "",
-    "0.1.0",
+    "0.1.1",
     "Note sequencer on a hexagonal grid: cursors walk the tiles' arrows and play their notes",
     features
 };
