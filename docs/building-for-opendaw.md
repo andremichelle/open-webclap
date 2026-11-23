@@ -9,6 +9,10 @@ and instruments. Note effects have a guide of their own with the note specifics:
 device panel of a track, next to openDAW's own devices. Design for that panel first, the window second, other hosts
 last: they get correct parameters, state and texts, openDAW gets the care.
 
+A new plugin (not a port) is quickest on the kit of the agent skill, [skill/opendaw-webclap](../skill/opendaw-webclap):
+`kit/opendaw_kit.h` makes a whole plugin from a parameter table and a DSP struct and keeps every rule of this guide,
+`kit/opendaw-kit.js` builds its page, `scripts/check.mjs` tests the rules in node.
+
 The plain CLAP ports in this repository are the references, copy from them:
 
 | Port | Shows |

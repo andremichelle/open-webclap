@@ -102,9 +102,11 @@ type PluginViewConstruct = {
     hint: JsxValue // under the error, when the plugin could not be loaded
     panel: boolean // shows the device panel above the window
     windowed: boolean // false: the device panel is the plugin's only view
+    rememberInput?: boolean // the preview: a rebuilt plugin keeps the input
 }
 
-const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint, panel, windowed}: PluginViewConstruct) => {
+export const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint, panel, windowed,
+                               rememberInput = false}: PluginViewConstruct) => {
     let alive = true
     lifecycle.own({terminate: () => alive = false})
     const title: HTMLElement = <h1>{name}</h1>
@@ -134,7 +136,7 @@ const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint,
         subtitle.textContent = subtitleText ?? identity.clapId
         loading.setValue({text: `Starting ${identity.name}…`, fraction: null})
         replaceChildren(body, <Workbench lifecycle={lifecycle} session={session} loading={loading} panel={panel}
-                                                windowed={windowed}/>)
+                                                windowed={windowed} rememberInput={rememberInput}/>)
     }).catch((reason: unknown) => {
         if (!alive) {return}
         subtitle.textContent = "not loaded"
@@ -188,9 +190,10 @@ type WorkbenchConstruct = {
     loading: DefaultObservableValue<LoadingState> // shown in the plugin column until the window is up
     panel: boolean // shows the device panel above the window (note effects always do)
     windowed: boolean // false: the device panel alone, no window
+    rememberInput: boolean
 }
 
-const Workbench = ({lifecycle, session, loading, panel, windowed}: WorkbenchConstruct) => {
+const Workbench = ({lifecycle, session, loading, panel, windowed, rememberInput}: WorkbenchConstruct) => {
     const {kind} = session.identity
     const log = new MessageLog(id => `#${id}`)
     const midiStatus: HTMLElement = <span className="muted"/>
@@ -222,7 +225,7 @@ const Workbench = ({lifecycle, session, loading, panel, windowed}: WorkbenchCons
                 <Panel title="Transport"><TransportSwitch lifecycle={lifecycle} session={session}/></Panel>
             )}
             {kind === "audio-fx" && (
-                <Panel title="Input"><InputSource lifecycle={lifecycle} session={session}/></Panel>
+                <Panel title="Input"><InputSource lifecycle={lifecycle} session={session} remember={rememberInput}/></Panel>
             )}
             {kind === "midi-fx" && (
                 <Panel title="Output"><NoteOutput lifecycle={lifecycle} session={session}/></Panel>

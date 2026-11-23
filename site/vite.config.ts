@@ -3,6 +3,8 @@ import {createRequire} from "module"
 import {dirname, resolve} from "path"
 import {defineConfig, Plugin} from "vite"
 import {Plugins} from "./src/plugins"
+// @ts-expect-error a plain module of the repository, no types
+import {skillFiles, skillIndex} from "../skill/assemble.mjs"
 
 const root = resolve(__dirname, "..")
 
@@ -65,6 +67,34 @@ const localBundles = (): Plugin => ({
     }
 })
 
+// The opendaw-webclap agent skill (skill/assemble.mjs) at /.well-known/agent-skills/, where `npx skills add
+// https://webclap.opendaw.studio` finds it: index.json and the skill's files
+type SkillFile = { path: string, source: string }
+const agentSkills = (): Plugin => ({
+    name: "agent-skills",
+    configureServer(server) {
+        server.middlewares.use("/.well-known/agent-skills", (request, response, next) => {
+            const name = decodeURIComponent((request.url ?? "").split("?")[0]).replace(/^\//, "")
+            const files: ReadonlyArray<SkillFile> = skillFiles()
+            if (name === "index.json") {
+                response.setHeader("Content-Type", "application/json")
+                return response.end(JSON.stringify(skillIndex(files)))
+            }
+            const file = files.find(file => name === `opendaw-webclap/${file.path}`)
+            if (file === undefined) {return next()}
+            response.setHeader("Content-Type", "text/plain; charset=utf-8")
+            response.end(readFileSync(file.source))
+        })
+    },
+    generateBundle() {
+        const files: ReadonlyArray<SkillFile> = skillFiles()
+        this.emitFile({type: "asset", fileName: ".well-known/agent-skills/index.json", source: JSON.stringify(skillIndex(files), null, 2)})
+        files.forEach(file => this.emitFile({
+            type: "asset", fileName: `.well-known/agent-skills/opendaw-webclap/${file.path}`, source: readFileSync(file.source)
+        }))
+    }
+})
+
 // GitHub Pages has no rewrites: unknown paths (a plugin page opened directly) get 404.html, the app
 const spaFallback = (): Plugin => ({
     name: "spa-fallback",
@@ -88,5 +118,5 @@ export default defineConfig({
         proxy: {"/wclaps": {target: "https://assets.opendaw.studio", changeOrigin: true}}
     },
     preview: {port: 8130, headers: IsolationHeaders},
-    plugins: [wasmEngine(), localBundles(), spaFallback()]
+    plugins: [wasmEngine(), localBundles(), agentSkills(), spaFallback()]
 })

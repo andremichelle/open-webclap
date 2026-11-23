@@ -5,6 +5,7 @@ import {Header} from "@/ui/Header"
 import {HomePage} from "@/ui/pages/HomePage"
 import {ImportedPage, PluginPage} from "@/ui/pages/PluginPage"
 import {NotFoundPage} from "@/ui/pages/NotFoundPage"
+import {PreviewPage} from "@/ui/pages/PreviewPage"
 
 export const App = () => {
     const terminator = new Terminator()
@@ -18,7 +19,8 @@ export const App = () => {
                 routes={[
                     {path: "/", factory: HomePage},
                     ...Available.list().map(plugin => ({path: `/${plugin.id}`, factory: PluginPage(plugin)})),
-                    {path: "/imported/*", factory: ImportedPage}
+                    {path: "/imported/*", factory: ImportedPage},
+                    {path: "/preview", factory: PreviewPage}
                 ]}
             />
         </Frag>

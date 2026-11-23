@@ -19,12 +19,31 @@ plugin gets there depends on what it is written with, so the ports here come fro
 - **Other plugins** bring their own build. Polarity SC Dark is a Rust/NIH-plug plugin built for `wasm32-wasip1`,
   with an HTML/Canvas interface ([port guide](ports/sc-dark/README.md)).
 - **Note effects** (MIDI effects) follow Note Lab: [porting a note effect](docs/porting-a-midi-effect.md).
+- **New plugins from a description** are built by a coding agent with the skill below.
 
 What every bundle needs in openDAW, which ports target first: the 176 px device panel, the gestures openDAW owns (no
 wheel or double-click of the page's own), looking like a stock device, parameters, state, the data between page and
 plugin, SIMD and speed, updating an existing bundle: [building a WebCLAP for openDAW](docs/building-for-opendaw.md).
 How our device panels look (flat, displays on the panel, three knob sizes, names and values in their own colours):
 [device panel design](docs/device-panel-design.md).
+
+## Make your own plugin with AI
+
+Describe an effect, an instrument or a MIDI effect to a coding agent (Claude Code, Codex, Cursor and others) and it
+builds the WebCLAP for you, no programming needed. Teach your agent once:
+
+```sh
+npx skills add https://webclap.opendaw.studio -g
+```
+
+Then prompt, for example "Make an openDAW audio effect: a tape saturation with Drive, Tone, Wow and Mix". The agent
+installs the build tools on first use, builds the plugin on a small kit that keeps every rule of
+[building a WebCLAP for openDAW](docs/building-for-opendaw.md) (device panel, window, parameters, state, the gestures
+openDAW owns), checks it, and opens it on this site from your computer, where it reloads after every change. Import the
+finished `.wclap.tar.gz` in openDAW Studio, or ask the agent to share it: it opens a pull request to
+[opendaw-commons](https://github.com/andremichelle/opendaw-commons) from your GitHub account. The skill lives in
+[skill/opendaw-webclap](skill/opendaw-webclap), the walkthrough for users is the manual page
+[Create a WebCLAP with AI](https://dev.opendaw.studio/manuals/create-webclap-with-ai).
 
 ## Plugins
 

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{NAME}}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <link rel="stylesheet" href="opendaw-page/panel.css">
+    <style>
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+        .kit-waiting {padding: 8px; font-size: 9px; color: var(--value)}
+    </style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script src="opendaw-kit.js"></script>
+<script>
+    // the parameter ids of plugin.cpp
+    const DRIVE = 0
+    // the display: the clipping curve for the current drive on fixed axes, the output peak as a dot on it
+    let peak = 0
+    OpenDAWKit.start({
+        display: {
+            width: 88,
+            draw: (context, width, height, kit) => {
+                const gain = Math.pow(10, kit.value(DRIVE) / 20)
+                const makeup = 1 / Math.tanh(gain)
+                const inset = 2
+                const x = input => inset + (input + 1) / 2 * (width - inset * 2)
+                const y = output => height / 2 - output * (height / 2 - inset)
+                OpenDAWPanel.gridLine(context, x(-1), y(0), x(1), y(0), true)
+                const points = []
+                for (let index = 0; index <= 64; index++) {
+                    const input = index / 32 - 1
+                    points.push([x(input), y(Math.tanh(input * gain) * makeup)])
+                }
+                OpenDAWPanel.trace(context, points)
+                // the output's peak, falling back slowly between the plugin's answers
+                peak = Math.max(kit.meters[1] ?? 0, peak * 0.92)
+                const level = Math.min(1, peak)
+                const input = Math.atanh(Math.min(0.999, level / makeup)) / gain
+                if (level > 0.001) {OpenDAWPanel.dot(context, x(Math.min(1, input)), y(level))}
+            }
+        }
+    })
+</script>
+</body>
+</html>

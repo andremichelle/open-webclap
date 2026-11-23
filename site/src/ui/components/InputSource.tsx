@@ -23,11 +23,14 @@ const Hints: Record<InputKind, string> = {
     noise: "White noise, looped"
 }
 
-type Construct = { lifecycle: Lifecycle, session: PluginSession }
+type Construct = { lifecycle: Lifecycle, session: PluginSession, remember?: boolean }
+
+// the preview's last choice, so a rebuilt plugin gets the same input
+let remembered: { kind: InputKind, file: { name: string, buffer: AudioBuffer } | null } | null = null
 
 // What plays into the effect: the microphone (openDAW's monitoring through the effect chain), or a looped
 // audio file, test tone or noise on the track
-export const InputSource = ({lifecycle, session}: Construct) => {
+export const InputSource = ({lifecycle, session, remember = false}: Construct) => {
     const {audioContext} = session.env
     let file: { name: string, buffer: AudioBuffer } | null = null
     let request = 0 // a newer choice wins over one still decoding or asking for the microphone
@@ -53,6 +56,7 @@ export const InputSource = ({lifecycle, session}: Construct) => {
     }
     const use = async (kind: InputKind) => {
         const id = ++request
+        if (remember) {remembered = {kind, file}}
         chooseFile.classList.toggle("hidden", kind !== "file")
         if (kind === "file" && file === null) {
             await session.setInput("none")
@@ -102,5 +106,10 @@ export const InputSource = ({lifecycle, session}: Construct) => {
         }),
         {terminate: () => request++}
     )
+    if (remember && remembered !== null) {
+        file = remembered.file
+        select.value = remembered.kind
+        use(remembered.kind)
+    }
     return element
 }

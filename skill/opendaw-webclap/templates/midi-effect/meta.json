@@ -1,0 +1,8 @@
+{
+  "name": "{{NAME}}",
+  "description": "{{DESCRIPTION}}",
+  "author": {"name": "{{AUTHOR}}"},
+  "tags": ["{{TAGS}}"],
+  "license": "MIT",
+  "credits": "Built on the CLAP headers by free-audio (MIT) and the openDAW WebCLAP kit (MIT)."
+}

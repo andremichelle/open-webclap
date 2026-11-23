@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{NAME}}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500&display=swap">
+    <link rel="stylesheet" href="opendaw-page/panel.css">
+    <style>
+        #stage {position: absolute; left: 0; top: 0; transform-origin: 0 0}
+        .kit-waiting {padding: 8px; font-size: 9px; color: var(--value)}
+    </style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="opendaw-page/panel.js"></script>
+<script src="opendaw-kit.js"></script>
+<script>
+    // the card is built from the plugin's parameters (plugin.cpp), laid out after openDAW's device panel design
+    OpenDAWKit.start()
+</script>
+</body>
+</html>
