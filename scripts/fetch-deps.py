@@ -255,6 +255,15 @@ DEPS += [
      or p in ("LICENSE", "README.md", "Identity.xcconfig")),
 ]
 
+# faust-aether (sletz, MIT) at main at the time of writing: the Faust sources the port compiles to C++ (aether.dsp,
+# effects.dsp) with the pinned Faust compiler (ports/faust-aether/gen.py), the presets the page ships as patches,
+# and web/ as the reference for the ported editor page
+DEPS += [
+    ("faust-aether", "sletz/faust-aether", "28f262c1de87ae9fae424be7ee22bcbf665cd7bd",
+     lambda p: p in ("aether.dsp", "effects.dsp", "audition.dsp", "LICENSE", "README.md")
+     or p == "presets/patches.json" or p.startswith("web/")),
+]
+
 # The ZL Audio plugins (zsliu98) at main at the time of writing, each with the submodules it builds with at its pins:
 # Google Highway, zldsp_fft (on Highway) and friz (ZLWarm's animations). JUCE is the shared one (ZL pins a fork
 # with four small changes, see patches/zl-*.patch).
