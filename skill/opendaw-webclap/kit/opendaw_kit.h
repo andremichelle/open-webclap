@@ -18,7 +18,7 @@
 // values linearly), texts both ways, every event at its sample (process is called once per span between events), a
 // versioned fixed-layout state (an edit changes 8 bytes), gestures as one undo step, the hovered parameter for
 // openDAW's menu and value entry, the device panel (opendaw.device-panel/1 and its width feature), the window (the
-// same page zoomed, 100 to 300 %), latency and tail, the page's messages, and for note effects a well-formed note
+// optional bigger window with content of its own, opened from a button on the panel), latency and tail, the page's messages, and for note effects a well-formed note
 // stream (a key never held twice, every note on ended). Everything runs on the audio thread, no threads, no locks.
 #pragma once
 
@@ -40,8 +40,11 @@ namespace opendaw {
 
 enum class Kind {AudioEffect, Instrument, MidiEffect};
 
-// id: studio.opendaw.commons.<slug> for opendaw-commons; feature: one CLAP category (CLAP_PLUGIN_FEATURE_DELAY,
-// _SYNTHESIZER, _ARPEGGIATOR, ...) or nullptr; panelWidth: the device panel's width at 176 px, as the page measures it
+// id: studio.opendaw.commons.<slug> for opendaw-commons; feature: one category openDAW's browser sorts by
+// ("delay", "synthesizer", "arpeggiator", ...) or nullptr; panelWidth: the device panel's width at 176 px, as the page
+// measures it; windowWidth and windowHeight: the size of the optional bigger window, left out (0) for none. A window
+// shows something the panel cannot (a large display, a detailed editor), never the panel's controls again, and the
+// panel gets a button that opens it.
 struct Info {
     const char *id;
     const char *name;
@@ -51,6 +54,8 @@ struct Info {
     Kind kind;
     const char *feature;
     uint32_t panelWidth;
+    uint32_t windowWidth = 0;
+    uint32_t windowHeight = 0;
 };
 
 // --- parameters -----------------------------------------------------------------------------------------------------
@@ -387,7 +392,7 @@ inline bool parse(const Param &param, const char *text, double *value) {
 constexpr uint8_t PAGE_DESCRIBE = 8, PAGE_SHOW_WINDOW = 9;
 constexpr uint8_t PLUGIN_DESCRIBE = 2;
 constexpr uint32_t TEXT_BYTES = 16, MAX_METERS = 64;
-constexpr double WINDOW_ZOOM = 2.0, WINDOW_MIN_ZOOM = 1.0, WINDOW_MAX_ZOOM = 3.0;
+constexpr double WINDOW_MIN_ZOOM = 0.75, WINDOW_MAX_ZOOM = 2.0;
 
 template<class D, const Info &I, const Param *P, uint32_t N>
 struct Plugin {
@@ -414,6 +419,12 @@ struct Plugin {
     float *silence = nullptr;
     float *scratch[2] = {nullptr, nullptr};
     OutEvents<256> outEvents;
+    // the meters, read from the DSP every 33 ms of processed audio: the panel and the window both poll and both get
+    // every answer, so a reading per poll would hand each page only some of the peaks
+    float meterCache[MAX_METERS];
+    uint32_t meterCount = 0;
+    uint32_t framesSinceMeters = 0, meterFrames = 1600;
+    bool metersDue = true;
     uint8_t message[8 + N * 8 + N * TEXT_BYTES + MAX_METERS * 4];
 
     // --- descriptor ---
@@ -523,6 +534,9 @@ struct Plugin {
         for (uint32_t id = 0; id < N; id++) {self->changed[id] = false;}
         self->anyChanged = false;
         self->dsp.activate(sampleRate, self->maxFrames, self->values);
+        self->meterFrames = static_cast<uint32_t>(sampleRate * 0.033);
+        self->framesSinceMeters = 0;
+        self->metersDue = true;
         self->notes.forget();
         self->notes.dropAll();
         self->latency = self->dsp.latency();
@@ -670,6 +684,8 @@ struct Plugin {
             self->handle(header, time);
         }
         self->render(process, position, frames);
+        self->framesSinceMeters += frames;
+        if (self->framesSinceMeters >= self->meterFrames) {self->metersDue = true;}
         // CLAP wants the output sorted by time: the page's gestures and values (time 0) first, then the notes
         self->outEvents.drain(process->out_events);
         if (frames > 0) {self->notes.drain(process->out_events, frames);}
@@ -858,9 +874,13 @@ struct Plugin {
     // STATUS: type 1, 0, the parameter count (u16), the meter count (u16), 0 (u16), every value (f64), every value's
     // text (16 bytes, zero padded), then the meters (f32)
     void sendStatus() {
-        float meters[MAX_METERS];
-        uint32_t meterCount = active ? dsp.meters(meters, MAX_METERS) : 0;
-        if (meterCount > MAX_METERS) {meterCount = MAX_METERS;}
+        if (metersDue && active) {
+            meterCount = dsp.meters(meterCache, MAX_METERS);
+            if (meterCount > MAX_METERS) {meterCount = MAX_METERS;}
+            metersDue = false;
+            framesSinceMeters = 0;
+        }
+        const float *meters = meterCache;
         message[0] = PLUGIN_STATUS;
         message[1] = 0;
         const uint16_t counts[3] = {static_cast<uint16_t>(N), static_cast<uint16_t>(meterCount), 0};
@@ -932,9 +952,16 @@ struct Plugin {
         json[length++] = static_cast<char>(PLUGIN_DESCRIBE);
         appendf(json, capacity, length, "{\"name\":\"");
         appendJson(json, capacity, length, I.name);
-        appendf(json, capacity, length, "\",\"kind\":\"%s\",\"width\":%u,\"params\":[",
+        appendf(json, capacity, length, "\",\"kind\":\"%s\",\"width\":%u,",
                 I.kind == Kind::Instrument ? "instrument" : I.kind == Kind::MidiEffect ? "midi-effect" : "audio-effect",
                 static_cast<unsigned>(I.panelWidth));
+        if (hasWindow()) {
+            appendf(json, capacity, length, "\"window\":{\"width\":%u,\"height\":%u},",
+                    static_cast<unsigned>(I.windowWidth), static_cast<unsigned>(I.windowHeight));
+        } else {
+            appendf(json, capacity, length, "\"window\":null,");
+        }
+        appendf(json, capacity, length, "\"params\":[");
         for (uint32_t id = 0; id < N; id++) {
             const Param &param = P[id];
             appendf(json, capacity, length, "%s{\"id\":%u,\"name\":\"", id == 0 ? "" : ",", static_cast<unsigned>(id));
@@ -985,7 +1012,9 @@ struct Plugin {
         return receive(page, self->page, self->outEvents, buffer, size);
     }
 
-    // --- gui: the window shows the panel's page zoomed, 200 % to start, 100 to 300 % ---
+    // --- gui: the optional window, at its own size, 75 to 200 % keeping its aspect ---
+
+    static constexpr bool hasWindow() {return I.windowWidth > 0 && I.windowHeight > 0;}
 
     static bool guiGetSize(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) {
         const Plugin *self = of(plugin);
@@ -995,12 +1024,19 @@ struct Plugin {
     }
     static bool guiGetResizeHints(const clap_plugin_t *plugin, clap_gui_resize_hints_t *hints) {
         (void) plugin;
-        window_hints(I.panelWidth, hints);
+        hints->can_resize_horizontally = true;
+        hints->can_resize_vertically = true;
+        hints->preserve_aspect_ratio = true;
+        hints->aspect_ratio_width = I.windowWidth;
+        hints->aspect_ratio_height = I.windowHeight;
         return true;
     }
     static bool guiAdjustSize(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height) {
         (void) plugin;
-        window_fit(I.panelWidth, WINDOW_MIN_ZOOM, WINDOW_MAX_ZOOM, width, height);
+        const double wanted = std::fmin(double(*width) / I.windowWidth, double(*height) / I.windowHeight);
+        const double zoom = std::fmin(WINDOW_MAX_ZOOM, std::fmax(WINDOW_MIN_ZOOM, wanted));
+        *width = static_cast<uint32_t>(std::lround(I.windowWidth * zoom));
+        *height = static_cast<uint32_t>(std::lround(I.windowHeight * zoom));
         return true;
     }
     static bool guiSetSize(const clap_plugin_t *plugin, uint32_t width, uint32_t height) {
@@ -1039,7 +1075,8 @@ struct Plugin {
         if (std::strcmp(id, CLAP_EXT_LATENCY) == 0) {return &latencyExtension;}
         if (std::strcmp(id, CLAP_EXT_TAIL) == 0 && I.kind == Kind::AudioEffect) {return &tailExtension;}
         if (std::strcmp(id, CLAP_EXT_WEBVIEW) == 0) {return &webview;}
-        if (std::strcmp(id, CLAP_EXT_GUI) == 0) {return &gui;}
+        // no window: no clap.gui, openDAW then shows the device panel only
+        if (std::strcmp(id, CLAP_EXT_GUI) == 0 && hasWindow()) {return &gui;}
         if (std::strcmp(id, OPENDAW_EXT_DEVICE_PANEL) == 0) {return &devicePanel;}
         return nullptr;
     }
@@ -1059,8 +1096,8 @@ struct Plugin {
             self->values[id] = P[id].value;
             self->changed[id] = false;
         }
-        self->guiWidth = static_cast<uint32_t>(std::lround(I.panelWidth * WINDOW_ZOOM));
-        self->guiHeight = static_cast<uint32_t>(std::lround(OPENDAW_PANEL_HEIGHT * WINDOW_ZOOM));
+        self->guiWidth = I.windowWidth;
+        self->guiHeight = I.windowHeight;
         self->plugin.desc = descriptor();
         self->plugin.plugin_data = self;
         self->plugin.init = init;

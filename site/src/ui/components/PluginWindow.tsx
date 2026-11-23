@@ -66,6 +66,19 @@ export const PluginWindow = ({lifecycle, session, log, onLayout, panel = false}:
             onLayout()
             return
         }
+        // no clap.gui but a device panel: the panel is the whole plugin, there is no window to show
+        if (!panel && gui.width === 0) {
+            const devicePanel = await engine.wclapOpenPanel(deviceUuid, PANEL_HEIGHT)
+            if (devicePanel.uri.length > 0) {
+                // ends both sessions, the window's and the panel's probe
+                engine.wclapCloseGui(deviceUuid)
+                engine.wclapCloseGui(deviceUuid)
+                size.textContent = "no window, the device panel is the whole plugin"
+                reopen.disabled = true
+                onLayout()
+                return
+            }
+        }
         const bundle = await WclapBundles.fetch(session.url)
         const width = gui.width > 0 ? gui.width : DEFAULT_SIZE.width
         const height = gui.height > 0 ? gui.height : DEFAULT_SIZE.height

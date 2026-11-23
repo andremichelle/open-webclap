@@ -1,6 +1,6 @@
 ---
 name: opendaw-webclap
-description: Build audio plugins (WebCLAP) for openDAW from a plain description - audio effects, instruments and MIDI effects that run in the browser, in openDAW's device panel like a stock device and in their own window. Use when the user wants to make, change, test or share an openDAW plugin, a WebCLAP, or "an effect / synth / MIDI effect for openDAW", even without coding knowledge.
+description: Build audio plugins (WebCLAP) for openDAW from a plain description - audio effects, instruments and MIDI effects that run in the browser, in openDAW's device panel like a stock device, with an optional bigger window. Use when the user wants to make, change, test or share an openDAW plugin, a WebCLAP, or "an effect / synth / MIDI effect for openDAW", even without coding knowledge.
 ---
 
 # openDAW WebCLAP plugins
@@ -29,6 +29,11 @@ All scripts are in this skill's `scripts/` folder. Run them with node from the f
 1. **Understand the idea.** Kind: audio effect (changes sound passing through), instrument (plays notes), or MIDI
    effect (changes notes before an instrument). Name, the 3 to 8 controls a user would want, their ranges and units.
    Ask at most one short question when the kind is unclear; otherwise decide.
+   **The plugin lives in openDAW's device panel**, 176 px high, next to the stock devices, with all its controls
+   there. A bigger window is optional and off by default. Ask the user whether they want one only when the idea has
+   something the panel cannot hold: a large display (a spectrum, a scope, an envelope to draw), a detailed editor (a
+   step grid, a pattern, many fine settings). Never offer a window that repeats the panel's controls bigger. When the
+   user wants one, agree on what it shows beyond the panel; the panel then gets a "Big View" button that opens it.
 2. **Toolchain, once per computer:** `node scripts/setup.mjs`. It installs Emscripten and the CLAP headers into
    `~/.opendaw-webclap` (about 1 GB, a few minutes the first time; tell the user it is a one time download). Then ask
    the user whether to run a quick toolchain check, they may skip it: `node scripts/setup.mjs --check`.
@@ -45,7 +50,7 @@ All scripts are in this skill's `scripts/` folder. Run them with node from the f
    Fix every ✗. Fix ! warnings unless you have a reason not to.
 6. **Preview:** `node scripts/preview.mjs <slug>` as a background process (it serves until stopped, one per plugin;
    stop it by ending that process when the user is done). It opens the user's browser on the
-   open-webclap site with the plugin in openDAW's engine: the device panel at 176 px above the plugin window, a
+   open-webclap site with the plugin in openDAW's engine: the device panel at 176 px (and the window, if the plugin has one), a
    keyboard for instruments, an input (test tone, noise, audio file, microphone) for effects. Tell the user to click
    **Start audio** and try it. Every later build reloads the plugin in the page with its settings kept.
 7. **Read the preview's report**: a few seconds after the page loaded in the browser (no click needed) the preview

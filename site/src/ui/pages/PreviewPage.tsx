@@ -37,7 +37,7 @@ export const PreviewPage: PageFactory<null> = ({lifecycle}) => {
         current = terminator
         const id = ++version
         replaceChildren(holder, (
-            <PluginView lifecycle={terminator} name={file} panel windowed rememberInput
+            <PluginView lifecycle={terminator} name={file} panel windowed rememberInput windowOnRequest
                         links={<div className="links"><span>local build · {file}</span></div>}
                         open={async (env, loading) => {
                             loading.setValue({text: `Loading ${file}…`, fraction: null})

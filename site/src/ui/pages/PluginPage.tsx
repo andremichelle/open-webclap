@@ -1,7 +1,8 @@
 import css from "./PluginPage.sass?inline"
-import {DefaultObservableValue, Lifecycle} from "@opendaw/lib-std"
+import {DefaultObservableValue, Lifecycle, Terminator} from "@opendaw/lib-std"
 import {createElement, Frag, JsxValue, PageFactory, replaceChildren} from "@opendaw/lib-jsx"
 import {Events, Html} from "@opendaw/lib-dom"
+import {WclapGuis} from "@opendaw/studio-core"
 import {bundleFileName, PluginEntry} from "@/plugins"
 import {boot, Env} from "@/opendaw/Boot"
 import {Imports} from "@/opendaw/Imports"
@@ -103,10 +104,11 @@ type PluginViewConstruct = {
     panel: boolean // shows the device panel above the window
     windowed: boolean // false: the device panel is the plugin's only view
     rememberInput?: boolean // the preview: a rebuilt plugin keeps the input
+    windowOnRequest?: boolean // the preview: the device panel alone, the window only once the plugin asks for it
 }
 
 export const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText, hint, panel, windowed,
-                               rememberInput = false}: PluginViewConstruct) => {
+                               rememberInput = false, windowOnRequest = false}: PluginViewConstruct) => {
     let alive = true
     lifecycle.own({terminate: () => alive = false})
     const title: HTMLElement = <h1>{name}</h1>
@@ -136,7 +138,8 @@ export const PluginView = ({lifecycle, name, links, open, subtitle: subtitleText
         subtitle.textContent = subtitleText ?? identity.clapId
         loading.setValue({text: `Starting ${identity.name}…`, fraction: null})
         replaceChildren(body, <Workbench lifecycle={lifecycle} session={session} loading={loading} panel={panel}
-                                                windowed={windowed} rememberInput={rememberInput}/>)
+                                                windowed={windowed} rememberInput={rememberInput}
+                                                windowOnRequest={windowOnRequest}/>)
     }).catch((reason: unknown) => {
         if (!alive) {return}
         subtitle.textContent = "not loaded"
@@ -191,9 +194,10 @@ type WorkbenchConstruct = {
     panel: boolean // shows the device panel above the window (note effects always do)
     windowed: boolean // false: the device panel alone, no window
     rememberInput: boolean
+    windowOnRequest: boolean
 }
 
-const Workbench = ({lifecycle, session, loading, panel, windowed, rememberInput}: WorkbenchConstruct) => {
+const Workbench = ({lifecycle, session, loading, panel, windowed, rememberInput, windowOnRequest}: WorkbenchConstruct) => {
     const {kind} = session.identity
     const log = new MessageLog(id => `#${id}`)
     const midiStatus: HTMLElement = <span className="muted"/>
@@ -256,9 +260,10 @@ const Workbench = ({lifecycle, session, loading, panel, windowed, rememberInput}
                 <div className="stack pending" onInit={stack => stack_ = stack}>
                     {(kind === "midi-fx" || panel || !windowed) && (
                         <PluginWindow lifecycle={lifecycle} session={session} log={log} panel
-                                      onLayout={windowed ? () => {} : layout}/>
+                                      onLayout={windowed && !windowOnRequest ? () => {} : layout}/>
                     )}
-                    {windowed && <PluginWindow lifecycle={lifecycle} session={session} log={log} onLayout={layout}/>}
+                    {windowed && !windowOnRequest && <PluginWindow lifecycle={lifecycle} session={session} log={log} onLayout={layout}/>}
+                    {windowOnRequest && <RequestedWindow lifecycle={lifecycle} session={session} log={log}/>}
                     {kind !== "audio-fx" && (
                         <Keyboard lifecycle={lifecycle} session={session} midiStatus={midiStatus}/>
                     )}
@@ -269,6 +274,25 @@ const Workbench = ({lifecycle, session, loading, panel, windowed, rememberInput}
             {aside}
         </div>
     )
+}
+
+// The plugin's window as openDAW opens it: not at first, only when the plugin asks (its Big View button), gone when
+// it asks to hide it
+const RequestedWindow = ({lifecycle, session, log}: { lifecycle: Lifecycle, session: PluginSession, log: MessageLog }) => {
+    const holder: HTMLElement = <div style={{display: "contents"}}/>
+    let shown: Terminator | null = null
+    lifecycle.own(WclapGuis.subscribeShow(session.deviceKey, visible => {
+        if (visible && shown === null) {
+            shown = new Terminator()
+            replaceChildren(holder, <PluginWindow lifecycle={shown} session={session} log={log} onLayout={() => {}}/>)
+        } else if (!visible && shown !== null) {
+            shown.terminate()
+            shown = null
+            replaceChildren(holder)
+        }
+    }))
+    lifecycle.own({terminate: () => shown?.terminate()})
+    return holder
 }
 
 // Plays and stops the engine's transport, for instruments and note effects that follow it (an audio effect's input runs it already)

@@ -101,6 +101,15 @@ var OpenDAWKit = (() => {
     const describe = () => post(new Uint8Array([PAGE_DESCRIBE]).buffer)
     const showWindow = () => post(new Uint8Array([PAGE_SHOW_WINDOW]).buffer)
 
+    // the kit's own pieces, after panel.css: the panel's button that opens the window, the window's area
+    const style = document.createElement("style")
+    style.textContent = `
+        .kit-open {height: 13px; line-height: 13px; padding: 0 6px; border-radius: 2px; font-size: 9px; color: var(--step);
+            background: rgba(255, 255, 255, 0.04); cursor: pointer; white-space: nowrap; margin: auto 0}
+        .kit-open:hover {color: var(--value)}
+        .kit-window {position: relative; overflow: hidden; background: var(--page)}`
+    document.head.append(style)
+
     const start = (options = {}) => {
         const stage = document.getElementById("stage") ?? document.body.appendChild(Object.assign(
             document.createElement("div"), {id: "stage"}))
@@ -140,7 +149,16 @@ var OpenDAWKit = (() => {
         // the value this page sent last and when: the plugin's older answers do not overwrite it
         const sent = new Map()
         const meters = []
-        const display = options.display ?? null
+        const frames = []
+        // the window shows content of its own (options.window), the device panel the card
+        const windowed = !panelMode && description.window !== null && options.window !== undefined
+        if (!panelMode && description.window !== null && options.window === undefined) {
+            report({error: "the plugin has a window (windowWidth in INFO) but the page builds none: give OpenDAWKit.start a window, or remove the window"})
+        }
+        if (description.window === null && options.window !== undefined) {
+            report({error: "the page builds a window but the plugin has none: set windowWidth and windowHeight in INFO"})
+        }
+        const display = windowed ? null : options.display ?? null
         const element = document.createElement("div")
         element.className = "card"
         element.style.width = `${description.width}px`
@@ -185,21 +203,63 @@ var OpenDAWKit = (() => {
             },
             host
         })
-        const {columns, corner} = options.layout !== undefined
-            ? {columns: options.layout, corner: options.corner ?? null}
-            : autoLayout(params, display !== null)
-        controls.layout(columns, group)
-        if (corner !== null && screen !== null) {controls.corner(corner, screen)}
-        if (options.bigView === true && screen !== null && panelMode) {
-            const edit = Object.assign(document.createElement("div"), {className: "edit", textContent: "Big View"})
-            edit.addEventListener("click", showWindow)
-            screen.append(edit)
+        const kit = {
+            value: id => values.get(id),
+            text: id => texts.get(id),
+            meters,
+            time: 0,
+            zoom: () => zoom,
+            showWindow,
+            panel: panelMode,
+            // for the window's own content: openDAW's controls for any parameter, laid out or alone
+            control: (id, size = "M") => controls.control(id, OpenDAWPanel.SIZES[size]),
+            row: id => controls.row(id),
+            layout: (columns, container) => controls.layout(columns, container),
+            onFrame: callback => frames.push(callback)
         }
-        controls.update()
         let zoom = 1
-        OpenDAWPanel.zoomToWindow(stage, description.width, value => {zoom = value})
+        if (windowed) {
+            // the window: its own size, zoomed to the host's window, the plugin's content in it
+            element.remove()
+            const {width, height} = description.window
+            const root = Object.assign(document.createElement("div"), {className: "kit-window"})
+            root.style.width = `${width}px`
+            root.style.height = `${height}px`
+            stage.append(root)
+            options.window.build(root, kit)
+            const resize = () => {
+                zoom = Math.max(0.25, Math.min(innerWidth / width, innerHeight / height))
+                stage.style.transform = `scale(${zoom})`
+            }
+            addEventListener("resize", resize)
+            resize()
+            controls.update()
+        } else {
+            const {columns, corner} = options.layout !== undefined
+                ? {columns: options.layout, corner: options.corner ?? null}
+                : autoLayout(params, display !== null)
+            controls.layout(columns, group)
+            if (corner !== null && screen !== null) {controls.corner(corner, screen)}
+            // a plugin with a window opens it from the panel: in the display's corner, or as the last column
+            if (description.window !== null && panelMode) {
+                const open = Object.assign(document.createElement("div"), {textContent: "Big View"})
+                open.addEventListener("click", showWindow)
+                if (screen !== null) {
+                    open.className = "edit"
+                    screen.append(open)
+                } else {
+                    open.className = "kit-open"
+                    const column = Object.assign(document.createElement("div"), {className: "column stack"})
+                    column.append(open)
+                    group.append(column)
+                }
+            }
+            controls.update()
+            OpenDAWPanel.zoomToWindow(stage, description.width, value => {zoom = value})
+        }
         // the content's own width against the declared one, for the preview's report
         document.fonts.ready.then(() => {
+            if (windowed) {return}
             element.style.width = "max-content"
             const content = Math.ceil(element.getBoundingClientRect().width / zoom)
             element.style.width = `${description.width}px`
@@ -208,15 +268,6 @@ var OpenDAWKit = (() => {
             }
             report({declaredWidth: description.width, contentWidth: content, params: params.length})
         })
-        const kit = {
-            value: id => values.get(id),
-            text: id => texts.get(id),
-            meters,
-            time: 0,
-            zoom: () => zoom,
-            showWindow,
-            panel: panelMode
-        }
         const status = view => {
             if (view.byteLength < 8) {return}
             const count = view.getUint16(2, true), meterCount = view.getUint16(4, true)
@@ -260,6 +311,7 @@ var OpenDAWKit = (() => {
                 const {width, height} = OpenDAWPanel.fit(canvas, context, zoom)
                 display.draw(context, width, height, kit)
             }
+            frames.forEach(callback => callback(kit))
             requestAnimationFrame(frame)
         }
         document.fonts.ready.then(() => requestAnimationFrame(frame))

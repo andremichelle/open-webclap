@@ -3,7 +3,7 @@
 `source/kit/opendaw_kit.h` turns a parameter table and a `Dsp` struct into a complete CLAP plugin for openDAW:
 descriptor and features, parameters with texts both ways, sample-accurate events, a fixed-layout versioned state,
 gestures as one undo step, the hovered parameter for openDAW's right-click menu and double-click value entry, the
-device panel (176 px) and the window (the same page zoomed, 100 to 300 %), latency and tail, the page's messages and,
+device panel (176 px), an optional window with content of its own, latency and tail, the page's messages and,
 for MIDI effects, a well-formed note stream. `source/page/opendaw-kit.js` builds the page from the plugin's
 description. You write the sound and, optionally, a display.
 
@@ -46,7 +46,8 @@ list for a switch: `Param::choice(BYPASS, "Freeze", OFF_ON, 2, 0)`. A range symm
 its arc from the top. Texts come from the kit ("1.20 kHz", "-6.0 dB", "120 ms", "+7 st", "50%", "-inf dB" at a
 dB minimum of -60 or lower) and parse back ("4k", "1.5 s").
 
-INFO: clap id, name, vendor, version, description, kind, one category feature and the panel width at 176 px.
+INFO: clap id, name, vendor, version, description, kind, one category feature, the panel width at 176 px and,
+only for a plugin with a window, the window's width and height (see The window).
 `new.mjs` fills id (always `studio.opendaw.commons.<slug>`, never change it), name (as in meta.json), vendor (the
 author) and description; you set the kind's feature and the width. The feature is a plain string that openDAW's
 device browser sorts by, one of: `"synthesizer"`, `"drum"`, `"sampler"`, `"keys"`, `"bass"`, `"granular"`,
@@ -160,8 +161,7 @@ the same key in place. Release time comes from parameters at release, not at not
 OpenDAWKit.start()                                          // everything automatic
 OpenDAWKit.start({
     layout: [{large: 0}, {knobs: [[1, "M"], [2, "M"], [3, "M"]]}],   // columns by parameter id (optional)
-    display: {width: 96, draw: (context, width, height, kit) => {...}},  // optional, left of the controls
-    bigView: true                                           // optional: a "Big View" button on the panel's display
+    display: {width: 96, draw: (context, width, height, kit) => {...}}   // optional, left of the controls
 })
 ```
 
@@ -187,6 +187,46 @@ never overwrite a value being changed, polls at most every 33 ms. When you add y
 those rules: never listen to `wheel`, `dblclick`, `contextmenu` or keys, never `preventDefault` a press or lock the
 pointer, keep popups inside the page (it is clipped at its edges), and report hover for every control that stands for
 a parameter.
+
+## The window (optional)
+
+A plugin is its device panel. Only when the user wants something the panel cannot hold (a large display, a detailed
+editor) does it get a window, and the window then shows that, never the panel's controls again. Give its size in INFO
+after the panel width, and build its content in the page:
+
+```cpp
+static constexpr Info INFO = {"studio.opendaw.commons.<slug>", "Name", "Author", "1.0.0", "Description.",
+                              Kind::AudioEffect, "analyzer", 196, 640, 360};   // panel 196, window 640 x 360
+```
+
+```js
+OpenDAWKit.start({
+    display: {...},                                  // the panel as before
+    window: {
+        build: (root, kit) => {                      // root: a div of the window's size, the panel's colour
+            const canvas = document.createElement("canvas")
+            canvas.style.cssText = "position: absolute; inset: 8px 8px 60px 8px; width: calc(100% - 16px); height: calc(100% - 68px)"
+            root.append(canvas)
+            const controls = document.createElement("div")
+            controls.className = "group"
+            controls.style.cssText = "position: absolute; left: 8px; bottom: 4px"
+            root.append(controls)
+            kit.layout([{knobs: [[3, "S"]]}], controls)  // a fine setting only the window has
+            const context = canvas.getContext("2d")
+            kit.onFrame(() => {
+                const {width, height} = OpenDAWPanel.fit(canvas, context, kit.zoom())
+                // draw the large view from kit.value(id) and kit.meters
+            })
+        }
+    }
+})
+```
+
+The window opens from a "Big View" button the kit puts on the panel (in the display's corner, or as the last column)
+and from openDAW's device menu. It keeps its aspect and zooms from 75 to 200 %. In the window, `kit.control(id,
+size)`, `kit.row(id)` and `kit.layout(columns, element)` give openDAW's controls for any parameter, with hover, gestures
+and undo as on the panel, and `kit.onFrame(callback)` runs every frame with the latest values and meters. Everything
+the window changes must be a parameter, so it is automatable and saved.
 
 ## The state
 

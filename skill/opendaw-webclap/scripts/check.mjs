@@ -467,8 +467,17 @@ expect(host.ext.panel !== 0 && hasWidth, "device panel extension", "opendaw.devi
 expect(widthFeature === `opendaw:device-panel-width:${panelWidth}`, "panel width feature matches get_width(176)",
     `feature ${widthFeature ?? "missing"}, get_width(176) = ${panelWidth}`)
 if (panelWidth < 60 || panelWidth > 1200) {warning("panel width", `${panelWidth} px is unusual for a device panel`)}
-expect(host.ext.webview !== 0 && host.uri(host.ext.webview) === "/index.html", "window page", "clap.webview/3 get_uri should answer /index.html")
-expect(host.ext.gui !== 0, "window (clap.gui)", "clap.gui is missing: openDAW cannot open the plugin's window")
+expect(host.ext.webview !== 0 && host.uri(host.ext.webview) === "/index.html", "page (clap.webview)", "clap.webview/3 get_uri should answer /index.html")
+const hasWindow = host.ext.gui !== 0
+if (hasWindow) {
+    const size = host.malloc(8)
+    const sized = host.fn(host.ext.gui + 20)(host.plugin, size, size + 4)
+    const [windowWidth, windowHeight] = [host.u32(size), host.u32(size + 4)]
+    expect(sized && windowWidth >= 200 && windowHeight >= 150, `window ${windowWidth} x ${windowHeight}`,
+        "the window has no sensible size: give windowWidth and windowHeight in INFO, or none for a panel-only plugin")
+} else {
+    pass("device panel only, no window")
+}
 
 // --- ports ------------------------------------------------------------------------------------------------------
 
@@ -775,6 +784,12 @@ if (kind !== "note-effect") {
         ]
         for (const [pattern, reason] of lints) {
             if (pattern.test(own)) {warning("page", reason)}
+        }
+        if (hasWindow && fileOf("opendaw-kit.js") !== undefined && !/window\s*:\s*\{/.test(html)) {
+            failure("window content", "the plugin has a window but index.html gives OpenDAWKit.start no window: build content the panel cannot show, or remove windowWidth and windowHeight from INFO")
+        }
+        if (!hasWindow && /window\s*:\s*\{[^}]*build/.test(html)) {
+            warning("window content", "index.html builds a window, but the plugin has none (windowWidth and windowHeight in INFO)")
         }
         if (!/opendaw-kit\.js|param-hovered|PAGE\.HOVER|\.hover\(/.test(own) && fileOf("opendaw-kit.js") === undefined) {
             warning("page", "no hover reports found: without them openDAW's right-click menu and value entry do not work on the page")
